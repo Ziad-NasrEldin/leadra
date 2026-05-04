@@ -1,12 +1,19 @@
-import { PDFDocument, PDFPage, PDFFont, StandardFonts, rgb } from 'pdf-lib'
+import type { PDFDocument, PDFPage, PDFFont, RGB } from 'pdf-lib'
 import { formatCurrency, formatDeliveryExpectancy, sanitizeUnitForPdf } from './domain'
 import type { AppSettings, LeadraMediaFile, LeadraUnit, LeadraUser } from './types'
 
-const brandInk = rgb(0.08, 0.13, 0.11)
-const brandOlive = rgb(0.3, 0.42, 0.34)
-const brandCopper = rgb(0.71, 0.39, 0.24)
-const brandSand = rgb(0.92, 0.84, 0.71)
-const brandPaper = rgb(0.98, 0.96, 0.9)
+type PdfRgb = typeof import('pdf-lib')['rgb']
+
+interface BrandColors {
+  ink: RGB
+  olive: RGB
+  copper: RGB
+  sand: RGB
+  paper: RGB
+  line: RGB
+  imageBackground: RGB
+  heroSubtitle: RGB
+}
 
 export function buildPermissionSafePdfText(user: LeadraUser, unit: LeadraUnit, settings: AppSettings): string {
   const safeUnit = sanitizeUnitForPdf(user, unit)
@@ -55,6 +62,8 @@ export async function downloadUnitPdf(user: LeadraUser, unit: LeadraUnit, settin
 }
 
 async function buildBrandedPdfBytes(user: LeadraUser, unit: LeadraUnit, settings: AppSettings): Promise<Uint8Array> {
+  const { PDFDocument, StandardFonts, rgb } = await import('pdf-lib')
+  const colors = createBrandColors(rgb)
   const safeUnit = sanitizeUnitForPdf(user, unit)
   const document = await PDFDocument.create()
   const regular = await document.embedFont(StandardFonts.Helvetica)
@@ -63,52 +72,52 @@ async function buildBrandedPdfBytes(user: LeadraUser, unit: LeadraUnit, settings
   const { width, height } = page.getSize()
   const margin = 42
 
-  page.drawRectangle({ x: 0, y: 0, width, height, color: brandPaper })
-  page.drawRectangle({ x: margin, y: height - 150, width: width - margin * 2, height: 108, color: brandInk })
-  page.drawText(settings.companyName, { x: margin + 22, y: height - 82, size: 31, font: bold, color: brandSand })
-  page.drawText('Permission-safe resale unit brief', { x: margin + 24, y: height - 112, size: 11, font: regular, color: rgb(0.92, 0.88, 0.78) })
-  page.drawText(safeUnit.unitCode, { x: width - margin - 132, y: height - 86, size: 18, font: bold, color: brandSand })
+  page.drawRectangle({ x: 0, y: 0, width, height, color: colors.paper })
+  page.drawRectangle({ x: margin, y: height - 150, width: width - margin * 2, height: 108, color: colors.ink })
+  page.drawText(settings.companyName, { x: margin + 22, y: height - 82, size: 31, font: bold, color: colors.sand })
+  page.drawText('Permission-safe resale unit brief', { x: margin + 24, y: height - 112, size: 11, font: regular, color: colors.heroSubtitle })
+  page.drawText(safeUnit.unitCode, { x: width - margin - 132, y: height - 86, size: 18, font: bold, color: colors.sand })
 
-  drawSectionTitle(page, bold, 'Unit overview', margin, height - 190)
-  drawKeyValue(page, regular, bold, 'Project', safeUnit.projectName, margin, height - 218)
-  drawKeyValue(page, regular, bold, 'Destination', safeUnit.destinationName, margin + 260, height - 218)
-  drawKeyValue(page, regular, bold, 'Type', `${safeUnit.unitType} / ${safeUnit.floor}`, margin, height - 246)
-  drawKeyValue(page, regular, bold, 'Area', `${safeUnit.bua} BUA`, margin + 260, height - 246)
-  drawKeyValue(page, regular, bold, 'Beds / Baths', `${safeUnit.bedrooms} / ${safeUnit.bathrooms}`, margin, height - 274)
-  drawKeyValue(page, regular, bold, 'Delivery', formatDeliveryExpectancy(safeUnit), margin + 260, height - 274)
+  drawSectionTitle(page, bold, 'Unit overview', margin, height - 190, colors)
+  drawKeyValue(page, regular, bold, 'Project', safeUnit.projectName, margin, height - 218, colors)
+  drawKeyValue(page, regular, bold, 'Destination', safeUnit.destinationName, margin + 260, height - 218, colors)
+  drawKeyValue(page, regular, bold, 'Type', `${safeUnit.unitType} / ${safeUnit.floor}`, margin, height - 246, colors)
+  drawKeyValue(page, regular, bold, 'Area', `${safeUnit.bua} BUA`, margin + 260, height - 246, colors)
+  drawKeyValue(page, regular, bold, 'Beds / Baths', `${safeUnit.bedrooms} / ${safeUnit.bathrooms}`, margin, height - 274, colors)
+  drawKeyValue(page, regular, bold, 'Delivery', formatDeliveryExpectancy(safeUnit), margin + 260, height - 274, colors)
 
-  drawSectionTitle(page, bold, 'Pricing and payment', margin, height - 330)
-  drawKeyValue(page, regular, bold, 'Total amount', formatCurrency(safeUnit.totalAmount), margin, height - 358)
-  drawKeyValue(page, regular, bold, 'Commission', `${formatCurrency(safeUnit.commissionAmount)} (${safeUnit.commissionPercentage}%)`, margin + 260, height - 358)
-  drawKeyValue(page, regular, bold, 'Payment method', safeUnit.paymentMethod, margin, height - 386)
-  drawKeyValue(page, regular, bold, 'Installment', formatCurrency(safeUnit.installmentAmount), margin + 260, height - 386)
+  drawSectionTitle(page, bold, 'Pricing and payment', margin, height - 330, colors)
+  drawKeyValue(page, regular, bold, 'Total amount', formatCurrency(safeUnit.totalAmount), margin, height - 358, colors)
+  drawKeyValue(page, regular, bold, 'Commission', `${formatCurrency(safeUnit.commissionAmount)} (${safeUnit.commissionPercentage}%)`, margin + 260, height - 358, colors)
+  drawKeyValue(page, regular, bold, 'Payment method', safeUnit.paymentMethod, margin, height - 386, colors)
+  drawKeyValue(page, regular, bold, 'Installment', formatCurrency(safeUnit.installmentAmount), margin + 260, height - 386, colors)
 
-  drawSectionTitle(page, bold, 'Generated by', margin, height - 442)
-  drawKeyValue(page, regular, bold, 'Generated by', user.fullName, margin, height - 470)
+  drawSectionTitle(page, bold, 'Generated by', margin, height - 442, colors)
+  drawKeyValue(page, regular, bold, 'Generated by', user.fullName, margin, height - 470, colors)
 
-  drawSectionTitle(page, bold, 'Notes', margin, height - 526)
-  drawWrappedText(page, regular, safeUnit.salesNotes || 'No notes attached.', margin, height - 552, width - margin * 2, 10, brandInk)
+  drawSectionTitle(page, bold, 'Notes', margin, height - 526, colors)
+  drawWrappedText(page, regular, safeUnit.salesNotes || 'No notes attached.', margin, height - 552, width - margin * 2, 10, colors.ink)
 
-  page.drawLine({ start: { x: margin, y: 56 }, end: { x: width - margin, y: 56 }, thickness: 1, color: rgb(0.83, 0.8, 0.72) })
-  page.drawText(`${settings.footerText} / ${settings.contactDetails}`, { x: margin, y: 38, size: 8, font: regular, color: brandOlive })
+  page.drawLine({ start: { x: margin, y: 56 }, end: { x: width - margin, y: 56 }, thickness: 1, color: colors.line })
+  page.drawText(`${settings.footerText} / ${settings.contactDetails}`, { x: margin, y: 38, size: 8, font: regular, color: colors.olive })
 
-  await drawImages(document, safeUnit.media.filter((file) => file.type === 'image'), regular, bold)
+  await drawImages(document, safeUnit.media.filter((file) => file.type === 'image'), regular, bold, colors)
 
   return document.save()
 }
 
-async function drawImages(document: PDFDocument, images: LeadraMediaFile[], regular: PDFFont, bold: PDFFont) {
+async function drawImages(document: PDFDocument, images: LeadraMediaFile[], regular: PDFFont, bold: PDFFont, colors: BrandColors) {
   if (images.length === 0) {
     const page = document.addPage([595, 842])
-    page.drawRectangle({ x: 0, y: 0, width: 595, height: 842, color: brandPaper })
-    drawSectionTitle(page, bold, 'Unit images', 42, 780)
-    page.drawText('No images attached to this unit.', { x: 42, y: 750, size: 12, font: regular, color: brandOlive })
+    page.drawRectangle({ x: 0, y: 0, width: 595, height: 842, color: colors.paper })
+    drawSectionTitle(page, bold, 'Unit images', 42, 780, colors)
+    page.drawText('No images attached to this unit.', { x: 42, y: 750, size: 12, font: regular, color: colors.olive })
     return
   }
 
   let page = document.addPage([595, 842])
-  page.drawRectangle({ x: 0, y: 0, width: 595, height: 842, color: brandPaper })
-  drawSectionTitle(page, bold, 'Unit images', 42, 780)
+  page.drawRectangle({ x: 0, y: 0, width: 595, height: 842, color: colors.paper })
+  drawSectionTitle(page, bold, 'Unit images', 42, 780, colors)
   let slot = 0
 
   for (const image of images) {
@@ -117,8 +126,8 @@ async function drawImages(document: PDFDocument, images: LeadraMediaFile[], regu
 
     if (slot >= 4) {
       page = document.addPage([595, 842])
-      page.drawRectangle({ x: 0, y: 0, width: 595, height: 842, color: brandPaper })
-      drawSectionTitle(page, bold, 'Unit images', 42, 780)
+      page.drawRectangle({ x: 0, y: 0, width: 595, height: 842, color: colors.paper })
+      drawSectionTitle(page, bold, 'Unit images', 42, 780, colors)
       slot = 0
     }
 
@@ -132,14 +141,14 @@ async function drawImages(document: PDFDocument, images: LeadraMediaFile[], regu
     const imageWidth = embedded.width * scale
     const imageHeight = embedded.height * scale
 
-    page.drawRectangle({ x, y, width: boxWidth, height: boxHeight, color: rgb(0.99, 0.98, 0.94), borderColor: rgb(0.83, 0.8, 0.72), borderWidth: 1 })
+    page.drawRectangle({ x, y, width: boxWidth, height: boxHeight, color: colors.imageBackground, borderColor: colors.line, borderWidth: 1 })
     page.drawImage(embedded, {
       x: x + (boxWidth - imageWidth) / 2,
       y: y + (boxHeight - imageHeight) / 2,
       width: imageWidth,
       height: imageHeight,
     })
-    page.drawText(image.name.slice(0, 38), { x, y: y - 18, size: 8, font: regular, color: brandOlive })
+    page.drawText(image.name.slice(0, 38), { x, y: y - 18, size: 8, font: regular, color: colors.olive })
     slot += 1
   }
 }
@@ -171,17 +180,30 @@ async function loadImageBytes(url: string): Promise<Uint8Array> {
   return new Uint8Array(await response.arrayBuffer())
 }
 
-function drawSectionTitle(page: PDFPage, font: PDFFont, title: string, x: number, y: number) {
-  page.drawText(title.toUpperCase(), { x, y, size: 10, font, color: brandCopper })
-  page.drawLine({ start: { x, y: y - 8 }, end: { x: x + 510, y: y - 8 }, thickness: 1, color: rgb(0.83, 0.8, 0.72) })
+function createBrandColors(rgb: PdfRgb): BrandColors {
+  return {
+    ink: rgb(0.08, 0.13, 0.11),
+    olive: rgb(0.3, 0.42, 0.34),
+    copper: rgb(0.71, 0.39, 0.24),
+    sand: rgb(0.92, 0.84, 0.71),
+    paper: rgb(0.98, 0.96, 0.9),
+    line: rgb(0.83, 0.8, 0.72),
+    imageBackground: rgb(0.99, 0.98, 0.94),
+    heroSubtitle: rgb(0.92, 0.88, 0.78),
+  }
 }
 
-function drawKeyValue(page: PDFPage, regular: PDFFont, bold: PDFFont, label: string, value: string, x: number, y: number) {
-  page.drawText(label, { x, y, size: 8, font: bold, color: brandOlive })
-  page.drawText(value, { x, y: y - 14, size: 10, font: regular, color: brandInk })
+function drawSectionTitle(page: PDFPage, font: PDFFont, title: string, x: number, y: number, colors: BrandColors) {
+  page.drawText(title.toUpperCase(), { x, y, size: 10, font, color: colors.copper })
+  page.drawLine({ start: { x, y: y - 8 }, end: { x: x + 510, y: y - 8 }, thickness: 1, color: colors.line })
 }
 
-function drawWrappedText(page: PDFPage, font: PDFFont, text: string, x: number, y: number, maxWidth: number, size: number, color: ReturnType<typeof rgb>) {
+function drawKeyValue(page: PDFPage, regular: PDFFont, bold: PDFFont, label: string, value: string, x: number, y: number, colors: BrandColors) {
+  page.drawText(label, { x, y, size: 8, font: bold, color: colors.olive })
+  page.drawText(value, { x, y: y - 14, size: 10, font: regular, color: colors.ink })
+}
+
+function drawWrappedText(page: PDFPage, font: PDFFont, text: string, x: number, y: number, maxWidth: number, size: number, color: RGB) {
   const words = text.split(/\s+/)
   const lines: string[] = []
   let current = ''

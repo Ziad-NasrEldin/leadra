@@ -35,7 +35,7 @@ import {
   summarizeProjects,
 } from './lib/domain'
 import { downloadUnitPdf } from './lib/pdf'
-import { isSupabaseConfigured, supabase } from './lib/supabase'
+import { canUseDemoMode, isProductionMissingSupabaseConfig, isSupabaseConfigured, supabase } from './lib/supabase'
 import { loadSupabaseAppState, loadSupabaseProfile, markSupabaseLogin } from './lib/supabaseState'
 import type { AnalyticsDashboard, AppSettings, AuditLogItem, LeadraMediaFile, LeadraUnit, LeadraUser, LookupValue, NotificationItem, PaymentMethod, UnitStatus } from './lib/types'
 import {
@@ -513,48 +513,68 @@ function LoginScreen({
   return (
     <main className="login-screen">
       <section className="login-card">
-        <p className="eyebrow">Mobile-first resale operations</p>
-        <h1>Leadra resale command</h1>
-        <p className="login-copy">
-          Internal unit management for sales representatives, managers, sub-admins, and admins. Supabase projects use admin-created email/password accounts.
-        </p>
-        <div className="integration-badge">
-          <ShieldCheck size={18} />
-          {isSupabaseConfigured ? 'Supabase connected' : 'Local demo mode. Add Supabase env vars to connect production services.'}
-        </div>
-        {isSupabaseConfigured ? (
-          <form
-            className="auth-form"
-            onSubmit={(event) => {
-              event.preventDefault()
-              const formData = new FormData(event.currentTarget)
-              onPasswordLogin(String(formData.get('email')), String(formData.get('password')))
-            }}
-          >
-            <label>
-              Email
-              <input name="email" type="email" autoComplete="email" required placeholder="user@leadra.com" />
-            </label>
-            <label>
-              Password
-              <input name="password" type="password" autoComplete="current-password" required placeholder="Your Supabase password" />
-            </label>
-            {loginError && <p className="form-error">{loginError}</p>}
-            <button className="primary-button" type="submit" disabled={authLoading}>
-              {authLoading ? 'Connecting...' : 'Sign in'}
-            </button>
-          </form>
-        ) : (
-          <div className="role-grid" aria-label="Demo role login options">
-            {demoUsers.map((user) => (
-              <button key={user.id} className="role-card" type="button" onClick={() => onLogin(user)}>
-                <span>{user.role.replace('_', ' ')}</span>
-                <strong>Continue as {user.role === 'admin' ? 'Admin' : user.fullName}</strong>
-                <small>{user.email}</small>
-              </button>
-            ))}
+        <div className="login-brand-panel">
+          <div className="login-mark">L</div>
+          <p className="eyebrow">Leadra private resale workspace</p>
+          <h1>Resale command, without the spreadsheet drift.</h1>
+          <p className="login-copy">
+            A protected workspace for unit intake, project-first browsing, manager oversight, analytics, and branded owner-safe exports.
+          </p>
+          <div className="login-proof-grid" aria-label="Leadra production safeguards">
+            <span>Role-scoped visibility</span>
+            <span>Owner data protection</span>
+            <span>Audit-ready workflows</span>
           </div>
-        )}
+        </div>
+
+        <div className="login-access-panel">
+          <p className="eyebrow">Authorized access</p>
+          <h2>Sign in to Leadra</h2>
+          <p>Use the company account created for you by a Leadra admin.</p>
+          <div className={`integration-badge ${isProductionMissingSupabaseConfig ? 'danger' : ''}`}>
+            <ShieldCheck size={18} />
+            {isSupabaseConfigured && 'Production cloud active'}
+            {canUseDemoMode && 'Local demo workspace'}
+            {isProductionMissingSupabaseConfig && 'Production configuration missing'}
+          </div>
+          {isSupabaseConfigured && (
+            <form
+              className="auth-form"
+              onSubmit={(event) => {
+                event.preventDefault()
+                const formData = new FormData(event.currentTarget)
+                onPasswordLogin(String(formData.get('email')), String(formData.get('password')))
+              }}
+            >
+              <label>
+                Email
+                <input name="email" type="email" autoComplete="email" required placeholder="user@leadra.com" />
+              </label>
+              <label>
+                Password
+                <input name="password" type="password" autoComplete="current-password" required placeholder="Enter your password" />
+              </label>
+              {loginError && <p className="form-error">{loginError}</p>}
+              <button className="primary-button" type="submit" disabled={authLoading}>
+                {authLoading ? 'Signing in...' : 'Sign in'}
+              </button>
+            </form>
+          )}
+          {canUseDemoMode && (
+            <div className="role-grid" aria-label="Demo role login options">
+              {demoUsers.map((user) => (
+                <button key={user.id} className="role-card" type="button" onClick={() => onLogin(user)}>
+                  <span>{user.role.replace('_', ' ')}</span>
+                  <strong>Continue as {user.role === 'admin' ? 'Admin' : user.fullName}</strong>
+                  <small>{user.email}</small>
+                </button>
+              ))}
+            </div>
+          )}
+          {isProductionMissingSupabaseConfig && (
+            <p className="form-error">Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY before deploying this build.</p>
+          )}
+        </div>
       </section>
     </main>
   )

@@ -25,7 +25,7 @@ describe('Leadra app shell', () => {
     renderApp()
     const user = userEvent.setup()
 
-    expect(screen.getByRole('heading', { name: /leadra resale command/i })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: /resale command/i })).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: /continue as admin/i }))
 
     expect(await screen.findByRole('heading', { name: /admin command/i })).toBeInTheDocument()
