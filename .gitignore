@@ -26,3 +26,5 @@ dist-ssr
 .code-review-graph/
 .gstack/
 supabase/.temp/
+
+.vercel

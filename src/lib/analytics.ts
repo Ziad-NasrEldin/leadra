@@ -1,7 +1,11 @@
 import { filterUnitsForUser } from './domain'
+import { compareText, translate, type LocaleCode } from './i18n'
 import type {
   AnalyticsDashboard,
+  AnalyticsDateWindow,
   AnalyticsEvent,
+  AnalyticsFilterOptions,
+  AnalyticsFilters,
   AnalyticsInventoryHealth,
   AnalyticsSalesPerformance,
   AnalyticsTarget,
@@ -13,19 +17,42 @@ import type {
 } from './types'
 
 const staleAfterMs = 72 * 60 * 60 * 1000
+const defaultNow = new Date('2026-05-04T12:00:00.000Z')
+
+export const defaultAnalyticsFilters: AnalyticsFilters = {
+  dateWindow: 'live',
+  teamIds: [],
+  userIds: [],
+  projectIds: [],
+  developerIds: [],
+  destinationIds: [],
+  statuses: [],
+  paymentMethods: [],
+}
 
 export function canAccessAnalytics(user: LeadraUser): boolean {
   return user.role === 'admin' || user.role === 'sub_admin' || user.role === 'manager'
 }
 
-export function buildAnalyticsDashboard(user: LeadraUser, state: AppDataState, now = new Date('2026-05-04T12:00:00.000Z')): AnalyticsDashboard {
-  const units = filterAnalyticsUnits(user, state.units)
-  const events = filterAnalyticsEvents(user, state.analyticsEvents)
-  const users = filterAnalyticsUsers(user, state.users)
+export function buildAnalyticsDashboard(
+  user: LeadraUser,
+  state: AppDataState,
+  locale: LocaleCode = 'en',
+  now = defaultNow,
+  filters: AnalyticsFilters = defaultAnalyticsFilters,
+): AnalyticsDashboard {
+  const allUnits = filterAnalyticsUnits(user, state.units)
+  const users = filterUsersByFilters(filterAnalyticsUsers(user, state.users), filters)
+  const units = filterUnitsByFilters(allUnits, filters)
+  const events = filterEventsByFilters(filterAnalyticsEvents(user, state.analyticsEvents), units, filters, now)
   const targets = filterAnalyticsTargets(user, state.analyticsTargets)
+  const timeline = buildActivityTimeline(events, filters, now)
 
   return {
-    scopeLabel: user.role === 'manager' ? `Team ${user.teamId}` : 'Company-wide',
+    scopeLabel:
+      user.role === 'manager'
+        ? translate(locale, 'analytics.scope.team', { teamId: user.teamId })
+        : translate(locale, 'analytics.scope.company'),
     overview: {
       totalActiveUnits: units.filter((unit) => !unit.archived).length,
       availableUnits: units.filter((unit) => !unit.archived && unit.status === 'available').length,
@@ -41,10 +68,83 @@ export function buildAnalyticsDashboard(user: LeadraUser, state: AppDataState, n
       staleUnits: units.filter((unit) => isStale(unit, now)).length,
     },
     salesPerformance: buildSalesPerformance(users, units, events),
-    inventoryHealth: buildInventoryHealth(units, now),
-    activityTimeline: buildActivityTimeline(events),
-    targetProgress: buildTargetProgress(targets, units, events),
+    inventoryHealth: buildInventoryHealth(units, locale, now),
+    activityTimeline: timeline,
+    soldValueTrend: timeline.map((point) => ({
+      date: point.date,
+      label: point.date.slice(5).replace('-', '/'),
+      value: point.soldValue,
+    })),
+    pdfExportTrend: timeline.map((point) => ({
+      date: point.date,
+      label: point.date.slice(5).replace('-', '/'),
+      value: point.pdfExports,
+    })),
+    targetProgress: buildTargetProgress(targets, units, events, locale),
+    filterOptions: buildAnalyticsFilterOptions(user, state),
   }
+}
+
+export function buildAnalyticsFilterOptions(user: LeadraUser, state: AppDataState): AnalyticsFilterOptions {
+  const units = filterAnalyticsUnits(user, state.units)
+  const users = filterAnalyticsUsers(user, state.users)
+  return {
+    teams: uniqueOptions(users.map((item) => ({ id: item.teamId, label: item.teamId }))),
+    users: users
+      .filter((item) => item.role === 'sales' || item.role === 'manager')
+      .map((item) => ({ id: item.id, label: item.fullName }))
+      .sort((a, b) => a.label.localeCompare(b.label)),
+    projects: uniqueOptions(units.map((unit) => ({ id: unit.projectId, label: unit.projectName }))),
+    developers: uniqueOptions(units.map((unit) => ({ id: unit.developerId, label: unit.developerName }))),
+    destinations: uniqueOptions(units.map((unit) => ({ id: unit.destinationId, label: unit.destinationName }))),
+  }
+}
+
+export function getAnalyticsDateRange(filters: AnalyticsFilters, now = defaultNow) {
+  const end = filters.dateWindow === 'custom' && filters.endDate ? endOfDay(filters.endDate) : now
+  const start =
+    filters.dateWindow === 'custom' && filters.startDate
+      ? startOfDay(filters.startDate)
+      : new Date(end.getTime() - (analyticsWindowDays(filters.dateWindow) - 1) * 24 * 60 * 60 * 1000)
+  return { start, end }
+}
+
+export function analyticsWindowDays(window: AnalyticsDateWindow) {
+  if (window === '30d') return 30
+  if (window === '90d') return 90
+  return 7
+}
+
+export function buildAnalyticsCsv(dashboard: AnalyticsDashboard, filters: AnalyticsFilters): string {
+  const rows: string[][] = [
+    ['Section', 'Name', 'Metric', 'Value'],
+    ['Overview', 'Active units', 'count', String(dashboard.overview.totalActiveUnits)],
+    ['Overview', 'Sold value', 'amount', String(dashboard.overview.soldValue)],
+    ['Overview', 'Projected commission', 'amount', String(dashboard.overview.projectedCommission)],
+    ['Overview', 'PDF exports', 'count', String(dashboard.overview.pdfExports)],
+    ['Overview', 'Duplicate attempts', 'count', String(dashboard.overview.duplicateAttempts)],
+    ['Filters', 'Date window', 'value', filters.dateWindow],
+  ]
+
+  for (const row of dashboard.salesPerformance) {
+    rows.push(['Sales', row.userName, 'units created', String(row.unitsCreated)])
+    rows.push(['Sales', row.userName, 'sold value', String(row.soldValue)])
+    rows.push(['Sales', row.userName, 'activity count', String(row.activityCount)])
+  }
+
+  for (const project of dashboard.inventoryHealth) {
+    rows.push(['Inventory', project.projectName, 'total units', String(project.totalUnits)])
+    rows.push(['Inventory', project.projectName, 'hold ratio', String(project.holdRatio)])
+    rows.push(['Inventory', project.projectName, 'media completeness', String(project.mediaCompleteness)])
+  }
+
+  for (const point of dashboard.activityTimeline) {
+    rows.push(['Timeline', point.date, 'activity count', String(point.activityCount)])
+    rows.push(['Timeline', point.date, 'sold value', String(point.soldValue)])
+    rows.push(['Timeline', point.date, 'pdf exports', String(point.pdfExports)])
+  }
+
+  return rows.map((row) => row.map(csvCell).join(',')).join('\n')
 }
 
 function filterAnalyticsUnits(user: LeadraUser, units: LeadraUnit[]) {
@@ -99,7 +199,7 @@ function buildSalesPerformance(users: LeadraUser[], units: LeadraUnit[], events:
     .sort((a, b) => b.activityCount - a.activityCount || b.soldValue - a.soldValue)
 }
 
-function buildInventoryHealth(units: LeadraUnit[], now: Date): AnalyticsInventoryHealth[] {
+function buildInventoryHealth(units: LeadraUnit[], locale: LocaleCode, now: Date): AnalyticsInventoryHealth[] {
   const grouped = new Map<string, LeadraUnit[]>()
   for (const unit of units.filter((item) => !item.archived)) {
     grouped.set(unit.projectId, [...(grouped.get(unit.projectId) ?? []), unit])
@@ -125,11 +225,23 @@ function buildInventoryHealth(units: LeadraUnit[], now: Date): AnalyticsInventor
         staleUnits: projectUnits.filter((unit) => isStale(unit, now)).length,
       }
     })
-    .sort((a, b) => b.totalUnits - a.totalUnits || a.projectName.localeCompare(b.projectName))
+    .sort((a, b) => b.totalUnits - a.totalUnits || compareText(locale, a.projectName, b.projectName))
 }
 
-function buildActivityTimeline(events: AnalyticsEvent[]): AnalyticsTimelinePoint[] {
+function buildActivityTimeline(events: AnalyticsEvent[], filters: AnalyticsFilters = defaultAnalyticsFilters, now = defaultNow): AnalyticsTimelinePoint[] {
   const days = new Map<string, AnalyticsTimelinePoint>()
+  const { start, end } = getAnalyticsDateRange(filters, now)
+  for (let time = startOfDay(start).getTime(); time <= end.getTime(); time += 24 * 60 * 60 * 1000) {
+    const date = new Date(time).toISOString().slice(0, 10)
+    days.set(date, {
+      date,
+      unitsCreated: 0,
+      statusChanges: 0,
+      soldValue: 0,
+      pdfExports: 0,
+      activityCount: 0,
+    })
+  }
 
   for (const event of events) {
     const date = event.createdAt.slice(0, 10)
@@ -154,7 +266,51 @@ function buildActivityTimeline(events: AnalyticsEvent[]): AnalyticsTimelinePoint
   return Array.from(days.values()).sort((a, b) => a.date.localeCompare(b.date))
 }
 
-function buildTargetProgress(targets: AnalyticsTarget[], units: LeadraUnit[], events: AnalyticsEvent[]): AnalyticsTargetProgress[] {
+function filterUsersByFilters(users: LeadraUser[], filters: AnalyticsFilters) {
+  return users.filter((user) => {
+    if (filters.teamIds.length > 0 && !filters.teamIds.includes(user.teamId)) return false
+    if (filters.userIds.length > 0 && !filters.userIds.includes(user.id)) return false
+    return true
+  })
+}
+
+function filterUnitsByFilters(units: LeadraUnit[], filters: AnalyticsFilters) {
+  return units.filter((unit) => {
+    if (filters.teamIds.length > 0 && !filters.teamIds.includes(unit.teamId)) return false
+    if (filters.userIds.length > 0 && !filters.userIds.includes(unit.createdBy)) return false
+    if (filters.projectIds.length > 0 && !filters.projectIds.includes(unit.projectId)) return false
+    if (filters.developerIds.length > 0 && !filters.developerIds.includes(unit.developerId)) return false
+    if (filters.destinationIds.length > 0 && !filters.destinationIds.includes(unit.destinationId)) return false
+    if (filters.statuses.length > 0 && !filters.statuses.includes(unit.status)) return false
+    if (filters.paymentMethods.length > 0 && !filters.paymentMethods.includes(unit.paymentMethod)) return false
+    return true
+  })
+}
+
+function filterEventsByFilters(events: AnalyticsEvent[], units: LeadraUnit[], filters: AnalyticsFilters, now: Date) {
+  const { start, end } = getAnalyticsDateRange(filters, now)
+  const unitIds = new Set(units.map((unit) => unit.id))
+  return events.filter((event) => {
+    const createdAt = new Date(event.createdAt)
+    if (createdAt < start || createdAt > end) return false
+    if (filters.teamIds.length > 0 && event.teamId && !filters.teamIds.includes(event.teamId)) return false
+    if (filters.userIds.length > 0 && !filters.userIds.includes(event.actorId)) return false
+    if (event.unitId != null && !unitIds.has(event.unitId)) return false
+    if (event.unitId == null) {
+      if (filters.projectIds.length > 0 && (!event.projectId || !filters.projectIds.includes(event.projectId))) return false
+      if (filters.developerIds.length > 0 && (!event.developerId || !filters.developerIds.includes(event.developerId))) return false
+      if (filters.destinationIds.length > 0 && (!event.destinationId || !filters.destinationIds.includes(event.destinationId))) return false
+    }
+    return true
+  })
+}
+
+function buildTargetProgress(
+  targets: AnalyticsTarget[],
+  units: LeadraUnit[],
+  events: AnalyticsEvent[],
+  locale: LocaleCode,
+): AnalyticsTargetProgress[] {
   return targets.map((target) => {
     const targetUnits = units.filter((unit) => matchesTarget(target, unit.teamId, unit.createdBy))
     const targetEvents = events.filter((event) => matchesTarget(target, event.teamId, event.actorId))
@@ -165,7 +321,13 @@ function buildTargetProgress(targets: AnalyticsTarget[], units: LeadraUnit[], ev
 
     return {
       targetId: target.id,
-      label: `${target.scopeId ?? 'company'} ${target.period} target`,
+      label:
+        target.scopeId == null
+          ? translate(locale, 'analytics.targetLabel.company', { period: translate(locale, `analytics.period.${target.period}`) })
+          : translate(locale, 'analytics.targetLabel.scope', {
+              scopeId: target.scopeId,
+              period: translate(locale, `analytics.period.${target.period}`),
+            }),
       unitsCreatedProgress: percent(created, target.targetUnitsCreated),
       unitsSoldProgress: percent(sold.length, target.targetUnitsSold),
       soldValueProgress: percent(soldValue, target.targetSoldValue),
@@ -193,4 +355,30 @@ function percent(value: number, target: number) {
 
 function isStale(unit: LeadraUnit, now: Date) {
   return !unit.archived && unit.status !== 'sold' && now.getTime() - new Date(unit.updatedAt).getTime() > staleAfterMs
+}
+
+function uniqueOptions(options: { id: string; label: string }[]) {
+  const seen = new Map<string, string>()
+  for (const option of options) {
+    if (option.id && !seen.has(option.id)) seen.set(option.id, option.label)
+  }
+  return Array.from(seen.entries())
+    .map(([id, label]) => ({ id, label }))
+    .sort((a, b) => a.label.localeCompare(b.label))
+}
+
+function startOfDay(value: string | Date) {
+  const date = new Date(value)
+  date.setHours(0, 0, 0, 0)
+  return date
+}
+
+function endOfDay(value: string | Date) {
+  const date = new Date(value)
+  date.setHours(23, 59, 59, 999)
+  return date
+}
+
+function csvCell(value: string) {
+  return `"${value.replace(/"/g, '""')}"`
 }

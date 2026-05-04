@@ -1,8 +1,16 @@
 import type { SupabaseClient, User } from '@supabase/supabase-js'
 import { LeadraRepository } from './repository'
+import { compareText } from './i18n'
 import type {
+  AnalyticsChartPoint,
+  AnalyticsDashboard,
   AnalyticsEvent,
+  AnalyticsFilters,
+  AnalyticsInventoryHealth,
+  AnalyticsSalesPerformance,
   AnalyticsTarget,
+  AnalyticsTargetProgress,
+  AnalyticsTimelinePoint,
   AppDataState,
   AppSettings,
   AuditLogItem,
@@ -57,6 +65,12 @@ export async function loadSupabaseAppState(client: SupabaseClient): Promise<Remo
   }
 }
 
+export async function loadSupabaseAnalyticsDashboard(client: SupabaseClient, filters: AnalyticsFilters): Promise<AnalyticsDashboard> {
+  const { data, error } = await client.rpc('analytics_dashboard', { filters })
+  if (error) throw new Error(`Analytics load failed: ${error.message}`)
+  return toAnalyticsDashboard(data as Record<string, unknown>)
+}
+
 async function loadProfiles(client: SupabaseClient): Promise<LeadraUser[]> {
   const { data, error } = await client.from('profiles').select('*').order('role').order('full_name')
   if (error) throw new Error(`Users load failed: ${error.message}`)
@@ -69,14 +83,15 @@ async function loadLookupValues(client: SupabaseClient): Promise<LookupValue[]> 
     .select('id, kind, label, archived')
     .eq('archived', false)
     .order('kind')
-    .order('label')
   if (error) throw new Error(`Lookup values load failed: ${error.message}`)
-  return (data ?? []).map((row) => ({
-    id: String(row.id),
-    kind: row.kind,
-    label: row.label,
-    archived: row.archived,
-  }))
+  return (data ?? [])
+    .map((row) => ({
+      id: String(row.id),
+      kind: row.kind,
+      label: row.label,
+      archived: row.archived,
+    }))
+    .sort((first, second) => compareText('en', first.label, second.label))
 }
 
 async function loadSettings(client: SupabaseClient): Promise<AppSettings> {
@@ -95,13 +110,15 @@ async function loadSettings(client: SupabaseClient): Promise<AppSettings> {
 async function loadNotifications(client: SupabaseClient): Promise<NotificationItem[]> {
   const { data, error } = await client
     .from('notifications')
-    .select('id, user_id, audience_role, title, body, read_at, created_at')
+    .select('id, user_id, audience_role, title, body, message_key, message_params, read_at, created_at')
     .order('created_at', { ascending: false })
   if (error) throw new Error(`Notifications load failed: ${error.message}`)
   return (data ?? []).map((row) => ({
     id: String(row.id),
     title: row.title,
     body: row.body,
+    messageKey: row.message_key ?? null,
+    messageParams: row.message_params ?? null,
     audienceRole: row.audience_role ?? undefined,
     userId: row.user_id ?? undefined,
     createdAt: row.created_at,
@@ -112,7 +129,7 @@ async function loadNotifications(client: SupabaseClient): Promise<NotificationIt
 async function loadAuditLogs(client: SupabaseClient): Promise<AuditLogItem[]> {
   const { data, error } = await client
     .from('audit_logs')
-    .select('id, actor_role, action_type, previous_value, new_value, ip_address, created_at, actor:profiles!audit_logs_actor_id_fkey(full_name), unit:units!audit_logs_related_unit_id_fkey(unit_code)')
+    .select('id, actor_role, action_type, message_key, message_params, previous_value, new_value, ip_address, created_at, actor:profiles!audit_logs_actor_id_fkey(full_name), unit:units!audit_logs_related_unit_id_fkey(unit_code)')
     .order('created_at', { ascending: false })
   if (error) throw new Error(`Audit logs load failed: ${error.message}`)
   return (data ?? []).map((row) => ({
@@ -120,6 +137,8 @@ async function loadAuditLogs(client: SupabaseClient): Promise<AuditLogItem[]> {
     actorName: joinedLabel(row.actor, 'full_name') ?? 'Leadra user',
     actorRole: row.actor_role,
     actionType: row.action_type,
+    messageKey: row.message_key ?? null,
+    messageParams: row.message_params ?? null,
     relatedUnitCode: joinedLabel(row.unit, 'unit_code') ?? undefined,
     previousValue: row.previous_value == null ? null : JSON.stringify(row.previous_value),
     newValue: row.new_value == null ? null : JSON.stringify(row.new_value),
@@ -192,4 +211,118 @@ function joinedLabel(value: unknown, key: string): string | null {
   if (Array.isArray(value)) return joinedLabel(value[0], key)
   if (value && typeof value === 'object' && key in value) return String((value as Record<string, unknown>)[key])
   return null
+}
+
+function toAnalyticsDashboard(row: Record<string, unknown>): AnalyticsDashboard {
+  const overview = objectValue(row.overview)
+  return {
+    scopeLabel: String(row.scopeLabel ?? row.scope_label ?? 'Company-wide'),
+    overview: {
+      totalActiveUnits: numberValue(overview.totalActiveUnits ?? overview.total_active_units),
+      availableUnits: numberValue(overview.availableUnits ?? overview.available_units),
+      holdUnits: numberValue(overview.holdUnits ?? overview.hold_units),
+      soldUnits: numberValue(overview.soldUnits ?? overview.sold_units),
+      soldValue: numberValue(overview.soldValue ?? overview.sold_value),
+      projectedCommission: numberValue(overview.projectedCommission ?? overview.projected_commission),
+      activeUsers: numberValue(overview.activeUsers ?? overview.active_users),
+      duplicateAttempts: numberValue(overview.duplicateAttempts ?? overview.duplicate_attempts),
+      pdfExports: numberValue(overview.pdfExports ?? overview.pdf_exports),
+      inactiveUsers: numberValue(overview.inactiveUsers ?? overview.inactive_users),
+      archivedUnits: numberValue(overview.archivedUnits ?? overview.archived_units),
+      staleUnits: numberValue(overview.staleUnits ?? overview.stale_units),
+    },
+    salesPerformance: arrayValue(row.salesPerformance ?? row.sales_performance).map(toSalesPerformance),
+    inventoryHealth: arrayValue(row.inventoryHealth ?? row.inventory_health).map(toInventoryHealth),
+    activityTimeline: arrayValue(row.activityTimeline ?? row.activity_timeline).map(toTimelinePoint),
+    soldValueTrend: arrayValue(row.soldValueTrend ?? row.sold_value_trend).map(toChartPoint),
+    pdfExportTrend: arrayValue(row.pdfExportTrend ?? row.pdf_export_trend).map(toChartPoint),
+    targetProgress: arrayValue(row.targetProgress ?? row.target_progress).map(toTargetProgress),
+    filterOptions: {
+      teams: arrayValue(objectValue(row.filterOptions ?? row.filter_options).teams).map(toOption),
+      users: arrayValue(objectValue(row.filterOptions ?? row.filter_options).users).map(toOption),
+      projects: arrayValue(objectValue(row.filterOptions ?? row.filter_options).projects).map(toOption),
+      developers: arrayValue(objectValue(row.filterOptions ?? row.filter_options).developers).map(toOption),
+      destinations: arrayValue(objectValue(row.filterOptions ?? row.filter_options).destinations).map(toOption),
+    },
+  }
+}
+
+function toSalesPerformance(row: Record<string, unknown>): AnalyticsSalesPerformance {
+  return {
+    userId: String(row.userId ?? row.user_id ?? ''),
+    userName: String(row.userName ?? row.user_name ?? 'Leadra user'),
+    role: 'sales',
+    teamId: String(row.teamId ?? row.team_id ?? ''),
+    unitsCreated: numberValue(row.unitsCreated ?? row.units_created),
+    unitsSold: numberValue(row.unitsSold ?? row.units_sold),
+    soldValue: numberValue(row.soldValue ?? row.sold_value),
+    commissionContribution: numberValue(row.commissionContribution ?? row.commission_contribution),
+    activityCount: numberValue(row.activityCount ?? row.activity_count),
+    lastActivityAt: typeof (row.lastActivityAt ?? row.last_activity_at) === 'string' ? String(row.lastActivityAt ?? row.last_activity_at) : null,
+  }
+}
+
+function toInventoryHealth(row: Record<string, unknown>): AnalyticsInventoryHealth {
+  return {
+    projectId: String(row.projectId ?? row.project_id ?? ''),
+    projectName: String(row.projectName ?? row.project_name ?? 'Unknown project'),
+    developerName: String(row.developerName ?? row.developer_name ?? 'Unknown developer'),
+    destinationName: String(row.destinationName ?? row.destination_name ?? 'Unknown destination'),
+    totalUnits: numberValue(row.totalUnits ?? row.total_units),
+    availableUnits: numberValue(row.availableUnits ?? row.available_units),
+    holdUnits: numberValue(row.holdUnits ?? row.hold_units),
+    soldUnits: numberValue(row.soldUnits ?? row.sold_units),
+    holdRatio: numberValue(row.holdRatio ?? row.hold_ratio),
+    averagePrice: numberValue(row.averagePrice ?? row.average_price),
+    mediaCompleteness: numberValue(row.mediaCompleteness ?? row.media_completeness),
+    staleUnits: numberValue(row.staleUnits ?? row.stale_units),
+  }
+}
+
+function toTimelinePoint(row: Record<string, unknown>): AnalyticsTimelinePoint {
+  return {
+    date: String(row.date ?? row.activity_date ?? ''),
+    unitsCreated: numberValue(row.unitsCreated ?? row.units_created),
+    statusChanges: numberValue(row.statusChanges ?? row.status_changes),
+    soldValue: numberValue(row.soldValue ?? row.sold_value),
+    pdfExports: numberValue(row.pdfExports ?? row.pdf_exports),
+    activityCount: numberValue(row.activityCount ?? row.activity_count),
+  }
+}
+
+function toChartPoint(row: Record<string, unknown>): AnalyticsChartPoint {
+  return {
+    date: String(row.date ?? ''),
+    label: String(row.label ?? row.date ?? ''),
+    value: numberValue(row.value),
+  }
+}
+
+function toTargetProgress(row: Record<string, unknown>): AnalyticsTargetProgress {
+  return {
+    targetId: String(row.targetId ?? row.target_id ?? ''),
+    label: String(row.label ?? 'Target'),
+    unitsCreatedProgress: numberValue(row.unitsCreatedProgress ?? row.units_created_progress),
+    unitsSoldProgress: numberValue(row.unitsSoldProgress ?? row.units_sold_progress),
+    soldValueProgress: numberValue(row.soldValueProgress ?? row.sold_value_progress),
+    commissionProgress: numberValue(row.commissionProgress ?? row.commission_progress),
+    activityProgress: numberValue(row.activityProgress ?? row.activity_progress),
+  }
+}
+
+function toOption(row: Record<string, unknown>) {
+  return { id: String(row.id ?? ''), label: String(row.label ?? '') }
+}
+
+function arrayValue(value: unknown): Record<string, unknown>[] {
+  return Array.isArray(value) ? (value as Record<string, unknown>[]) : []
+}
+
+function objectValue(value: unknown): Record<string, unknown> {
+  return value && typeof value === 'object' && !Array.isArray(value) ? (value as Record<string, unknown>) : {}
+}
+
+function numberValue(value: unknown): number {
+  const number = Number(value ?? 0)
+  return Number.isFinite(number) ? number : 0
 }

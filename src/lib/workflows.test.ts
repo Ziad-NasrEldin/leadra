@@ -4,6 +4,8 @@ import {
   archiveUnitWorkflow,
   createUnitWorkflow,
   createUserWorkflow,
+  deleteUnitAdminNoteWorkflow,
+  saveUnitAdminNoteWorkflow,
   signInWorkflow,
   updateSettingsWorkflow,
   updateUnitStatusWorkflow,
@@ -182,6 +184,37 @@ describe('Leadra product workflows', () => {
     expect(archived.ok).toBe(true)
     expect(archived.state.units.find((unit) => unit.id === 105)?.archived).toBe(true)
     expect(archived.state.analyticsEvents.at(0)?.eventType).toBe('unit_archived')
+  })
+
+  it('lets authorized roles save, replace, and delete the single shared admin note', () => {
+    const created = saveUnitAdminNoteWorkflow(state(), admin, 106, 'Need legal review before relisting.')
+    expect(created.ok).toBe(true)
+    expect(created.state.units.find((unit) => unit.id === 106)?.adminManagerNotes).toHaveLength(1)
+    expect(created.state.auditLogs.at(0)?.actionType).toBe('Admin/manager note added')
+    expect(created.state.analyticsEvents.at(0)?.eventType).toBe('note_added')
+
+    const updated = saveUnitAdminNoteWorkflow(created.state, admin, 106, 'Legal review completed. Ready to relist.')
+    expect(updated.ok).toBe(true)
+    expect(updated.state.units.find((unit) => unit.id === 106)?.adminManagerNotes[0]?.content).toBe('Legal review completed. Ready to relist.')
+    expect(updated.state.auditLogs.at(0)?.actionType).toBe('Admin/manager note updated')
+    expect(updated.state.analyticsEvents.at(0)?.eventType).toBe('note_updated')
+
+    const deleted = deleteUnitAdminNoteWorkflow(updated.state, admin, 106)
+    expect(deleted.ok).toBe(true)
+    expect(deleted.state.units.find((unit) => unit.id === 106)?.adminManagerNotes).toHaveLength(0)
+    expect(deleted.state.auditLogs.at(0)?.actionType).toBe('Admin/manager note deleted')
+    expect(deleted.state.analyticsEvents.at(0)?.eventType).toBe('note_deleted')
+  })
+
+  it('can clear a unit back to available and blocks sales users from managing admin notes', () => {
+    const available = updateUnitStatusWorkflow(state(), sales, 106, 'available')
+    expect(available.ok).toBe(true)
+    expect(available.state.units.find((unit) => unit.id === 106)?.status).toBe('available')
+    expect(available.state.auditLogs.at(0)?.actionType).toBe('Unit marked Available')
+
+    const denied = saveUnitAdminNoteWorkflow(state(), sales, 105, 'Should not be allowed.')
+    expect(denied.ok).toBe(false)
+    expect(denied.error).toContain('Only Admin, Sub Admin, and Manager')
   })
 
   it('limits settings changes to admin and sub-admin roles', () => {

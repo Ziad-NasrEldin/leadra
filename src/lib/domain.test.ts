@@ -185,7 +185,7 @@ describe('Leadra domain rules', () => {
     expect(getThumbnailMedia(files)?.id).toBe('i1')
     expect(
       validateMediaUpload([{ id: 'big', type: 'image', url: '/big.jpg', name: 'big.jpg', sizeBytes: 41 * 1024 * 1024 }]),
-    ).toEqual({
+    ).toMatchObject({
       ok: false,
       message:
         'Upload failed. Total media size exceeds 40 MB per unit. Please remove or compress some files.',
@@ -200,7 +200,7 @@ describe('Leadra domain rules', () => {
           sizeBytes: 1000,
         })),
       ),
-    ).toEqual({
+    ).toMatchObject({
       ok: false,
       message: 'Upload failed. A unit can include up to 10 media files.',
     })

@@ -12,6 +12,8 @@ export type AnalyticsEventType =
   | 'unit_archived'
   | 'media_uploaded'
   | 'note_added'
+  | 'note_updated'
+  | 'note_deleted'
   | 'pdf_generated'
   | 'pdf_shared_or_downloaded'
   | 'duplicate_phone_blocked'
@@ -23,6 +25,7 @@ export type AnalyticsEventType =
   | 'settings_updated'
 export type AnalyticsTargetScope = 'company' | 'team' | 'user'
 export type AnalyticsTargetPeriod = 'monthly' | 'quarterly'
+export type MessageParams = Record<string, string | number | boolean | null | undefined>
 
 export interface LeadraUser {
   id: string
@@ -134,6 +137,8 @@ export interface PaymentSummary {
 export interface MediaValidation {
   ok: boolean
   message?: string
+  messageKey?: string | null
+  messageParams?: MessageParams | null
 }
 
 export interface UnitFilters {
@@ -166,6 +171,8 @@ export interface NotificationItem {
   id: string
   title: string
   body: string
+  messageKey?: string | null
+  messageParams?: MessageParams | null
   audienceRole?: UserRole
   userId?: string
   createdAt: string
@@ -177,6 +184,8 @@ export interface AuditLogItem {
   actorName: string
   actorRole: UserRole
   actionType: string
+  messageKey?: string | null
+  messageParams?: MessageParams | null
   relatedUnitCode?: string
   previousValue?: string | null
   newValue?: string | null
@@ -282,13 +291,50 @@ export interface AnalyticsTargetProgress {
   activityProgress: number
 }
 
+export type AnalyticsDateWindow = 'live' | '30d' | '90d' | 'custom'
+
+export interface AnalyticsFilters {
+  dateWindow: AnalyticsDateWindow
+  startDate?: string
+  endDate?: string
+  teamIds: string[]
+  userIds: string[]
+  projectIds: string[]
+  developerIds: string[]
+  destinationIds: string[]
+  statuses: UnitStatus[]
+  paymentMethods: PaymentMethod[]
+}
+
+export interface AnalyticsFilterOption {
+  id: string
+  label: string
+}
+
+export interface AnalyticsFilterOptions {
+  teams: AnalyticsFilterOption[]
+  users: AnalyticsFilterOption[]
+  projects: AnalyticsFilterOption[]
+  developers: AnalyticsFilterOption[]
+  destinations: AnalyticsFilterOption[]
+}
+
+export interface AnalyticsChartPoint {
+  date: string
+  label: string
+  value: number
+}
+
 export interface AnalyticsDashboard {
   scopeLabel: string
   overview: AnalyticsOverviewSummary
   salesPerformance: AnalyticsSalesPerformance[]
   inventoryHealth: AnalyticsInventoryHealth[]
   activityTimeline: AnalyticsTimelinePoint[]
+  soldValueTrend: AnalyticsChartPoint[]
+  pdfExportTrend: AnalyticsChartPoint[]
   targetProgress: AnalyticsTargetProgress[]
+  filterOptions: AnalyticsFilterOptions
 }
 
 export interface AppSettings {
@@ -354,5 +400,5 @@ export interface CreateUnitInput {
 }
 
 export type WorkflowResult<T = AppDataState> =
-  | { ok: true; state: T; error?: never }
-  | { ok: false; state: T; error: string }
+  | { ok: true; state: T; error?: never; errorKey?: never; errorParams?: never }
+  | { ok: false; state: T; error: string; errorKey?: string | null; errorParams?: MessageParams | null }

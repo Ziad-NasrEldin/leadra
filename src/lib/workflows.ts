@@ -1,5 +1,6 @@
 import {
   calculatePaymentSummary,
+  canAddAdminManagerNote,
   canArchiveUnit,
   canViewUnit,
   generateUnitCode,
@@ -21,16 +22,22 @@ import type {
   UnitStatus,
   WorkflowResult,
 } from './types'
+import {
+  createAuditMessage,
+  createErrorMessage,
+  createNotificationMessage,
+  type LocalizedMessageRef,
+} from './systemMessages'
 
 export function signInWorkflow(state: AppDataState, email: string): WorkflowResult<LeadraUser> {
   const user = state.users.find((item) => item.email.toLowerCase() === email.toLowerCase())
 
   if (!user) {
-    return { ok: false, state: emptyUser(), error: 'Invalid email or password.' }
+    return { ok: false, state: emptyUser(), ...createErrorMessage('error.invalidEmailOrPassword', 'Invalid email or password.') }
   }
 
   if (user.status !== 'active') {
-    return { ok: false, state: user, error: 'Inactive users cannot log in.' }
+    return { ok: false, state: user, ...createErrorMessage('error.inactiveUsersCannotLogIn', 'Inactive users cannot log in.') }
   }
 
   return { ok: true, state: { ...user, lastLoginAt: new Date().toISOString() } }
@@ -42,11 +49,11 @@ export function createUserWorkflow(
   input: CreateUserInput,
 ): WorkflowResult {
   if (!isAdminActor(actor)) {
-    return { ok: false, state, error: 'Only Admin and Sub Admin can create users.' }
+    return { ok: false, state, ...createErrorMessage('error.onlyAdminsCanCreateUsers', 'Only Admin and Sub Admin can create users.') }
   }
 
   if (state.users.some((user) => user.email.toLowerCase() === input.email.toLowerCase())) {
-    return { ok: false, state, error: 'A user with this email already exists.' }
+    return { ok: false, state, ...createErrorMessage('error.userWithEmailExists', 'A user with this email already exists.') }
   }
 
   const user: LeadraUser = {
@@ -63,10 +70,11 @@ export function createUserWorkflow(
         users: [...state.users, user],
       },
       actor,
-      'User created',
+      createAuditMessage('user_created').text,
       undefined,
       undefined,
       { email: user.email, role: user.role },
+      createAuditMessage('user_created'),
     ),
     actor,
     'settings_updated',
@@ -86,7 +94,13 @@ export function createUnitWorkflow(
 ): WorkflowResult {
   const mediaValidation = validateMediaUpload(input.media)
   if (!mediaValidation.ok) {
-    return { ok: false, state, error: mediaValidation.message ?? 'Invalid media upload.' }
+    return {
+      ok: false,
+      state,
+      error: mediaValidation.message ?? 'Invalid media upload.',
+      errorKey: mediaValidation.messageKey ?? 'error.invalidMediaUpload',
+      errorParams: mediaValidation.messageParams ?? null,
+    }
   }
 
   const normalizedOwnerPhone = normalizeOwnerPhone(input.originalOwnerPhone, input.countryCode)
@@ -152,10 +166,11 @@ export function createUnitWorkflow(
       withAudit(
         state,
         actor,
-        'Duplicate owner phone attempt inside same project',
+        createAuditMessage('duplicate_phone_blocked').text,
         candidate.unitCode,
         undefined,
         { projectId: candidate.projectId, normalizedOwnerPhone },
+        createAuditMessage('duplicate_phone_blocked'),
       ),
       actor,
       'duplicate_phone_blocked',
@@ -166,8 +181,15 @@ export function createUnitWorkflow(
     )
     return {
       ok: false,
-      state: withNotification(nextState, 'Duplicate owner phone attempt', 'Same-project duplicate owner phone was blocked.', 'admin'),
-      error: 'Duplicate owner phone blocked: the same normalized phone already exists inside this project.',
+      state: withNotification(
+        nextState,
+        createNotificationMessage('duplicate_phone_blocked', {}),
+        'admin',
+      ),
+      ...createErrorMessage(
+        'error.duplicateOwnerPhoneBlocked',
+        'Duplicate owner phone blocked: the same normalized phone already exists inside this project.',
+      ),
     }
   }
 
@@ -181,7 +203,15 @@ export function createUnitWorkflow(
     state: withNotification(
       withAnalyticsEvent(
         withAnalyticsEvent(
-          withAudit(nextState, actor, 'Unit created', candidate.unitCode, undefined, { unitCode: candidate.unitCode }),
+          withAudit(
+            nextState,
+            actor,
+            createAuditMessage('unit_created').text,
+            candidate.unitCode,
+            undefined,
+            { unitCode: candidate.unitCode },
+            createAuditMessage('unit_created'),
+          ),
           actor,
           'media_uploaded',
           {
@@ -202,9 +232,8 @@ export function createUnitWorkflow(
           commissionValue: candidate.commissionAmount,
           metadata: { unitCode: candidate.unitCode, mediaCount: candidate.media.length },
         },
-      ),
-      'New unit uploaded',
-      `${actor.fullName} uploaded ${candidate.unitCode}.`,
+        ),
+      createNotificationMessage('new_unit_uploaded', { actorName: actor.fullName, unitCode: candidate.unitCode }),
       'admin',
     ),
   }
@@ -212,8 +241,8 @@ export function createUnitWorkflow(
 
 export function archiveUnitWorkflow(state: AppDataState, actor: LeadraUser, unitId: number): WorkflowResult {
   const unit = state.units.find((item) => item.id === unitId)
-  if (!unit) return { ok: false, state, error: 'Unit not found.' }
-  if (!canArchiveUnit(actor, unit)) return { ok: false, state, error: 'Archive is not allowed for this role.' }
+  if (!unit) return { ok: false, state, ...createErrorMessage('error.unitNotFound', 'Unit not found.') }
+  if (!canArchiveUnit(actor, unit)) return { ok: false, state, ...createErrorMessage('error.archiveNotAllowed', 'Archive is not allowed for this role.') }
 
   const nextState = {
     ...state,
@@ -225,7 +254,15 @@ export function archiveUnitWorkflow(state: AppDataState, actor: LeadraUser, unit
   return {
     ok: true,
     state: withAnalyticsEvent(
-      withAudit(nextState, actor, 'Unit archived', unit.unitCode, { archived: false }, { archived: true }),
+      withAudit(
+        nextState,
+        actor,
+        createAuditMessage('unit_archived').text,
+        unit.unitCode,
+        { archived: false },
+        { archived: true },
+        createAuditMessage('unit_archived'),
+      ),
       actor,
       'unit_archived',
       { unit, metadata: { unitCode: unit.unitCode } },
@@ -240,8 +277,8 @@ export function updateUnitStatusWorkflow(
   status: UnitStatus,
 ): WorkflowResult {
   const unit = state.units.find((item) => item.id === unitId)
-  if (!unit) return { ok: false, state, error: 'Unit not found.' }
-  if (!canViewUnit(actor, unit)) return { ok: false, state, error: 'Unit is outside your visibility scope.' }
+  if (!unit) return { ok: false, state, ...createErrorMessage('error.unitNotFound', 'Unit not found.') }
+  if (!canViewUnit(actor, unit)) return { ok: false, state, ...createErrorMessage('error.unitOutsideVisibility', 'Unit is outside your visibility scope.') }
 
   const nextState = {
     ...state,
@@ -249,13 +286,19 @@ export function updateUnitStatusWorkflow(
       item.id === unitId ? { ...item, status, updatedAt: new Date().toISOString() } : item,
     ),
   }
-  const label = status === 'hold' ? 'Hold' : status === 'sold' ? 'Sold' : 'Available'
+  const auditMessage = createAuditMessage('unit_marked', { status })
+  const notificationMessage = createNotificationMessage('unit_marked', {
+    unitCode: unit.unitCode,
+    fromStatus: unit.status,
+    toStatus: status,
+    status,
+  })
 
   return {
     ok: true,
     state: withNotification(
       withAnalyticsEvent(
-        withAudit(nextState, actor, `Unit marked ${label}`, unit.unitCode, { status: unit.status }, { status }),
+        withAudit(nextState, actor, auditMessage.text, unit.unitCode, { status: unit.status }, { status }, auditMessage),
         actor,
         'status_changed',
         {
@@ -267,8 +310,128 @@ export function updateUnitStatusWorkflow(
           metadata: { unitCode: unit.unitCode },
         },
       ),
-      `Unit marked ${label}`,
-      `${unit.unitCode} changed from ${unit.status} to ${status}.`,
+      notificationMessage,
+      actor.role === 'sales' ? undefined : 'admin',
+      unit.createdBy,
+    ),
+  }
+}
+
+export function saveUnitAdminNoteWorkflow(
+  state: AppDataState,
+  actor: LeadraUser,
+  unitId: number,
+  content: string,
+): WorkflowResult {
+  const unit = state.units.find((item) => item.id === unitId)
+  if (!unit) return { ok: false, state, ...createErrorMessage('error.unitNotFound', 'Unit not found.') }
+  if (!canViewUnit(actor, unit) || !canAddAdminManagerNote(actor)) {
+    return { ok: false, state, ...createErrorMessage('error.notePermissionDenied', 'Only Admin, Sub Admin, and Manager can manage this note.') }
+  }
+
+  const nextContent = content.trim()
+  if (nextContent.length === 0) {
+    return { ok: false, state, ...createErrorMessage('error.noteCannotBeEmpty', 'Note cannot be empty.') }
+  }
+
+  const existingNote = unit.adminManagerNotes[0] ?? null
+  const nextNote = {
+    id: existingNote?.id ?? `note-${Date.now()}`,
+    content: nextContent,
+    createdBy: actor.id,
+    createdByName: actor.fullName,
+    role: actor.role,
+    createdAt: new Date().toISOString(),
+  }
+  const eventType = existingNote ? 'note_updated' : 'note_added'
+  const auditMessage = existingNote
+    ? createAuditMessage('admin_manager_note_updated')
+    : createAuditMessage('admin_manager_note_added')
+  const notificationMessage = existingNote
+    ? createNotificationMessage('admin_note_updated', { actorName: actor.fullName, unitCode: unit.unitCode })
+    : createNotificationMessage('new_admin_note', { actorName: actor.fullName, unitCode: unit.unitCode })
+  const nextState = {
+    ...state,
+    units: state.units.map((item) =>
+      item.id === unitId
+        ? { ...item, adminManagerNotes: [nextNote], updatedAt: new Date().toISOString() }
+        : item,
+    ),
+  }
+
+  return {
+    ok: true,
+    state: withNotification(
+      withAnalyticsEvent(
+        withAudit(
+          nextState,
+          actor,
+          auditMessage.text,
+          unit.unitCode,
+          existingNote?.content ?? null,
+          nextContent,
+          auditMessage,
+        ),
+        actor,
+        eventType,
+        {
+          unit,
+          metadata: { unitCode: unit.unitCode, noteRole: actor.role },
+        },
+      ),
+      notificationMessage,
+      actor.role === 'sales' ? undefined : 'admin',
+      unit.createdBy,
+    ),
+  }
+}
+
+export function deleteUnitAdminNoteWorkflow(
+  state: AppDataState,
+  actor: LeadraUser,
+  unitId: number,
+): WorkflowResult {
+  const unit = state.units.find((item) => item.id === unitId)
+  if (!unit) return { ok: false, state, ...createErrorMessage('error.unitNotFound', 'Unit not found.') }
+  if (!canViewUnit(actor, unit) || !canAddAdminManagerNote(actor)) {
+    return { ok: false, state, ...createErrorMessage('error.notePermissionDenied', 'Only Admin, Sub Admin, and Manager can manage this note.') }
+  }
+
+  const existingNote = unit.adminManagerNotes[0] ?? null
+  if (!existingNote) {
+    return { ok: false, state, ...createErrorMessage('error.noteMissing', 'No shared note exists for this unit.') }
+  }
+
+  const nextState = {
+    ...state,
+    units: state.units.map((item) =>
+      item.id === unitId
+        ? { ...item, adminManagerNotes: [], updatedAt: new Date().toISOString() }
+        : item,
+    ),
+  }
+
+  return {
+    ok: true,
+    state: withNotification(
+      withAnalyticsEvent(
+        withAudit(
+          nextState,
+          actor,
+          createAuditMessage('admin_manager_note_deleted').text,
+          unit.unitCode,
+          existingNote.content,
+          null,
+          createAuditMessage('admin_manager_note_deleted'),
+        ),
+        actor,
+        'note_deleted',
+        {
+          unit,
+          metadata: { unitCode: unit.unitCode, noteRole: actor.role },
+        },
+      ),
+      createNotificationMessage('admin_note_deleted', { actorName: actor.fullName, unitCode: unit.unitCode }),
       actor.role === 'sales' ? undefined : 'admin',
       unit.createdBy,
     ),
@@ -281,14 +444,22 @@ export function updateSettingsWorkflow(
   patch: Partial<AppSettings>,
 ): WorkflowResult {
   if (!isAdminActor(actor)) {
-    return { ok: false, state, error: 'Only Admin and Sub Admin can update settings.' }
+    return { ok: false, state, ...createErrorMessage('error.onlyAdminsUpdateSettings', 'Only Admin and Sub Admin can update settings.') }
   }
 
   const settings = { ...state.settings, ...patch }
   return {
     ok: true,
     state: withAnalyticsEvent(
-      withAudit({ ...state, settings }, actor, 'Settings updated', undefined, state.settings, settings),
+      withAudit(
+        { ...state, settings },
+        actor,
+        createAuditMessage('settings_updated').text,
+        undefined,
+        state.settings,
+        settings,
+        createAuditMessage('settings_updated'),
+      ),
       actor,
       'settings_updated',
       { metadata: { operation: 'settings_updated' } },
@@ -317,12 +488,15 @@ function withAudit(
   relatedUnitCode?: string,
   previousValue?: unknown,
   newValue?: unknown,
+  message?: LocalizedMessageRef,
 ): AppDataState {
   const item: AuditLogItem = {
     id: `audit-${Date.now()}-${state.auditLogs.length}`,
     actorName: actor.fullName,
     actorRole: actor.role,
     actionType,
+    messageKey: message?.messageKey ?? null,
+    messageParams: message?.messageParams ?? null,
     relatedUnitCode,
     previousValue: previousValue == null ? null : JSON.stringify(previousValue),
     newValue: newValue == null ? null : JSON.stringify(newValue),
@@ -335,15 +509,23 @@ function withAudit(
 
 function withNotification(
   state: AppDataState,
-  title: string,
-  body: string,
+  message: {
+    title: {
+      text: string
+      messageKey?: string | null
+      messageParams?: Record<string, string | number | boolean | null | undefined> | null
+    }
+    body: { text: string; messageKey?: string | null; messageParams?: Record<string, string | number | boolean | null | undefined> | null }
+  },
   audienceRole?: LeadraUser['role'],
   userId?: string,
 ): AppDataState {
   const item: NotificationItem = {
     id: `notification-${Date.now()}-${state.notifications.length}`,
-    title,
-    body,
+    title: message.title.text,
+    body: message.body.text,
+    messageKey: message.body.messageKey ?? null,
+    messageParams: message.body.messageParams ?? null,
     audienceRole,
     userId,
     createdAt: new Date().toISOString(),

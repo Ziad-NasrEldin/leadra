@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { initialAppState } from '../data/seed'
-import { buildAnalyticsDashboard, canAccessAnalytics } from './analytics'
+import { buildAnalyticsCsv, buildAnalyticsDashboard, canAccessAnalytics, getAnalyticsDateRange } from './analytics'
 import type { AnalyticsTarget, LeadraUser } from './types'
 
 const admin = initialAppState.users.find((user) => user.role === 'admin') as LeadraUser
@@ -65,5 +65,27 @@ describe('analytics dashboard calculations', () => {
     expect(dashboard.overview.projectedCommission).toBe(75_000)
     expect(dashboard.salesPerformance).toHaveLength(1)
     expect(JSON.stringify(dashboard.activityTimeline)).not.toMatch(/owner|phone|Hassan|Mariam/i)
+  })
+
+  it('maps analytics date windows to concrete ranges', () => {
+    const now = new Date('2026-05-04T12:00:00.000Z')
+
+    expect(getAnalyticsDateRange({ dateWindow: 'live', teamIds: [], userIds: [], projectIds: [], developerIds: [], destinationIds: [], statuses: [], paymentMethods: [] }, now).start.toISOString().slice(0, 10)).toBe('2026-04-28')
+    expect(getAnalyticsDateRange({ dateWindow: '30d', teamIds: [], userIds: [], projectIds: [], developerIds: [], destinationIds: [], statuses: [], paymentMethods: [] }, now).start.toISOString().slice(0, 10)).toBe('2026-04-05')
+    expect(getAnalyticsDateRange({ dateWindow: '90d', teamIds: [], userIds: [], projectIds: [], developerIds: [], destinationIds: [], statuses: [], paymentMethods: [] }, now).start.toISOString().slice(0, 10)).toBe('2026-02-04')
+    expect(getAnalyticsDateRange({ dateWindow: 'custom', startDate: '2026-03-01', endDate: '2026-03-15', teamIds: [], userIds: [], projectIds: [], developerIds: [], destinationIds: [], statuses: [], paymentMethods: [] }, now).end.toISOString().slice(0, 10)).toBe('2026-03-15')
+  })
+
+  it('exports aggregate CSV without owner-sensitive fields', () => {
+    const filters = { dateWindow: '30d' as const, teamIds: [], userIds: [], projectIds: [], developerIds: [], destinationIds: [], statuses: [], paymentMethods: [] }
+    const dashboard = buildAnalyticsDashboard(admin, {
+      ...initialAppState,
+      analyticsTargets: [monthlyTarget],
+    }, 'en', new Date('2026-05-04T12:00:00.000Z'), filters)
+    const csv = buildAnalyticsCsv(dashboard, filters)
+
+    expect(csv).toMatch(/Overview/)
+    expect(csv).toMatch(/Sales/)
+    expect(csv).not.toMatch(/owner|phone|normalized|Hassan|Mariam/i)
   })
 })
