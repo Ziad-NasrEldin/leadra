@@ -8,6 +8,25 @@ create type public.installment_type as enum ('quarterly', 'semi_annual', 'annual
 create type public.lookup_kind as enum ('developer', 'project', 'destination', 'view', 'unit_type', 'finish');
 create type public.media_type as enum ('image', 'video');
 create type public.notification_channel as enum ('in_app', 'email');
+create type public.analytics_event_type as enum (
+  'unit_created',
+  'unit_updated',
+  'status_changed',
+  'unit_archived',
+  'media_uploaded',
+  'note_added',
+  'pdf_generated',
+  'pdf_shared_or_downloaded',
+  'duplicate_phone_blocked',
+  'price_updated',
+  'payment_updated',
+  'installment_updated',
+  'user_login',
+  'inactive_user_detected',
+  'settings_updated'
+);
+create type public.analytics_target_scope as enum ('company', 'team', 'user');
+create type public.analytics_target_period as enum ('monthly', 'quarterly');
 
 create table public.branches (
   id uuid primary key default gen_random_uuid(),
@@ -163,6 +182,56 @@ create table public.notification_preferences (
   updated_at timestamptz not null default now()
 );
 
+create table public.analytics_events (
+  id uuid primary key default gen_random_uuid(),
+  event_type public.analytics_event_type not null,
+  actor_id uuid references public.profiles(id),
+  actor_role public.user_role not null,
+  team_id uuid references public.teams(id),
+  branch_id uuid references public.branches(id),
+  unit_id bigint references public.units(id),
+  project_id uuid references public.lookup_values(id),
+  developer_id uuid references public.lookup_values(id),
+  destination_id uuid references public.lookup_values(id),
+  unit_status_before public.unit_status,
+  unit_status_after public.unit_status,
+  amount_value numeric(14,2),
+  commission_value numeric(14,2),
+  metadata jsonb not null default '{}'::jsonb,
+  created_at timestamptz not null default now(),
+  constraint analytics_events_metadata_no_owner_data check (
+    metadata::text !~* '(owner|phone|normalized_owner|original_owner)'
+  )
+);
+
+create index analytics_events_created_at_idx on public.analytics_events(created_at desc);
+create index analytics_events_scope_idx on public.analytics_events(team_id, event_type, created_at desc);
+create index analytics_events_unit_idx on public.analytics_events(unit_id);
+
+create table public.analytics_targets (
+  id uuid primary key default gen_random_uuid(),
+  scope_type public.analytics_target_scope not null,
+  scope_id uuid,
+  period public.analytics_target_period not null,
+  target_units_created integer not null default 0 check (target_units_created >= 0),
+  target_units_sold integer not null default 0 check (target_units_sold >= 0),
+  target_sold_value numeric(14,2) not null default 0 check (target_sold_value >= 0),
+  target_commission numeric(14,2) not null default 0 check (target_commission >= 0),
+  target_activity_events integer not null default 0 check (target_activity_events >= 0),
+  starts_at timestamptz not null,
+  ends_at timestamptz not null,
+  created_by uuid references public.profiles(id),
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now(),
+  constraint analytics_targets_scope_required check (
+    (scope_type = 'company' and scope_id is null)
+    or (scope_type in ('team', 'user') and scope_id is not null)
+  ),
+  constraint analytics_targets_valid_window check (ends_at > starts_at)
+);
+
+create index analytics_targets_scope_idx on public.analytics_targets(scope_type, scope_id, starts_at, ends_at);
+
 create or replace function public.current_profile()
 returns public.profiles
 language sql
@@ -269,6 +338,8 @@ alter table public.unit_notes enable row level security;
 alter table public.audit_logs enable row level security;
 alter table public.notifications enable row level security;
 alter table public.notification_preferences enable row level security;
+alter table public.analytics_events enable row level security;
+alter table public.analytics_targets enable row level security;
 
 create policy "active users read branches" on public.branches for select using (public.current_role() is not null);
 create policy "active users read teams" on public.teams for select using (public.current_role() is not null);
@@ -335,6 +406,175 @@ create policy "active users insert notifications" on public.notifications for in
 
 create policy "users manage own notification preferences" on public.notification_preferences
 for all using (user_id = auth.uid()) with check (user_id = auth.uid());
+
+create policy "analytics events visibility by role" on public.analytics_events
+for select using (
+  public.current_role() in ('admin', 'sub_admin')
+  or (public.current_role() = 'manager' and team_id = public.current_team_id())
+);
+create policy "active users insert analytics events" on public.analytics_events
+for insert with check (public.current_role() is not null and (actor_id is null or actor_id = auth.uid()));
+
+create policy "analytics targets visibility by role" on public.analytics_targets
+for select using (
+  public.current_role() in ('admin', 'sub_admin')
+  or (public.current_role() = 'manager' and scope_type = 'team' and scope_id = public.current_team_id())
+);
+create policy "admins manage analytics targets" on public.analytics_targets
+for all using (public.current_role() in ('admin', 'sub_admin')) with check (public.current_role() in ('admin', 'sub_admin'));
+
+create or replace function public.analytics_overview_summary()
+returns table (
+  total_active_units bigint,
+  available_units bigint,
+  hold_units bigint,
+  sold_units bigint,
+  sold_value numeric,
+  projected_commission numeric,
+  active_users bigint,
+  duplicate_attempts bigint,
+  pdf_exports bigint,
+  inactive_users bigint,
+  archived_units bigint
+)
+language sql
+stable
+as $$
+  select
+    count(*) filter (where u.archived = false) as total_active_units,
+    count(*) filter (where u.archived = false and u.status = 'available') as available_units,
+    count(*) filter (where u.archived = false and u.status = 'hold') as hold_units,
+    count(*) filter (where u.archived = false and u.status = 'sold') as sold_units,
+    coalesce(sum(u.total_amount) filter (where u.status = 'sold'), 0) as sold_value,
+    coalesce(sum(u.commission_amount) filter (where u.archived = false), 0) as projected_commission,
+    (select count(*) from public.profiles p where p.status = 'active' and (public.current_role() in ('admin', 'sub_admin') or p.team_id = public.current_team_id())) as active_users,
+    (select count(*) from public.analytics_events e where e.event_type = 'duplicate_phone_blocked') as duplicate_attempts,
+    (select count(*) from public.analytics_events e where e.event_type in ('pdf_generated', 'pdf_shared_or_downloaded')) as pdf_exports,
+    (select count(*) from public.profiles p where p.status = 'inactive' and (public.current_role() in ('admin', 'sub_admin') or p.team_id = public.current_team_id())) as inactive_users,
+    count(*) filter (where u.archived = true) as archived_units
+  from public.units u
+  where public.current_role() in ('admin', 'sub_admin', 'manager');
+$$;
+
+create or replace function public.analytics_sales_performance()
+returns table (
+  user_id uuid,
+  user_name text,
+  team_id uuid,
+  units_created bigint,
+  units_sold bigint,
+  sold_value numeric,
+  commission_contribution numeric,
+  activity_count bigint,
+  last_activity_at timestamptz
+)
+language sql
+stable
+as $$
+  select
+    p.id as user_id,
+    p.full_name as user_name,
+    p.team_id,
+    count(distinct u.id) as units_created,
+    count(distinct u.id) filter (where u.status = 'sold') as units_sold,
+    coalesce(sum(u.total_amount) filter (where u.status = 'sold'), 0) as sold_value,
+    coalesce(sum(u.commission_amount) filter (where u.status = 'sold'), 0) as commission_contribution,
+    count(e.id) as activity_count,
+    max(e.created_at) as last_activity_at
+  from public.profiles p
+  left join public.units u on u.created_by = p.id
+  left join public.analytics_events e on e.actor_id = p.id
+  where p.role = 'sales' and public.current_role() in ('admin', 'sub_admin', 'manager')
+  group by p.id, p.full_name, p.team_id
+  having count(distinct u.id) > 0 or count(e.id) > 0
+  order by activity_count desc, sold_value desc;
+$$;
+
+create or replace function public.analytics_inventory_health()
+returns table (
+  project_id uuid,
+  total_units bigint,
+  available_units bigint,
+  hold_units bigint,
+  sold_units bigint,
+  average_price numeric,
+  media_completeness numeric
+)
+language sql
+stable
+as $$
+  select
+    u.project_id,
+    count(*) as total_units,
+    count(*) filter (where u.status = 'available') as available_units,
+    count(*) filter (where u.status = 'hold') as hold_units,
+    count(*) filter (where u.status = 'sold') as sold_units,
+    round(avg(u.total_amount), 2) as average_price,
+    round((count(distinct m.unit_id)::numeric / nullif(count(distinct u.id), 0)) * 100, 2) as media_completeness
+  from public.units u
+  left join public.unit_media m on m.unit_id = u.id
+  where u.archived = false and public.current_role() in ('admin', 'sub_admin', 'manager')
+  group by u.project_id
+  order by total_units desc;
+$$;
+
+create or replace function public.analytics_activity_timeline(days_back integer default 90)
+returns table (
+  activity_date date,
+  units_created bigint,
+  status_changes bigint,
+  sold_value numeric,
+  pdf_exports bigint,
+  activity_count bigint
+)
+language sql
+stable
+as $$
+  select
+    e.created_at::date as activity_date,
+    count(*) filter (where e.event_type = 'unit_created') as units_created,
+    count(*) filter (where e.event_type = 'status_changed') as status_changes,
+    coalesce(sum(e.amount_value) filter (where e.event_type = 'status_changed' and e.unit_status_after = 'sold'), 0) as sold_value,
+    count(*) filter (where e.event_type in ('pdf_generated', 'pdf_shared_or_downloaded')) as pdf_exports,
+    count(*) as activity_count
+  from public.analytics_events e
+  where e.created_at >= now() - make_interval(days => greatest(days_back, 1))
+    and public.current_role() in ('admin', 'sub_admin', 'manager')
+  group by e.created_at::date
+  order by activity_date;
+$$;
+
+create or replace function public.analytics_targets_progress()
+returns table (
+  target_id uuid,
+  scope_type public.analytics_target_scope,
+  scope_id uuid,
+  period public.analytics_target_period,
+  target_activity_events integer,
+  actual_activity_events bigint
+)
+language sql
+stable
+as $$
+  select
+    t.id,
+    t.scope_type,
+    t.scope_id,
+    t.period,
+    t.target_activity_events,
+    count(e.id) as actual_activity_events
+  from public.analytics_targets t
+  left join public.analytics_events e
+    on e.created_at between t.starts_at and t.ends_at
+    and (
+      t.scope_type = 'company'
+      or (t.scope_type = 'team' and e.team_id = t.scope_id)
+      or (t.scope_type = 'user' and e.actor_id = t.scope_id)
+    )
+  where public.current_role() in ('admin', 'sub_admin', 'manager')
+  group by t.id, t.scope_type, t.scope_id, t.period, t.target_activity_events
+  order by t.starts_at desc;
+$$;
 
 insert into storage.buckets (id, name, public)
 values ('unit-media', 'unit-media', false), ('company-assets', 'company-assets', false)

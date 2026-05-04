@@ -1,5 +1,6 @@
 import {
   Archive,
+  BarChart3,
   Bell,
   Building2,
   Download,
@@ -17,6 +18,7 @@ import {
 import { useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
 import { demoUsers, initialAppState, lookupValues } from './data/seed'
+import { buildAnalyticsDashboard, canAccessAnalytics } from './lib/analytics'
 import {
   canAddAdminManagerNote,
   canArchiveUnit,
@@ -31,10 +33,17 @@ import {
 } from './lib/domain'
 import { downloadTextPdfFallback } from './lib/pdf'
 import { isSupabaseConfigured } from './lib/supabase'
-import type { AppSettings, AuditLogItem, LeadraMediaFile, LeadraUnit, LeadraUser, NotificationItem, PaymentMethod, UnitStatus } from './lib/types'
-import { archiveUnitWorkflow, createUnitWorkflow, createUserWorkflow, updateSettingsWorkflow, updateUnitStatusWorkflow } from './lib/workflows'
+import type { AnalyticsDashboard, AppSettings, AuditLogItem, LeadraMediaFile, LeadraUnit, LeadraUser, NotificationItem, PaymentMethod, UnitStatus } from './lib/types'
+import {
+  addAnalyticsEventWorkflow,
+  archiveUnitWorkflow,
+  createUnitWorkflow,
+  createUserWorkflow,
+  updateSettingsWorkflow,
+  updateUnitStatusWorkflow,
+} from './lib/workflows'
 
-type View = 'dashboard' | 'units' | 'create' | 'details' | 'notifications' | 'profile' | 'admin'
+type View = 'dashboard' | 'units' | 'create' | 'details' | 'notifications' | 'profile' | 'analytics' | 'admin'
 type HashView = Exclude<View, 'details'>
 
 const statusLabels: Record<UnitStatus, string> = {
@@ -71,7 +80,9 @@ function App() {
         onLogin={(nextUser) => {
           setCurrentUser(nextUser)
           const requestedView = readHashView()
-          setView(requestedView === 'admin' && !canAccessAdmin(nextUser) ? 'dashboard' : requestedView)
+          const nextView = isViewAllowedForUser(requestedView, nextUser) ? requestedView : 'dashboard'
+          setView(nextView)
+          if (nextView !== requestedView) writeHashView(nextView)
           setFlash(null)
         }}
       />
@@ -80,7 +91,8 @@ function App() {
 
   const user = currentUser
   const canUseAdmin = canAccessAdmin(user)
-  const activeView = view === 'admin' && !canUseAdmin ? 'dashboard' : view
+  const canUseAnalytics = canAccessAnalytics(user)
+  const activeView = isViewAllowedForUser(view, user) ? view : 'dashboard'
   const visibleUnits = filterUnitsForUser(user, appState.units)
   const projectSummaries = summarizeProjects(visibleUnits)
   const activeSelectedProjectId = selectedProjectId ?? projectSummaries[0]?.projectId ?? null
@@ -103,36 +115,6 @@ function App() {
       writeHashView(nextView)
     }
     setFlash(null)
-  }
-
-  function addAuditNotification(title: string, body: string, unitCode?: string) {
-    setAppState((state) => ({
-      ...state,
-      notifications: [
-        {
-          id: `notif-${Date.now()}`,
-          title,
-          body: unitCode ? `${body} (${unitCode})` : body,
-          audienceRole: user.role === 'sales' ? undefined : 'admin',
-          userId: user.role === 'sales' ? user.id : undefined,
-          createdAt: new Date().toISOString(),
-          read: false,
-        },
-        ...state.notifications,
-      ],
-      auditLogs: [
-        {
-          id: `audit-${Date.now()}`,
-          actorName: user.fullName,
-          actorRole: user.role,
-          actionType: title,
-          relatedUnitCode: unitCode,
-          createdAt: new Date().toISOString(),
-          ipAddress: null,
-        },
-        ...state.auditLogs,
-      ],
-    }))
   }
 
   function handleCreateUnit(event: FormEvent<HTMLFormElement>) {
@@ -222,7 +204,40 @@ function App() {
 
   function generatePdf(unit: LeadraUnit) {
     downloadTextPdfFallback(user, unit)
-    addAuditNotification('PDF generated', 'Permission-safe branded PDF generated', unit.unitCode)
+    setAppState((state) =>
+      addAnalyticsEventWorkflow(
+        {
+          ...state,
+          notifications: [
+            {
+              id: `notif-${Date.now()}`,
+              title: 'PDF generated',
+              body: `Permission-safe branded PDF generated (${unit.unitCode})`,
+              audienceRole: user.role === 'sales' ? undefined : 'admin',
+              userId: user.role === 'sales' ? user.id : undefined,
+              createdAt: new Date().toISOString(),
+              read: false,
+            },
+            ...state.notifications,
+          ],
+          auditLogs: [
+            {
+              id: `audit-${Date.now()}`,
+              actorName: user.fullName,
+              actorRole: user.role,
+              actionType: 'PDF generated',
+              relatedUnitCode: unit.unitCode,
+              createdAt: new Date().toISOString(),
+              ipAddress: null,
+            },
+            ...state.auditLogs,
+          ],
+        },
+        user,
+        'pdf_generated',
+        unit,
+      ),
+    )
     setFlash('PDF generated. If native sharing is unavailable, download and send manually.')
   }
 
@@ -234,6 +249,9 @@ function App() {
         <NavButton active={activeView === 'units'} label="Units" onClick={() => navigate('units')} icon={<Building2 />} />
         <NavButton active={activeView === 'create'} label="Create" onClick={() => navigate('create')} icon={<Plus />} />
         <NavButton active={activeView === 'notifications'} label={`Alerts ${unreadCount}`} onClick={() => navigate('notifications')} icon={<Bell />} />
+        {canUseAnalytics && (
+          <NavButton active={activeView === 'analytics'} label="Analytics" onClick={() => navigate('analytics')} icon={<BarChart3 />} />
+        )}
         {canUseAdmin && (
           <NavButton active={activeView === 'admin'} label="Admin" onClick={() => navigate('admin')} icon={<Settings />} />
         )}
@@ -306,6 +324,9 @@ function App() {
         )}
         {activeView === 'notifications' && <NotificationsPage notifications={appState.notifications} user={user} />}
         {activeView === 'profile' && <ProfilePage user={user} />}
+        {activeView === 'analytics' && canUseAnalytics && (
+          <AnalyticsPage dashboard={buildAnalyticsDashboard(user, appState)} user={user} />
+        )}
         {activeView === 'admin' && canUseAdmin && (
           <AdminPage
             users={appState.users}
@@ -340,6 +361,9 @@ function App() {
         <NavButton active={activeView === 'units'} label="Units" onClick={() => navigate('units')} icon={<Building2 />} />
         <NavButton active={activeView === 'create'} label="Add" onClick={() => navigate('create')} icon={<Plus />} />
         <NavButton active={activeView === 'notifications'} label="Alerts" onClick={() => navigate('notifications')} icon={<Bell />} />
+        {canUseAnalytics && (
+          <NavButton active={activeView === 'analytics'} label="Analytics" onClick={() => navigate('analytics')} icon={<BarChart3 />} />
+        )}
         <NavButton active={activeView === 'profile'} label="Profile" onClick={() => navigate('profile')} icon={<SlidersHorizontal />} />
         {canUseAdmin && (
           <NavButton active={activeView === 'admin'} label="Admin" onClick={() => navigate('admin')} icon={<Settings />} />
@@ -737,6 +761,131 @@ function NotificationsPage({ notifications, user }: { notifications: Notificatio
   )
 }
 
+function AnalyticsPage({ dashboard, user }: { dashboard: AnalyticsDashboard; user: LeadraUser }) {
+  const topSales = dashboard.salesPerformance.slice(0, 4)
+  const latestTimeline = dashboard.activityTimeline.slice(-7)
+
+  return (
+    <section className="page-stack analytics-page">
+      <div className="details-hero analytics-hero">
+        <div>
+          <p className="eyebrow">{dashboard.scopeLabel}</p>
+          <h2>{user.role === 'manager' ? 'Team Analytics' : 'Company Analytics'}</h2>
+          <p>Live executive overview with sales performance, inventory health, workflow risk, and target progress.</p>
+        </div>
+        <div className="analytics-range">
+          <span>Live</span>
+          <span>30 days</span>
+          <span>90 days</span>
+        </div>
+      </div>
+
+      <section className="metric-grid analytics-metrics">
+        <Metric label="Active units" value={dashboard.overview.totalActiveUnits} />
+        <Metric label="Sold value" value={formatCurrency(dashboard.overview.soldValue)} />
+        <Metric label="Projected commission" value={formatCurrency(dashboard.overview.projectedCommission)} />
+        <Metric label="PDF exports" value={dashboard.overview.pdfExports} />
+        <Metric label="Duplicate attempts" value={dashboard.overview.duplicateAttempts} />
+        <Metric label="Stale units" value={dashboard.overview.staleUnits} />
+      </section>
+
+      <div className="page-grid">
+        <section className="content-card">
+          <div className="section-heading">
+            <div>
+              <p className="eyebrow">Sales performance</p>
+              <h2>Team contribution</h2>
+            </div>
+          </div>
+          {topSales.length === 0 && <EmptyState title="No sales activity yet" body="Unit uploads, sold value, and activity events will appear here." />}
+          {topSales.map((row) => (
+            <div className="analytics-row" key={row.userId}>
+              <div>
+                <strong>{row.userName}</strong>
+                <p>{row.unitsCreated} uploaded / {row.unitsSold} sold / {row.activityCount} events</p>
+              </div>
+              <span>{formatCurrency(row.commissionContribution)}</span>
+            </div>
+          ))}
+        </section>
+
+        <section className="content-card">
+          <div className="section-heading">
+            <div>
+              <p className="eyebrow">Workflow risk</p>
+              <h2>Status health</h2>
+            </div>
+          </div>
+          <div className="status-stack">
+            <MiniBar label="Available" value={dashboard.overview.availableUnits} total={dashboard.overview.totalActiveUnits} />
+            <MiniBar label="Hold" value={dashboard.overview.holdUnits} total={dashboard.overview.totalActiveUnits} />
+            <MiniBar label="Sold" value={dashboard.overview.soldUnits} total={dashboard.overview.totalActiveUnits} />
+            <MiniBar label="Archived" value={dashboard.overview.archivedUnits} total={Math.max(1, dashboard.overview.totalActiveUnits + dashboard.overview.archivedUnits)} />
+          </div>
+        </section>
+      </div>
+
+      <section className="content-card">
+        <div className="section-heading">
+          <div>
+            <p className="eyebrow">Inventory health</p>
+            <h2>Project ranking</h2>
+          </div>
+        </div>
+        <div className="analytics-table">
+          {dashboard.inventoryHealth.map((project) => (
+            <div className="analytics-row project-health-row" key={project.projectId}>
+              <div>
+                <strong>{project.projectName}</strong>
+                <p>{project.developerName} / {project.destinationName}</p>
+              </div>
+              <span>{project.availableUnits} available</span>
+              <span>{project.holdRatio}% hold</span>
+              <span>{project.mediaCompleteness}% media</span>
+            </div>
+          ))}
+        </div>
+      </section>
+
+      <div className="page-grid">
+        <section className="content-card">
+          <div className="section-heading">
+            <div>
+              <p className="eyebrow">Targets</p>
+              <h2>Progress</h2>
+            </div>
+          </div>
+          {dashboard.targetProgress.map((target) => (
+            <div className="target-card" key={target.targetId}>
+              <strong>{target.label}</strong>
+              <MiniBar label="Units created" value={target.unitsCreatedProgress} total={100} suffix="%" />
+              <MiniBar label="Activity" value={target.activityProgress} total={100} suffix="%" />
+              <MiniBar label="Sold value" value={target.soldValueProgress} total={100} suffix="%" />
+            </div>
+          ))}
+        </section>
+
+        <section className="content-card">
+          <div className="section-heading">
+            <div>
+              <p className="eyebrow">Timeline</p>
+              <h2>Recent activity</h2>
+            </div>
+          </div>
+          <div className="timeline-chart" aria-label="Recent analytics activity timeline">
+            {latestTimeline.map((point) => (
+              <div className="timeline-bar" key={point.date}>
+                <span style={{ height: `${Math.max(12, point.activityCount * 18)}px` }} />
+                <small>{point.date.slice(5)}</small>
+              </div>
+            ))}
+          </div>
+        </section>
+      </div>
+    </section>
+  )
+}
+
 function ProfilePage({ user }: { user: LeadraUser }) {
   return (
     <section className="page-stack">
@@ -925,6 +1074,22 @@ function EmptyState({ title, body }: { title: string; body: string }) {
   )
 }
 
+function MiniBar({ label, value, total, suffix = '' }: { label: string; value: number; total: number; suffix?: string }) {
+  const width = total <= 0 ? 0 : Math.min(100, Math.round((value / total) * 100))
+
+  return (
+    <div className="mini-bar">
+      <div>
+        <span>{label}</span>
+        <strong>{value}{suffix}</strong>
+      </div>
+      <div className="mini-bar-track">
+        <span style={{ width: `${width}%` }} />
+      </div>
+    </div>
+  )
+}
+
 function NavButton({ active, label, onClick, icon }: { active: boolean; label: string; onClick: () => void; icon: React.ReactNode }) {
   return (
     <button className={`nav-button ${active ? 'active' : ''}`} type="button" onClick={onClick}>
@@ -950,9 +1115,22 @@ function canAccessAdmin(user: LeadraUser): boolean {
   return user.role === 'admin' || user.role === 'sub_admin'
 }
 
+function isViewAllowedForUser(view: View, user: LeadraUser): boolean {
+  if (view === 'admin') return canAccessAdmin(user)
+  if (view === 'analytics') return canAccessAnalytics(user)
+  return true
+}
+
 function readHashView(): HashView {
   const value = window.location.hash.replace('#', '')
-  if (value === 'units' || value === 'create' || value === 'notifications' || value === 'profile' || value === 'admin') {
+  if (
+    value === 'units' ||
+    value === 'create' ||
+    value === 'notifications' ||
+    value === 'profile' ||
+    value === 'analytics' ||
+    value === 'admin'
+  ) {
     return value
   }
 

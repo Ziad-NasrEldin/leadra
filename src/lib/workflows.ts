@@ -11,6 +11,8 @@ import type {
   AppDataState,
   AppSettings,
   AuditLogItem,
+  AnalyticsEvent,
+  AnalyticsEventType,
   CreateUnitInput,
   CreateUserInput,
   LeadraUnit,
@@ -54,9 +56,8 @@ export function createUserWorkflow(
     ...input,
   }
 
-  return {
-    ok: true,
-    state: withAudit(
+  const nextState = withAnalyticsEvent(
+    withAudit(
       {
         ...state,
         users: [...state.users, user],
@@ -67,6 +68,14 @@ export function createUserWorkflow(
       undefined,
       { email: user.email, role: user.role },
     ),
+    actor,
+    'settings_updated',
+    { metadata: { operation: 'user_created', role: user.role } },
+  )
+
+  return {
+    ok: true,
+    state: nextState,
   }
 }
 
@@ -139,13 +148,21 @@ export function createUnitWorkflow(
   }
 
   if (unitHasSameProjectPhoneDuplicate(candidate, state.units)) {
-    const nextState = withAudit(
-      state,
+    const nextState = withAnalyticsEvent(
+      withAudit(
+        state,
+        actor,
+        'Duplicate owner phone attempt inside same project',
+        candidate.unitCode,
+        undefined,
+        { projectId: candidate.projectId, normalizedOwnerPhone },
+      ),
       actor,
-      'Duplicate owner phone attempt inside same project',
-      candidate.unitCode,
-      undefined,
-      { projectId: candidate.projectId, normalizedOwnerPhone },
+      'duplicate_phone_blocked',
+      {
+        unit: candidate,
+        metadata: { unitCode: candidate.unitCode, projectId: candidate.projectId },
+      },
     )
     return {
       ok: false,
@@ -162,7 +179,30 @@ export function createUnitWorkflow(
   return {
     ok: true,
     state: withNotification(
-      withAudit(nextState, actor, 'Unit created', candidate.unitCode, undefined, { unitCode: candidate.unitCode }),
+      withAnalyticsEvent(
+        withAnalyticsEvent(
+          withAudit(nextState, actor, 'Unit created', candidate.unitCode, undefined, { unitCode: candidate.unitCode }),
+          actor,
+          'media_uploaded',
+          {
+            unit: candidate,
+            metadata: {
+              unitCode: candidate.unitCode,
+              fileCount: candidate.media.length,
+              imageCount: candidate.media.filter((file) => file.type === 'image').length,
+              videoCount: candidate.media.filter((file) => file.type === 'video').length,
+            },
+          },
+        ),
+        actor,
+        'unit_created',
+        {
+          unit: candidate,
+          amountValue: candidate.totalAmount,
+          commissionValue: candidate.commissionAmount,
+          metadata: { unitCode: candidate.unitCode, mediaCount: candidate.media.length },
+        },
+      ),
       'New unit uploaded',
       `${actor.fullName} uploaded ${candidate.unitCode}.`,
       'admin',
@@ -184,7 +224,12 @@ export function archiveUnitWorkflow(state: AppDataState, actor: LeadraUser, unit
 
   return {
     ok: true,
-    state: withAudit(nextState, actor, 'Unit archived', unit.unitCode, { archived: false }, { archived: true }),
+    state: withAnalyticsEvent(
+      withAudit(nextState, actor, 'Unit archived', unit.unitCode, { archived: false }, { archived: true }),
+      actor,
+      'unit_archived',
+      { unit, metadata: { unitCode: unit.unitCode } },
+    ),
   }
 }
 
@@ -209,7 +254,19 @@ export function updateUnitStatusWorkflow(
   return {
     ok: true,
     state: withNotification(
-      withAudit(nextState, actor, `Unit marked ${label}`, unit.unitCode, { status: unit.status }, { status }),
+      withAnalyticsEvent(
+        withAudit(nextState, actor, `Unit marked ${label}`, unit.unitCode, { status: unit.status }, { status }),
+        actor,
+        'status_changed',
+        {
+          unit,
+          unitStatusBefore: unit.status,
+          unitStatusAfter: status,
+          amountValue: unit.totalAmount,
+          commissionValue: unit.commissionAmount,
+          metadata: { unitCode: unit.unitCode },
+        },
+      ),
       `Unit marked ${label}`,
       `${unit.unitCode} changed from ${unit.status} to ${status}.`,
       actor.role === 'sales' ? undefined : 'admin',
@@ -230,8 +287,27 @@ export function updateSettingsWorkflow(
   const settings = { ...state.settings, ...patch }
   return {
     ok: true,
-    state: withAudit({ ...state, settings }, actor, 'Settings updated', undefined, state.settings, settings),
+    state: withAnalyticsEvent(
+      withAudit({ ...state, settings }, actor, 'Settings updated', undefined, state.settings, settings),
+      actor,
+      'settings_updated',
+      { metadata: { operation: 'settings_updated' } },
+    ),
   }
+}
+
+export function addAnalyticsEventWorkflow(
+  state: AppDataState,
+  actor: LeadraUser,
+  eventType: AnalyticsEventType,
+  unit?: LeadraUnit,
+): AppDataState {
+  return withAnalyticsEvent(state, actor, eventType, {
+    unit,
+    amountValue: unit?.totalAmount ?? null,
+    commissionValue: unit?.commissionAmount ?? null,
+    metadata: unit ? { unitCode: unit.unitCode } : {},
+  })
 }
 
 function withAudit(
@@ -275,6 +351,41 @@ function withNotification(
   }
 
   return { ...state, notifications: [item, ...state.notifications] }
+}
+
+function withAnalyticsEvent(
+  state: AppDataState,
+  actor: LeadraUser,
+  eventType: AnalyticsEventType,
+  options: {
+    unit?: LeadraUnit
+    unitStatusBefore?: LeadraUnit['status'] | null
+    unitStatusAfter?: LeadraUnit['status'] | null
+    amountValue?: number | null
+    commissionValue?: number | null
+    metadata?: AnalyticsEvent['metadata']
+  } = {},
+): AppDataState {
+  const item: AnalyticsEvent = {
+    id: `analytics-${Date.now()}-${state.analyticsEvents.length}`,
+    eventType,
+    actorId: actor.id,
+    actorRole: actor.role,
+    teamId: options.unit?.teamId ?? actor.teamId ?? null,
+    branchId: options.unit?.branchId ?? actor.branchId ?? null,
+    unitId: options.unit?.id ?? null,
+    projectId: options.unit?.projectId ?? null,
+    developerId: options.unit?.developerId ?? null,
+    destinationId: options.unit?.destinationId ?? null,
+    unitStatusBefore: options.unitStatusBefore ?? null,
+    unitStatusAfter: options.unitStatusAfter ?? null,
+    amountValue: options.amountValue ?? null,
+    commissionValue: options.commissionValue ?? null,
+    metadata: options.metadata ?? {},
+    createdAt: new Date().toISOString(),
+  }
+
+  return { ...state, analyticsEvents: [item, ...state.analyticsEvents] }
 }
 
 function isAdminActor(actor: LeadraUser): boolean {

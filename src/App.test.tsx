@@ -61,4 +61,21 @@ describe('Leadra app shell', () => {
     await user.click(screen.getByRole('button', { name: /^create$/i }))
     expect(window.location.hash).toBe('#create')
   })
+
+  it('shows analytics to managers but not sales users', async () => {
+    renderApp()
+    const user = userEvent.setup()
+
+    await user.click(screen.getByRole('button', { name: /continue as mona hafez/i }))
+    await user.click((await screen.findAllByRole('button', { name: /^analytics$/i }))[0])
+
+    expect(await screen.findByRole('heading', { name: /team analytics/i })).toBeInTheDocument()
+    expect(screen.getByText(/team team-prime/i)).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: /sign out/i }))
+    await user.click(screen.getByRole('button', { name: /continue as sara amin/i }))
+
+    expect(screen.queryAllByRole('button', { name: /^analytics$/i })).toHaveLength(0)
+    expect(screen.queryByRole('heading', { name: /team analytics/i })).not.toBeInTheDocument()
+  })
 })

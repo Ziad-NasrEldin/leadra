@@ -40,6 +40,8 @@ function state(): AppDataState {
     units: seedUnits,
     notifications: [],
     auditLogs: [],
+    analyticsEvents: [],
+    analyticsTargets: [],
     settings: {
       companyName: 'Leadra',
       commissionPercentage: 1.5,
@@ -114,6 +116,16 @@ describe('Leadra product workflows', () => {
     expect(result.state.units[0].installmentAmount).toBe(1_200_000)
     expect(result.state.auditLogs.at(0)?.actionType).toBe('Unit created')
     expect(result.state.notifications.at(0)?.title).toBe('New unit uploaded')
+    expect(result.state.analyticsEvents.at(0)).toMatchObject({
+      eventType: 'unit_created',
+      actorId: sales.id,
+      actorRole: 'sales',
+      unitId: result.state.units[0].id,
+      projectId: 'project-zed',
+      amountValue: 6_000_000,
+      commissionValue: 90_000,
+    })
+    expect(JSON.stringify(result.state.analyticsEvents.at(0))).not.toMatch(/Unique Owner|3333|ownerPhone/i)
   })
 
   it('rejects same-project duplicate owner phone and records the attempt', () => {
@@ -147,16 +159,29 @@ describe('Leadra product workflows', () => {
     expect(result.ok).toBe(false)
     expect(result.error).toContain('Duplicate owner phone blocked')
     expect(result.state.auditLogs.at(0)?.actionType).toBe('Duplicate owner phone attempt inside same project')
+    expect(result.state.analyticsEvents.at(0)).toMatchObject({
+      eventType: 'duplicate_phone_blocked',
+      actorId: sales.id,
+      projectId: 'project-new-cairo',
+    })
   })
 
   it('archives and changes status only when the actor has permission', () => {
     const sold = updateUnitStatusWorkflow(state(), sales, 105, 'sold')
     expect(sold.ok).toBe(true)
     expect(sold.state.auditLogs.at(0)?.actionType).toBe('Unit marked Sold')
+    expect(sold.state.analyticsEvents.at(0)).toMatchObject({
+      eventType: 'status_changed',
+      unitStatusBefore: 'available',
+      unitStatusAfter: 'sold',
+      amountValue: 5_000_000,
+      commissionValue: 75_000,
+    })
 
     const archived = archiveUnitWorkflow(sold.state, admin, 105)
     expect(archived.ok).toBe(true)
     expect(archived.state.units.find((unit) => unit.id === 105)?.archived).toBe(true)
+    expect(archived.state.analyticsEvents.at(0)?.eventType).toBe('unit_archived')
   })
 
   it('limits settings changes to admin and sub-admin roles', () => {
@@ -166,5 +191,6 @@ describe('Leadra product workflows', () => {
     expect(result.ok).toBe(true)
     expect(result.state.settings.commissionPercentage).toBe(2)
     expect(result.state.auditLogs.at(0)?.actionType).toBe('Settings updated')
+    expect(result.state.analyticsEvents.at(0)?.eventType).toBe('settings_updated')
   })
 })
