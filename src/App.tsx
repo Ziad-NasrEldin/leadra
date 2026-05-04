@@ -55,6 +55,12 @@ const statusLabels: Record<UnitStatus, string> = {
 
 const createUnitSteps = ['Property', 'Specs', 'Payment', 'Owner', 'Review'] as const
 const adminSections = ['Users', 'Settings', 'Metrics', 'Audit'] as const
+const roleOrder: Record<LeadraUser['role'], number> = {
+  admin: 0,
+  sub_admin: 1,
+  manager: 2,
+  sales: 3,
+}
 
 function App() {
   const [currentUser, setCurrentUser] = useState<LeadraUser | null>(null)
@@ -353,6 +359,25 @@ function App() {
               })
               setAppState(result.state)
               setFlash(result.ok ? 'User created and audit history updated.' : result.error)
+            }}
+            onUpdateUser={(userId, updates) => {
+              setAppState((state) => ({
+                ...state,
+                users: state.users.map((item) => (item.id === userId ? { ...item, ...updates } : item)),
+                auditLogs: [
+                  {
+                    id: `audit-${Date.now()}`,
+                    actorName: user.fullName,
+                    actorRole: user.role,
+                    actionType: 'User profile updated',
+                    relatedUnitCode: userId,
+                    createdAt: new Date().toISOString(),
+                    ipAddress: null,
+                  },
+                  ...state.auditLogs,
+                ],
+              }))
+              setFlash('User profile updated and audit history updated.')
             }}
             onSettingsUpdate={(commissionPercentage) => {
               const result = updateSettingsWorkflow(appState, user, { commissionPercentage })
@@ -1012,6 +1037,7 @@ function AdminPage({
   settings,
   auditLogs,
   onCreateUser,
+  onUpdateUser,
   onSettingsUpdate,
 }: {
   users: LeadraUser[]
@@ -1019,9 +1045,46 @@ function AdminPage({
   settings: AppSettings
   auditLogs: AuditLogItem[]
   onCreateUser: (formData: FormData) => void
+  onUpdateUser: (userId: string, updates: Partial<LeadraUser>) => void
   onSettingsUpdate: (commissionPercentage: number) => void
 }) {
   const [activeSection, setActiveSection] = useState<(typeof adminSections)[number]>('Users')
+  const [userQuery, setUserQuery] = useState('')
+  const [roleFilter, setRoleFilter] = useState<LeadraUser['role'] | 'all'>('all')
+  const [statusFilter, setStatusFilter] = useState<LeadraUser['status'] | 'all'>('all')
+  const [teamFilter, setTeamFilter] = useState('all')
+  const [sortUsersBy, setSortUsersBy] = useState<'role' | 'name' | 'recent'>('role')
+  const [editingUserId, setEditingUserId] = useState<string | null>(null)
+  const [createUserOpen, setCreateUserOpen] = useState(false)
+  const teamOptions = Array.from(new Set(users.map((user) => user.teamId))).sort((first, second) => first.localeCompare(second))
+  const filteredUsers = users
+    .filter((user) => {
+      const query = userQuery.trim().toLowerCase()
+      const matchesQuery =
+        query.length === 0 ||
+        user.fullName.toLowerCase().includes(query) ||
+        user.email.toLowerCase().includes(query) ||
+        user.teamId.toLowerCase().includes(query) ||
+        user.branchId.toLowerCase().includes(query) ||
+        user.jobTitle.toLowerCase().includes(query)
+      const matchesRole = roleFilter === 'all' || user.role === roleFilter
+      const matchesStatus = statusFilter === 'all' || user.status === statusFilter
+      const matchesTeam = teamFilter === 'all' || user.teamId === teamFilter
+
+      return matchesQuery && matchesRole && matchesStatus && matchesTeam
+    })
+    .sort((first, second) => {
+      if (sortUsersBy === 'name') return first.fullName.localeCompare(second.fullName)
+      if (sortUsersBy === 'recent') {
+        return new Date(second.lastLoginAt ?? second.createdAt ?? 0).getTime() - new Date(first.lastLoginAt ?? first.createdAt ?? 0).getTime()
+      }
+
+      return roleOrder[first.role] - roleOrder[second.role] || first.fullName.localeCompare(second.fullName)
+    })
+  const userCountsByRole = users.reduce<Record<LeadraUser['role'], number>>(
+    (counts, user) => ({ ...counts, [user.role]: counts[user.role] + 1 }),
+    { admin: 0, sub_admin: 0, manager: 0, sales: 0 },
+  )
 
   return (
     <section className="wizard-shell admin-workspace">
@@ -1040,57 +1103,138 @@ function AdminPage({
       </div>
 
       <section className="content-card admin-panel" hidden={activeSection !== 'Users'}>
-        <h2><Users size={19} /> User Management</h2>
-        <form
-          className="settings-form"
-          onSubmit={(event) => {
-            event.preventDefault()
-            onCreateUser(new FormData(event.currentTarget))
-            event.currentTarget.reset()
-          }}
-        >
-          <label>
-            Full name
-            <input name="fullName" required placeholder="New team member" />
-          </label>
-          <label>
-            Email
-            <input name="email" type="email" required placeholder="user@leadra.com" />
+        <div className="admin-user-header">
+          <div>
+            <p className="eyebrow">People operations</p>
+            <h2><Users size={19} /> User Management</h2>
+            <p>Find, group, order, and edit users without mixing roles into one anonymous list.</p>
+          </div>
+          <div className="admin-user-side">
+            <div className="user-role-counts" aria-label="User role counts">
+              <span>{userCountsByRole.admin} Admin</span>
+              <span>{userCountsByRole.sub_admin} Sub</span>
+              <span>{userCountsByRole.manager} Manager</span>
+              <span>{userCountsByRole.sales} Sales</span>
+            </div>
+            <button className="primary-button" type="button" onClick={() => setCreateUserOpen((open) => !open)}>
+              {createUserOpen ? 'Close form' : 'New user'}
+            </button>
+          </div>
+        </div>
+        {createUserOpen && (
+          <form
+            className="settings-form create-user-panel"
+            onSubmit={(event) => {
+              event.preventDefault()
+              onCreateUser(new FormData(event.currentTarget))
+              event.currentTarget.reset()
+              setCreateUserOpen(false)
+            }}
+          >
+            <label>
+              Full name
+              <input name="fullName" required placeholder="New team member" />
+            </label>
+            <label>
+              Email
+              <input name="email" type="email" required placeholder="user@leadra.com" />
+            </label>
+            <label>
+              Role
+              <select name="role" defaultValue="sales">
+                <option value="sales">Sales Representative</option>
+                <option value="manager">Manager</option>
+                <option value="sub_admin">Sub Admin</option>
+                <option value="admin">Admin</option>
+              </select>
+            </label>
+            <label>
+              Job title
+              <input name="jobTitle" required defaultValue="Sales Representative" />
+            </label>
+            <label>
+              Phone number
+              <input name="phoneNumber" required defaultValue="+201000000000" />
+            </label>
+            <label>
+              Team
+              <input name="teamId" required defaultValue="team-prime" />
+            </label>
+            <label>
+              Branch
+              <input name="branchId" required defaultValue="branch-cairo" />
+            </label>
+            <button className="secondary-button" type="submit">Create user</button>
+          </form>
+        )}
+
+        <div className="user-management-tools" aria-label="User management controls">
+          <label className="wide-field">
+            Search users
+            <input
+              value={userQuery}
+              onChange={(event) => setUserQuery(event.target.value)}
+              placeholder="Name, email, team, branch, title..."
+            />
           </label>
           <label>
             Role
-            <select name="role" defaultValue="sales">
-              <option value="sales">Sales Representative</option>
-              <option value="manager">Manager</option>
-              <option value="sub_admin">Sub Admin</option>
+            <select value={roleFilter} onChange={(event) => setRoleFilter(event.target.value as LeadraUser['role'] | 'all')}>
+              <option value="all">All roles</option>
               <option value="admin">Admin</option>
+              <option value="sub_admin">Sub Admin</option>
+              <option value="manager">Manager</option>
+              <option value="sales">Sales</option>
             </select>
           </label>
           <label>
-            Job title
-            <input name="jobTitle" required defaultValue="Sales Representative" />
-          </label>
-          <label>
-            Phone number
-            <input name="phoneNumber" required defaultValue="+201000000000" />
-          </label>
-          <label>
             Team
-            <input name="teamId" required defaultValue="team-prime" />
+            <select value={teamFilter} onChange={(event) => setTeamFilter(event.target.value)}>
+              <option value="all">All teams</option>
+              {teamOptions.map((teamId) => (
+                <option key={teamId} value={teamId}>{teamId}</option>
+              ))}
+            </select>
           </label>
           <label>
-            Branch
-            <input name="branchId" required defaultValue="branch-cairo" />
+            Status
+            <select value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as LeadraUser['status'] | 'all')}>
+              <option value="all">All status</option>
+              <option value="active">Active</option>
+              <option value="inactive">Inactive</option>
+            </select>
           </label>
-          <button className="secondary-button" type="submit">Create user</button>
-        </form>
-        {users.map((user) => (
-          <div className="admin-row" key={user.id}>
-            <strong>{user.fullName}</strong>
-            <span>{user.role.replace('_', ' ')}</span>
-            <small>{user.status}</small>
-          </div>
-        ))}
+          <label>
+            Sort
+            <select value={sortUsersBy} onChange={(event) => setSortUsersBy(event.target.value as 'role' | 'name' | 'recent')}>
+              <option value="role">Role priority</option>
+              <option value="name">Name A-Z</option>
+              <option value="recent">Recent login</option>
+            </select>
+          </label>
+        </div>
+
+        <div className="user-list-header">
+          <strong>{filteredUsers.length} users shown</strong>
+          <small>Ordered by {sortUsersBy === 'role' ? 'role priority' : sortUsersBy === 'name' ? 'name' : 'recent login'}</small>
+        </div>
+
+        <div className="user-management-list" aria-label="Managed users">
+          {filteredUsers.map((item) => (
+            <UserManagementCard
+              key={item.id}
+              user={item}
+              isEditing={editingUserId === item.id}
+              onEdit={() => setEditingUserId(item.id)}
+              onCancel={() => setEditingUserId(null)}
+              onSave={(updates) => {
+                onUpdateUser(item.id, updates)
+                setEditingUserId(null)
+              }}
+            />
+          ))}
+          {filteredUsers.length === 0 && <EmptyState title="No users match" body="Clear filters or search for another team, role, branch, name, or email." />}
+        </div>
       </section>
 
       <section className="content-card admin-panel" hidden={activeSection !== 'Settings'}>
@@ -1133,6 +1277,114 @@ function AdminPage({
         ))}
       </section>
     </section>
+  )
+}
+
+function UserManagementCard({
+  user,
+  isEditing,
+  onEdit,
+  onCancel,
+  onSave,
+}: {
+  user: LeadraUser
+  isEditing: boolean
+  onEdit: () => void
+  onCancel: () => void
+  onSave: (updates: Partial<LeadraUser>) => void
+}) {
+  return (
+    <article className={`user-management-card ${user.status}`}>
+      <div className="user-card-main">
+        <div className="user-avatar">{user.fullName.split(' ').map((part) => part[0]).join('').slice(0, 2)}</div>
+        <div>
+          <div className="user-card-title">
+            <strong>{user.fullName}</strong>
+            <span className={`status-pill ${user.status === 'active' ? 'available' : 'sold'}`}>{user.status}</span>
+          </div>
+          <p>{user.jobTitle}</p>
+          <small>{user.email} / {user.phoneNumber}</small>
+        </div>
+      </div>
+
+      <div className="user-card-meta">
+        <span>{user.role.replace('_', ' ')}</span>
+        <span>{user.teamId}</span>
+        <span>{user.branchId}</span>
+        <span>{user.lastLoginAt ? `Last ${new Date(user.lastLoginAt).toLocaleDateString()}` : 'No login yet'}</span>
+      </div>
+
+      {!isEditing && (
+        <button className="secondary-button" type="button" onClick={onEdit}>
+          Edit user
+        </button>
+      )}
+
+      {isEditing && (
+        <form
+          className="user-edit-form"
+          onSubmit={(event) => {
+            event.preventDefault()
+            const formData = new FormData(event.currentTarget)
+            onSave({
+              fullName: String(formData.get('fullName')),
+              email: String(formData.get('email')),
+              role: String(formData.get('role')) as LeadraUser['role'],
+              jobTitle: String(formData.get('jobTitle')),
+              phoneNumber: String(formData.get('phoneNumber')),
+              teamId: String(formData.get('teamId')),
+              branchId: String(formData.get('branchId')),
+              status: String(formData.get('status')) as LeadraUser['status'],
+            })
+          }}
+        >
+          <label>
+            Full name
+            <input name="fullName" defaultValue={user.fullName} required />
+          </label>
+          <label>
+            Email
+            <input name="email" type="email" defaultValue={user.email} required />
+          </label>
+          <label>
+            Role
+            <select name="role" defaultValue={user.role}>
+              <option value="admin">Admin</option>
+              <option value="sub_admin">Sub Admin</option>
+              <option value="manager">Manager</option>
+              <option value="sales">Sales Representative</option>
+            </select>
+          </label>
+          <label>
+            Status
+            <select name="status" defaultValue={user.status}>
+              <option value="active">Active</option>
+              <option value="inactive">Inactive</option>
+            </select>
+          </label>
+          <label>
+            Job title
+            <input name="jobTitle" defaultValue={user.jobTitle} required />
+          </label>
+          <label>
+            Phone
+            <input name="phoneNumber" defaultValue={user.phoneNumber} required />
+          </label>
+          <label>
+            Team
+            <input name="teamId" defaultValue={user.teamId} required />
+          </label>
+          <label>
+            Branch
+            <input name="branchId" defaultValue={user.branchId} required />
+          </label>
+          <div className="user-edit-actions">
+            <button className="secondary-button" type="button" onClick={onCancel}>Cancel</button>
+            <button className="primary-button" type="submit">Save user</button>
+          </div>
+        </form>
+      )}
+    </article>
   )
 }
 

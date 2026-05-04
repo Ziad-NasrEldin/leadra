@@ -1,5 +1,5 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen } from '@testing-library/react'
+import { render, screen, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it } from 'vitest'
 import App from './App'
@@ -109,6 +109,7 @@ describe('Leadra app shell', () => {
     await user.click((await screen.findAllByRole('button', { name: /^admin$/i }))[0])
 
     expect(await screen.findByRole('button', { name: /^users$/i })).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: /new user/i }))
     await user.type(screen.getByRole('textbox', { name: /full name/i }), 'Adapted User')
     await user.type(screen.getByRole('textbox', { name: /email/i }), 'adapted@leadra.test')
     await user.click(screen.getByRole('button', { name: /^create user$/i }))
@@ -122,5 +123,30 @@ describe('Leadra app shell', () => {
 
     await user.click(screen.getByRole('button', { name: /^audit$/i }))
     expect(screen.getByRole('heading', { name: /audit log/i })).toBeInTheDocument()
+  })
+
+  it('filters and edits users in admin user management', async () => {
+    renderApp()
+    const user = userEvent.setup()
+
+    await user.click(screen.getByRole('button', { name: /continue as admin/i }))
+    await user.click((await screen.findAllByRole('button', { name: /^admin$/i }))[0])
+
+    await user.selectOptions(screen.getByLabelText(/^role$/i), 'sales')
+    expect(screen.getByText(/1 users shown/i)).toBeInTheDocument()
+    const managedUsers = screen.getByLabelText(/managed users/i)
+    expect(within(managedUsers).getByText(/sara amin/i)).toBeInTheDocument()
+    expect(within(managedUsers).queryByText(/mona hafez/i)).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: /edit user/i }))
+    const editForm = screen.getByRole('button', { name: /save user/i }).closest('form')
+    expect(editForm).not.toBeNull()
+    const jobTitleInput = within(editForm as HTMLFormElement).getByLabelText(/job title/i)
+    await user.clear(jobTitleInput)
+    await user.type(jobTitleInput, 'Senior Sales Advisor')
+    await user.click(screen.getByRole('button', { name: /save user/i }))
+
+    expect(await screen.findByText(/user profile updated and audit history updated/i)).toBeInTheDocument()
+    expect(screen.getByText(/senior sales advisor/i)).toBeInTheDocument()
   })
 })
