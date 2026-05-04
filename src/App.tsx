@@ -1430,6 +1430,14 @@ function AnalyticsPage({ appState, user }: { appState: AppDataState; user: Leadr
   const dashboard = rpcDashboard ?? fallbackDashboard
   const topSales = dashboard.salesPerformance.slice(0, 6)
   const latestTimeline = dashboard.activityTimeline
+  const activeFilterCount =
+    filters.teamIds.length +
+    filters.userIds.length +
+    filters.projectIds.length +
+    filters.developerIds.length +
+    filters.destinationIds.length +
+    filters.statuses.length +
+    filters.paymentMethods.length
   const averageTargetProgress =
     dashboard.targetProgress.length === 0
       ? 0
@@ -1515,17 +1523,19 @@ function AnalyticsPage({ appState, user }: { appState: AppDataState; user: Leadr
         </div>
       </div>
 
-      <section className="analytics-control-card motion-stage" style={motionStyle(1, 30)}>
+      <section className={`analytics-control-card motion-stage ${filterOpen ? 'is-open' : ''}`} style={motionStyle(1, 30)}>
         <div className="analytics-control-header">
           <div>
-            <p className="eyebrow">Interactive filters</p>
-            <h2>Focus the dashboard</h2>
+            <p className="eyebrow">Filters</p>
+            <h2>Focus analytics</h2>
+            <p>{activeFilterCount === 0 ? 'Showing all aggregate activity.' : `${activeFilterCount} filter${activeFilterCount === 1 ? '' : 's'} active.`}</p>
           </div>
           <div className="analytics-control-actions">
             {analyticsLoading && <span className="analytics-chip">Refreshing</span>}
             <button className="secondary-link" type="button" onClick={() => setFilters(defaultAnalyticsFilters)}>Reset</button>
-            <button className="ghost-button analytics-filter-toggle" type="button" onClick={() => setFilterOpen((open) => !open)}>
-              <SlidersHorizontal size={17} /> Filters
+            <button className="ghost-button analytics-filter-toggle" type="button" aria-expanded={filterOpen} onClick={() => setFilterOpen((open) => !open)}>
+              <SlidersHorizontal size={17} /> {filterOpen ? 'Close filters' : 'Filters'}
+              {activeFilterCount > 0 && <span>{activeFilterCount}</span>}
             </button>
             <button className="primary-button compact-action" type="button" onClick={exportCsv}>
               <Download size={17} /> CSV
