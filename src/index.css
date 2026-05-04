@@ -199,7 +199,7 @@ h2 {
 
 .app-shell {
   display: grid;
-  grid-template-columns: 92px minmax(0, 1fr);
+  grid-template-columns: 96px minmax(0, 1fr);
   min-height: 100vh;
 }
 
@@ -207,11 +207,12 @@ h2 {
   position: sticky;
   top: 0;
   height: 100vh;
-  padding: 1rem 0.75rem;
+  padding: 1rem 0.6rem;
   border-right: 1px solid var(--line);
   background: rgba(20, 33, 29, 0.92);
   display: flex;
   flex-direction: column;
+  align-items: stretch;
   gap: 0.8rem;
 }
 
@@ -354,21 +355,33 @@ h2 {
 }
 
 .nav-button {
+  width: 100%;
+  min-width: 0;
+  min-height: 64px;
   border: 0;
-  border-radius: 1rem;
-  padding: 0.75rem 0.55rem;
+  border-radius: 1.05rem;
+  padding: 0.65rem 0.35rem;
   display: grid;
   place-items: center;
   gap: 0.25rem;
   background: transparent;
   color: rgba(255, 250, 240, 0.62);
-  font-size: 0.68rem;
-  font-weight: 800;
+  font-size: 0.64rem;
+  font-weight: 900;
+  line-height: 1;
+  text-align: center;
 }
 
 .nav-button svg {
-  width: 20px;
-  height: 20px;
+  width: 19px;
+  height: 19px;
+}
+
+.nav-button span {
+  max-width: 100%;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .nav-button.active,
@@ -1627,12 +1640,18 @@ dd,
 @media (min-width: 768px) and (max-width: 1023px) {
   .app-shell {
     display: grid;
-    grid-template-columns: 84px minmax(0, 1fr);
+    grid-template-columns: 90px minmax(0, 1fr);
   }
 
   .side-rail {
     display: flex;
-    padding: 0.9rem 0.55rem;
+    padding: 0.9rem 0.5rem;
+  }
+
+  .side-rail .nav-button {
+    min-height: 60px;
+    font-size: 0.61rem;
+    padding-inline: 0.25rem;
   }
 
   .brand-mark {
