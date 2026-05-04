@@ -185,10 +185,24 @@ describe('Leadra domain rules', () => {
     expect(getThumbnailMedia(files)?.id).toBe('i1')
     expect(
       validateMediaUpload([{ id: 'big', type: 'image', url: '/big.jpg', name: 'big.jpg', sizeBytes: 41 * 1024 * 1024 }]),
-    ).toEqual({
+    ).toMatchObject({
       ok: false,
       message:
         'Upload failed. Total media size exceeds 40 MB per unit. Please remove or compress some files.',
+    })
+    expect(
+      validateMediaUpload(
+        Array.from({ length: 11 }, (_, index) => ({
+          id: `image-${index}`,
+          type: 'image' as const,
+          url: `/image-${index}.jpg`,
+          name: `image-${index}.jpg`,
+          sizeBytes: 1000,
+        })),
+      ),
+    ).toMatchObject({
+      ok: false,
+      message: 'Upload failed. A unit can include up to 10 media files.',
     })
   })
 

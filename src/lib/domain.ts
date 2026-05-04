@@ -8,6 +8,7 @@ import type {
   ProjectSummary,
   UnitFilters,
 } from './types'
+import { compareText, getIntlLocale, type LocaleCode } from './i18n'
 
 export const MAX_MEDIA_FILES = 10
 export const MAX_MEDIA_TOTAL_BYTES = 40 * 1024 * 1024
@@ -150,6 +151,7 @@ export function validateMediaUpload(files: LeadraMediaFile[]): MediaValidation {
     return {
       ok: false,
       message: 'Upload failed. A unit can include up to 10 media files.',
+      messageKey: 'error.uploadLimitFiles',
     }
   }
 
@@ -159,6 +161,7 @@ export function validateMediaUpload(files: LeadraMediaFile[]): MediaValidation {
       ok: false,
       message:
         'Upload failed. Total media size exceeds 40 MB per unit. Please remove or compress some files.',
+      messageKey: 'error.uploadLimitSize',
     }
   }
 
@@ -214,7 +217,7 @@ export function searchUnits(user: LeadraUser, units: LeadraUnit[], filters: Unit
   })
 }
 
-export function summarizeProjects(units: LeadraUnit[]): ProjectSummary[] {
+export function summarizeProjects(units: LeadraUnit[], locale: LocaleCode = 'en'): ProjectSummary[] {
   const summaries = new Map<string, ProjectSummary>()
 
   for (const unit of units.filter((item) => !item.archived)) {
@@ -236,26 +239,26 @@ export function summarizeProjects(units: LeadraUnit[]): ProjectSummary[] {
     summaries.set(unit.projectId, current)
   }
 
-  return Array.from(summaries.values()).sort((a, b) => a.projectName.localeCompare(b.projectName))
+  return Array.from(summaries.values()).sort((a, b) => compareText(locale, a.projectName, b.projectName))
 }
 
-export function formatCurrency(value: number | null | undefined): string {
-  if (value == null) return 'Not set'
-  return new Intl.NumberFormat('en-EG', {
+export function formatCurrency(value: number | null | undefined, locale: LocaleCode = 'en'): string {
+  if (value == null) return locale === 'ar' ? 'غير محدد' : 'Not set'
+  return new Intl.NumberFormat(getIntlLocale(locale), {
     style: 'currency',
     currency: 'EGP',
     maximumFractionDigits: 0,
   }).format(value)
 }
 
-export function formatDeliveryExpectancy(unit: LeadraUnit): string {
+export function formatDeliveryExpectancy(unit: LeadraUnit, locale: LocaleCode = 'en'): string {
   const { deliveryExpectancy } = unit
   if (deliveryExpectancy.mode === 'year') {
-    return String(deliveryExpectancy.year)
+    return new Intl.NumberFormat(getIntlLocale(locale), { maximumFractionDigits: 0 }).format(deliveryExpectancy.year)
   }
 
   const date = new Date(deliveryExpectancy.year, (deliveryExpectancy.month ?? 1) - 1, 1)
-  return new Intl.DateTimeFormat('en', { month: 'long', year: 'numeric' }).format(date)
+  return new Intl.DateTimeFormat(getIntlLocale(locale), { month: 'long', year: 'numeric' }).format(date)
 }
 
 function roundMoney(value: number): number {

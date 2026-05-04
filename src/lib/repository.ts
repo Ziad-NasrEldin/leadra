@@ -53,11 +53,7 @@ export class LeadraRepository {
   }
 
   async generateUnitPdf(unitId: number): Promise<Blob> {
-    const { data, error } = await this.client.functions.invoke('generate-unit-pdf', {
-      body: { unitId },
-    })
-
-    if (error) throw error
-    return data instanceof Blob ? data : new Blob([String(data)], { type: 'application/pdf' })
+    void unitId
+    throw new Error('The generate-unit-pdf edge function is retired. Use the localized printable brief export in the web client.')
   }
 }
