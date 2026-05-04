@@ -148,6 +148,17 @@ h2 {
   margin-top: 1.5rem;
 }
 
+.auth-form {
+  display: grid;
+  gap: var(--space-3);
+  margin-top: var(--space-4);
+  max-width: 520px;
+}
+
+.auth-form .primary-button {
+  width: 100%;
+}
+
 .role-card,
 .project-card,
 .content-card,

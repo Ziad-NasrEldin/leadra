@@ -16,6 +16,7 @@ import {
   ShieldCheck,
   Users,
 } from 'lucide-react'
+import type { User as SupabaseUser } from '@supabase/supabase-js'
 import { useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
 import { demoUsers, initialAppState, lookupValues } from './data/seed'
@@ -34,8 +35,9 @@ import {
   summarizeProjects,
 } from './lib/domain'
 import { downloadUnitPdf } from './lib/pdf'
-import { isSupabaseConfigured } from './lib/supabase'
-import type { AnalyticsDashboard, AppSettings, AuditLogItem, LeadraMediaFile, LeadraUnit, LeadraUser, NotificationItem, PaymentMethod, UnitStatus } from './lib/types'
+import { isSupabaseConfigured, supabase } from './lib/supabase'
+import { loadSupabaseAppState, loadSupabaseProfile, markSupabaseLogin } from './lib/supabaseState'
+import type { AnalyticsDashboard, AppSettings, AuditLogItem, LeadraMediaFile, LeadraUnit, LeadraUser, LookupValue, NotificationItem, PaymentMethod, UnitStatus } from './lib/types'
 import {
   addAnalyticsEventWorkflow,
   archiveUnitWorkflow,
@@ -67,6 +69,7 @@ function App() {
   const [currentUser, setCurrentUser] = useState<LeadraUser | null>(null)
   const [view, setView] = useState<View>(() => readHashView())
   const [appState, setAppState] = useState(initialAppState)
+  const [activeLookupValues, setActiveLookupValues] = useState<LookupValue[]>(lookupValues)
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null)
   const [selectedUnitId, setSelectedUnitId] = useState<number | null>(null)
   const [unitCodeFilter, setUnitCodeFilter] = useState('')
@@ -74,6 +77,50 @@ function App() {
   const [statusFilter, setStatusFilter] = useState<UnitStatus | 'all'>('all')
   const [flash, setFlash] = useState<string | null>(null)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
+  const [authLoading, setAuthLoading] = useState(isSupabaseConfigured)
+  const [loginError, setLoginError] = useState<string | null>(null)
+
+  async function completeSupabaseLogin(authUser: SupabaseUser) {
+    if (!supabase) return
+    try {
+      setAuthLoading(true)
+      const profile = await loadSupabaseProfile(supabase, authUser)
+      if (profile.status !== 'active') {
+        await supabase.auth.signOut()
+        setLoginError('Inactive users cannot log in.')
+        setAuthLoading(false)
+        return
+      }
+
+      await markSupabaseLogin(supabase)
+      const remote = await loadSupabaseAppState(supabase)
+      setAppState(remote.state)
+      setActiveLookupValues(remote.lookupValues.length > 0 ? remote.lookupValues : lookupValues)
+      setCurrentUser(profile)
+      const requestedView = readHashView()
+      const nextView = isViewAllowedForUser(requestedView, profile) ? requestedView : 'dashboard'
+      setView(nextView)
+      if (nextView !== requestedView) writeHashView(nextView)
+      setLoginError(null)
+    } catch (error) {
+      setLoginError(error instanceof Error ? error.message : 'Supabase login failed.')
+    } finally {
+      setAuthLoading(false)
+    }
+  }
+
+  async function handleSupabasePasswordLogin(email: string, password: string) {
+    if (!supabase) return
+    setLoginError(null)
+    setAuthLoading(true)
+    const { data, error } = await supabase.auth.signInWithPassword({ email, password })
+    if (error) {
+      setLoginError(error.message)
+      setAuthLoading(false)
+      return
+    }
+    if (data.user) await completeSupabaseLogin(data.user)
+  }
 
   useEffect(() => {
     function syncViewFromHash() {
@@ -86,9 +133,50 @@ function App() {
     return () => window.removeEventListener('hashchange', syncViewFromHash)
   }, [])
 
+  useEffect(() => {
+    if (!isSupabaseConfigured || !supabase) return undefined
+    let cancelled = false
+
+    async function hydrateFromSession() {
+      const { data, error } = await supabase!.auth.getSession()
+      if (cancelled) return
+      if (error) {
+        setLoginError(error.message)
+        setAuthLoading(false)
+        return
+      }
+      if (!data.session?.user) {
+        setAuthLoading(false)
+        return
+      }
+      await completeSupabaseLogin(data.session.user)
+    }
+
+    const { data: listener } = supabase.auth.onAuthStateChange((event, session) => {
+      if (event === 'SIGNED_OUT') {
+        setCurrentUser(null)
+        setAppState(initialAppState)
+        setActiveLookupValues(lookupValues)
+        setAuthLoading(false)
+      }
+      if (session?.user && (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED')) {
+        void completeSupabaseLogin(session.user)
+      }
+    })
+
+    void hydrateFromSession()
+
+    return () => {
+      cancelled = true
+      listener.subscription.unsubscribe()
+    }
+  }, [])
+
   if (!currentUser) {
     return (
       <LoginScreen
+        authLoading={authLoading}
+        loginError={loginError}
         onLogin={(nextUser) => {
           setCurrentUser(nextUser)
           const requestedView = readHashView()
@@ -97,6 +185,7 @@ function App() {
           if (nextView !== requestedView) writeHashView(nextView)
           setFlash(null)
         }}
+        onPasswordLogin={handleSupabasePasswordLogin}
       />
     )
   }
@@ -137,13 +226,13 @@ function App() {
     const totalAmount = Number(formData.get('totalAmount'))
     const downPayment = paymentMethod === 'installment' ? Number(formData.get('downPayment')) : null
     const projectId = String(formData.get('projectId'))
-    const project = lookupValues.find((item) => item.id === projectId)
+    const project = activeLookupValues.find((item) => item.id === projectId)
     const destinationId = String(formData.get('destinationId'))
-    const destination = lookupValues.find((item) => item.id === destinationId)
+    const destination = activeLookupValues.find((item) => item.id === destinationId)
     const developerId = String(formData.get('developerId'))
-    const developer = lookupValues.find((item) => item.id === developerId)
+    const developer = activeLookupValues.find((item) => item.id === developerId)
     const viewId = String(formData.get('viewId'))
-    const viewLookup = lookupValues.find((item) => item.id === viewId)
+    const viewLookup = activeLookupValues.find((item) => item.id === viewId)
     const bedrooms = Number(formData.get('bedrooms'))
     const bathrooms = Number(formData.get('bathrooms'))
     const countryCode = String(formData.get('countryCode'))
@@ -277,6 +366,7 @@ function App() {
               type="button"
               aria-label="Sign out"
               onClick={() => {
+                if (supabase) void supabase.auth.signOut()
                 setCurrentUser(null)
                 setView('dashboard')
                 writeHashView('dashboard')
@@ -317,7 +407,7 @@ function App() {
             }}
           />
         )}
-        {activeView === 'create' && <CreateUnitPage onSubmit={handleCreateUnit} />}
+        {activeView === 'create' && <CreateUnitPage lookupValues={activeLookupValues} onSubmit={handleCreateUnit} />}
         {activeView === 'details' && selectedUnit && (
           <UnitDetailsPage
             user={user}
@@ -338,6 +428,7 @@ function App() {
             units={appState.units}
             settings={appState.settings}
             auditLogs={appState.auditLogs}
+            lookupCount={activeLookupValues.length}
             onCreateUser={(formData) => {
               const result = createUserWorkflow(appState, user, {
                 fullName: String(formData.get('fullName')),
@@ -408,28 +499,62 @@ function App() {
   )
 }
 
-function LoginScreen({ onLogin }: { onLogin: (user: LeadraUser) => void }) {
+function LoginScreen({
+  authLoading,
+  loginError,
+  onLogin,
+  onPasswordLogin,
+}: {
+  authLoading: boolean
+  loginError: string | null
+  onLogin: (user: LeadraUser) => void
+  onPasswordLogin: (email: string, password: string) => void
+}) {
   return (
     <main className="login-screen">
       <section className="login-card">
         <p className="eyebrow">Mobile-first resale operations</p>
         <h1>Leadra resale command</h1>
         <p className="login-copy">
-          Internal unit management for sales representatives, managers, sub-admins, and admins. Demo roles are available until Supabase credentials are configured.
+          Internal unit management for sales representatives, managers, sub-admins, and admins. Supabase projects use admin-created email/password accounts.
         </p>
         <div className="integration-badge">
           <ShieldCheck size={18} />
           {isSupabaseConfigured ? 'Supabase connected' : 'Local demo mode. Add Supabase env vars to connect production services.'}
         </div>
-        <div className="role-grid" aria-label="Demo role login options">
-          {demoUsers.map((user) => (
-            <button key={user.id} className="role-card" type="button" onClick={() => onLogin(user)}>
-              <span>{user.role.replace('_', ' ')}</span>
-              <strong>Continue as {user.role === 'admin' ? 'Admin' : user.fullName}</strong>
-              <small>{user.email}</small>
+        {isSupabaseConfigured ? (
+          <form
+            className="auth-form"
+            onSubmit={(event) => {
+              event.preventDefault()
+              const formData = new FormData(event.currentTarget)
+              onPasswordLogin(String(formData.get('email')), String(formData.get('password')))
+            }}
+          >
+            <label>
+              Email
+              <input name="email" type="email" autoComplete="email" required placeholder="user@leadra.com" />
+            </label>
+            <label>
+              Password
+              <input name="password" type="password" autoComplete="current-password" required placeholder="Your Supabase password" />
+            </label>
+            {loginError && <p className="form-error">{loginError}</p>}
+            <button className="primary-button" type="submit" disabled={authLoading}>
+              {authLoading ? 'Connecting...' : 'Sign in'}
             </button>
-          ))}
-        </div>
+          </form>
+        ) : (
+          <div className="role-grid" aria-label="Demo role login options">
+            {demoUsers.map((user) => (
+              <button key={user.id} className="role-card" type="button" onClick={() => onLogin(user)}>
+                <span>{user.role.replace('_', ' ')}</span>
+                <strong>Continue as {user.role === 'admin' ? 'Admin' : user.fullName}</strong>
+                <small>{user.email}</small>
+              </button>
+            ))}
+          </div>
+        )}
       </section>
     </main>
   )
@@ -602,7 +727,13 @@ function UnitListRow({ user, unit, onOpen }: { user: LeadraUser; unit: LeadraUni
   )
 }
 
-function CreateUnitPage({ onSubmit }: { onSubmit: (event: FormEvent<HTMLFormElement>, uploadedMedia: LeadraMediaFile[]) => void }) {
+function CreateUnitPage({
+  lookupValues,
+  onSubmit,
+}: {
+  lookupValues: LookupValue[]
+  onSubmit: (event: FormEvent<HTMLFormElement>, uploadedMedia: LeadraMediaFile[]) => void
+}) {
   const [activeStep, setActiveStep] = useState<(typeof createUnitSteps)[number]>('Property')
   const [selectedMedia, setSelectedMedia] = useState<LeadraMediaFile[]>([])
   const [mediaError, setMediaError] = useState<string | null>(null)
@@ -1092,6 +1223,7 @@ function AdminPage({
   units,
   settings,
   auditLogs,
+  lookupCount,
   onCreateUser,
   onUpdateUser,
   onSettingsUpdate,
@@ -1100,6 +1232,7 @@ function AdminPage({
   units: LeadraUnit[]
   settings: AppSettings
   auditLogs: AuditLogItem[]
+  lookupCount: number
   onCreateUser: (formData: FormData) => void
   onUpdateUser: (userId: string, updates: Partial<LeadraUser>) => void
   onSettingsUpdate: (commissionPercentage: number) => void
@@ -1315,7 +1448,7 @@ function AdminPage({
       <section className="content-card admin-panel" hidden={activeSection !== 'Metrics'}>
         <h2>Admin Metrics</h2>
         <div className="metric-grid tight">
-          <Metric label="Dropdowns" value={lookupValues.length} />
+          <Metric label="Dropdowns" value={lookupCount} />
           <Metric label="Commission" value={`${settings.commissionPercentage}%`} />
           <Metric label="Media limit" value={`${settings.mediaLimitMb} MB`} />
           <Metric label="Units" value={units.length} />

@@ -25,3 +25,4 @@ dist-ssr
 # Added by code-review-graph
 .code-review-graph/
 .gstack/
+supabase/.temp/

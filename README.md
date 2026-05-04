@@ -34,6 +34,21 @@ supabase secrets set RESEND_API_KEY=your-key LEADRA_FROM_EMAIL="Leadra <notifica
 
 The migration creates the role enums, core tables, owner-phone normalization, same-project duplicate protection, RLS policies, and private storage buckets.
 
+For production auth, create users from Supabase Auth or the Admin API and include profile metadata when possible:
+
+```json
+{
+  "full_name": "Nour El Din",
+  "role": "admin",
+  "job_title": "Managing Admin",
+  "phone_number": "+201001112223",
+  "team_id": "22222222-2222-4222-8222-222222222222",
+  "branch_id": "11111111-1111-4111-8111-111111111111"
+}
+```
+
+The `handle_new_auth_user` trigger creates the matching `profiles` row and `notification_preferences` row. Keep public sign-up disabled in the Supabase dashboard for the PRD’s admin-created-account model; the app only exposes sign-in.
+
 ## Implemented MVP Surface
 
 - Demo role login for Admin, Sub Admin, Manager, and Sales Representative.
