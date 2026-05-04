@@ -95,7 +95,11 @@ type View = 'dashboard' | 'units' | 'create' | 'details' | 'notifications' | 'pr
 type HashView = Exclude<View, 'details'>
 
 type TransitionDocument = Document & {
-  startViewTransition?: (callback: () => void) => unknown
+  startViewTransition?: (callback: () => void) => {
+    ready?: Promise<void>
+    updateCallbackDone?: Promise<void>
+    finished?: Promise<void>
+  }
 }
 
 function runPageTransition(update: () => void) {
@@ -106,9 +110,22 @@ function runPageTransition(update: () => void) {
     return
   }
 
-  startViewTransition.call(document, () => {
-    flushSync(update)
-  })
+  try {
+    const transition = startViewTransition.call(document, () => {
+      flushSync(update)
+    })
+    void transition.ready?.catch(() => {
+      // Rapid route changes can abort browser view transitions without affecting app state.
+    })
+    void transition.updateCallbackDone?.catch(() => {
+      // Rapid route changes can abort browser view transitions without affecting app state.
+    })
+    void transition.finished?.catch(() => {
+      // Rapid route changes can abort browser view transitions without affecting app state.
+    })
+  } catch {
+    update()
+  }
 }
 type UiMessage = { message: string; messageKey?: string | null; messageParams?: MessageParams | null }
 
@@ -326,6 +343,13 @@ function App() {
     const destinationId = String(formData.get('destinationId'))
     const developerId = String(formData.get('developerId'))
     const viewId = String(formData.get('viewId'))
+    const staticViewOptions: Record<string, string> = {
+      'view-sea': 'Sea',
+      'view-lagoon': 'Lagoon',
+      'view-pool': 'Pool',
+      'view-landscape': 'Landscape',
+      'view-street': 'Street',
+    }
     const project = activeLookupValues.find((item) => item.id === projectId)
     const destination = activeLookupValues.find((item) => item.id === destinationId)
     const developer = activeLookupValues.find((item) => item.id === developerId)
@@ -342,12 +366,12 @@ function App() {
       bua: Number(formData.get('bua')),
       roofGardenArea: Number(formData.get('roofGardenArea')) || null,
       viewId,
-      viewName: viewLookup?.label ?? 'Open view',
+      viewName: viewLookup?.label ?? staticViewOptions[viewId] ?? 'Landscape',
       bedrooms: Number(formData.get('bedrooms')),
       bathrooms: Number(formData.get('bathrooms')),
       elevator: formData.get('elevator') === 'on',
       landArea: Number(formData.get('landArea')) || null,
-      furnished: formData.get('furnished') === 'on',
+      furnished: String(formData.get('furnished')) === 'true',
       finish: String(formData.get('finish')),
       paymentMethod,
       totalAmount: Number(formData.get('totalAmount')),
@@ -355,8 +379,7 @@ function App() {
       installmentType: paymentMethod === 'installment' ? 'quarterly' : null,
       installmentYears: paymentMethod === 'installment' ? Number(formData.get('installmentYears')) : null,
       deliveryExpectancy: {
-        mode: 'month_year',
-        month: Number(formData.get('deliveryMonth')),
+        mode: 'year',
         year: Number(formData.get('deliveryYear')),
       },
       originalOwnerName: String(formData.get('ownerName')),
@@ -1066,6 +1089,13 @@ function CreateUnitPage({
     { value: 'Villa', label: t('create.villa') },
     { value: 'Townhouse', label: t('create.townhouse') },
   ]
+  const viewOptions = [
+    { value: 'view-sea', label: t('create.viewSea') },
+    { value: 'view-lagoon', label: t('create.viewLagoon') },
+    { value: 'view-pool', label: t('create.viewPool') },
+    { value: 'view-landscape', label: t('create.viewLandscape') },
+    { value: 'view-street', label: t('create.viewStreet') },
+  ]
   const floorOptions = [
     ['Ground', t('create.ground')],
     ['1st', t('create.first')],
@@ -1080,6 +1110,10 @@ function CreateUnitPage({
     ['10th', t('create.tenth')],
     ['Roof', t('create.roof')],
   ] as const
+  const deliveryYearOptions = Array.from({ length: 10 }, (_, index) => {
+    const year = String(2026 + index)
+    return { value: year, label: year }
+  })
 
   function goToRelativeStep(offset: number) {
     const nextIndex = Math.min(createUnitSteps.length - 1, Math.max(0, activeStepIndex + offset))
@@ -1150,12 +1184,25 @@ function CreateUnitPage({
         <fieldset className="unit-form wizard-panel" data-active={activeStep === 'Specs'} aria-hidden={activeStep !== 'Specs'}>
           <legend>{t('create.legend.specs')}</legend>
           <NumberField name="roofGardenArea" label={t('create.roofGardenArea')} defaultValue={0} />
-          <SelectField name="viewId" label={t('create.view')} values={lookupValues.filter((item) => item.kind === 'view')} />
+          <NamedSelectField
+            defaultValue="view-landscape"
+            label={t('create.view')}
+            name="viewId"
+            options={viewOptions}
+          />
           <NumberField name="bedrooms" label={t('create.bedrooms')} defaultValue={3} min={1} max={10} />
           <NumberField name="bathrooms" label={t('create.bathrooms')} defaultValue={2} min={1} max={10} />
           <label className="toggle-line"><input name="elevator" type="checkbox" defaultChecked /> {t('create.elevator')}</label>
           <NumberField name="landArea" label={t('create.landArea')} defaultValue={0} />
-          <label className="toggle-line"><input name="furnished" type="checkbox" /> {t('create.furnished')}</label>
+          <NamedSelectField
+            defaultValue="false"
+            label={t('create.furnished')}
+            name="furnished"
+            options={[
+              { value: 'true', label: t('create.furnishedOption') },
+              { value: 'false', label: t('create.unfurnishedOption') },
+            ]}
+          />
           <NamedSelectField
             defaultValue="Fully Finished"
             label={t('create.finish')}
@@ -1163,7 +1210,7 @@ function CreateUnitPage({
             options={[
               { value: 'Fully Finished', label: t('create.fullyFinished') },
               { value: 'Semi Finished', label: t('create.semiFinished') },
-              { value: 'Core and Shell', label: t('create.coreAndShell') },
+              { value: 'Core & Shell', label: t('create.coreAndShell') },
             ]}
           />
         </fieldset>
@@ -1204,14 +1251,7 @@ function CreateUnitPage({
             {t('create.ownerPhone')}
             <input name="ownerPhone" defaultValue="01012345678" required dir="auto" />
           </label>
-          <label>
-            {t('create.deliveryMonth')}
-            <input name="deliveryMonth" type="number" min="1" max="12" defaultValue="3" />
-          </label>
-          <label>
-            {t('create.deliveryYear')}
-            <input name="deliveryYear" type="number" min="2026" defaultValue="2028" />
-          </label>
+          <NamedSelectField defaultValue="2028" label={t('create.deliveryDate')} name="deliveryYear" options={deliveryYearOptions} />
           <label className="wide-field">
             {t('create.salesNotes')}
             <textarea name="salesNotes" defaultValue="Owner is responsive on WhatsApp." dir="auto" />
@@ -1325,6 +1365,7 @@ function UnitDetailsPage({
   const { locale, t } = useLocale()
   const ownerAllowed = canViewOwnerData(user, unit)
   const [sharedNote, setSharedNote] = useState(unit.adminManagerNotes[0]?.content ?? '')
+  const thumbnail = getThumbnailMedia(unit.media)
 
   return (
     <section className="page-stack page-entrance details-page">
@@ -1352,15 +1393,22 @@ function UnitDetailsPage({
         style={motionStyle(2, 70)}
         title={t('details.mainInfo')}
         rows={[
+          [t('details.unitCode'), unit.unitCode],
+          [t('details.status'), getStatusLabel(locale, unit.status)],
           [t('details.developer'), unit.developerName],
           [t('details.project'), unit.projectName],
           [t('details.destination'), unit.destinationName],
+          [t('details.unitType'), unit.unitType],
           [t('details.floor'), unit.floor],
           [t('create.bua'), `${formatCount(locale, unit.bua)} m²`],
           [t('details.landArea'), unit.landArea ? `${formatCount(locale, unit.landArea)} m²` : t('common.notSet')],
+          [t('details.roofGardenArea'), unit.roofGardenArea ? `${formatCount(locale, unit.roofGardenArea)} m²` : t('common.notSet')],
           [t('details.view'), unit.viewName],
-          [t('details.bedsBaths'), `${formatCount(locale, unit.bedrooms)} / ${formatCount(locale, unit.bathrooms)}`],
-          [t('details.elevator'), unit.elevator ? t('common.yes') : t('common.no')],
+          [t('details.bedrooms'), formatCount(locale, unit.bedrooms)],
+          [t('details.bathrooms'), formatCount(locale, unit.bathrooms)],
+          [t('details.elevator'), unit.elevator ? t('common.with') : t('common.without')],
+          [t('details.furnishingStatus'), unit.furnished ? t('create.furnishedOption') : t('create.unfurnishedOption')],
+          [t('details.finishType'), unit.finish],
         ]}
       />
       <InfoSection
@@ -1373,10 +1421,32 @@ function UnitDetailsPage({
           [t('details.remainingPayment'), formatCurrency(unit.remainingPayment, locale)],
           [t('details.commission'), `${formatCurrency(unit.commissionAmount, locale)} (${unit.commissionPercentage}%)`],
           [t('details.installmentAmount'), formatCurrency(unit.installmentAmount, locale)],
+          [t('details.installmentYears'), unit.installmentYears ? formatCount(locale, unit.installmentYears) : t('common.notSet')],
         ]}
       />
-      <InfoSection style={motionStyle(4, 130)} title={t('details.delivery')} rows={[[t('details.expectedDelivery'), formatDeliveryExpectancy(unit, locale)]]} />
-      <section className="content-card motion-stage" style={motionStyle(5, 160)}>
+      <InfoSection
+        style={motionStyle(4, 130)}
+        title={t('details.installmentsTable')}
+        rows={[
+          [t('details.installmentType'), unit.installmentType ?? t('common.notSet')],
+          [t('details.installmentYears'), unit.installmentYears ? formatCount(locale, unit.installmentYears) : t('common.notSet')],
+          [t('details.installmentAmount'), formatCurrency(unit.installmentAmount, locale)],
+        ]}
+      />
+      <InfoSection style={motionStyle(5, 160)} title={t('details.delivery')} rows={[[t('details.expectedDelivery'), formatDeliveryExpectancy(unit, locale)]]} />
+      <section className="content-card motion-stage" style={motionStyle(6, 190)}>
+        <h2>{t('details.unitThumbnail')}</h2>
+        {thumbnail ? (
+          <div className="media-grid">
+            <div className="media-card">
+              <img src={thumbnail.url} alt={thumbnail.name} loading="lazy" decoding="async" />
+            </div>
+          </div>
+        ) : (
+          <EmptyState title={t('details.noThumbnailTitle')} body={t('details.noThumbnailBody')} />
+        )}
+      </section>
+      <section className="content-card motion-stage" style={motionStyle(7, 220)}>
         <h2>{t('details.notes')}</h2>
         <p dir="auto">{unit.salesNotes}</p>
         {unit.adminManagerNotes.map((note, index) => (
@@ -1406,15 +1476,18 @@ function UnitDetailsPage({
           </form>
         )}
       </section>
-      <section className="media-grid motion-stage" style={motionStyle(6, 190)}>
-        {unit.media.map((file, index) => (
-          <div className="media-card motion-stage" key={file.id} style={motionStyle(index, 240)}>
-            {file.type === 'image' ? <img src={file.url} alt={file.name} loading="lazy" decoding="async" /> : <div className="video-placeholder">{t('details.videoIgnored')}</div>}
-          </div>
-        ))}
+      <section className="content-card motion-stage" style={motionStyle(8, 250)}>
+        <h2>{t('details.mediaGallery')}</h2>
+        <div className="media-grid">
+          {unit.media.map((file, index) => (
+            <div className="media-card motion-stage" key={file.id} style={motionStyle(index, 290)}>
+              {file.type === 'image' ? <img src={file.url} alt={file.name} loading="lazy" decoding="async" /> : <div className="video-placeholder">{t('details.videoIgnored')}</div>}
+            </div>
+          ))}
+        </div>
       </section>
       <InfoSection
-        style={motionStyle(7, 220)}
+        style={motionStyle(9, 320)}
         title={t('details.ownerData')}
         rows={[
           [t('details.ownerName'), ownerAllowed ? unit.originalOwnerName ?? t('common.notSet') : t('common.hiddenByPermission')],

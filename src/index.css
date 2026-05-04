@@ -1276,7 +1276,11 @@ dd {
 }
 
 .analytics-range button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   min-height: 44px;
+  height: 44px;
   border: 0;
   border-radius: 999px;
   padding: 0.45rem 0.7rem;
@@ -1345,7 +1349,11 @@ dd {
 
 .analytics-filter-toggle,
 .compact-action {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
   min-height: 44px;
+  height: 44px;
   padding-inline: 1rem;
 }
 

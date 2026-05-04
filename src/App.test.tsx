@@ -138,9 +138,14 @@ describe('Leadra app shell', () => {
     expect(await screen.findByRole('button', { name: /property/i })).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: /specs/i }))
     expect(screen.getByRole('spinbutton', { name: /bedrooms/i })).toBeInTheDocument()
+    expect(screen.getByRole('combobox', { name: /view/i })).toBeInTheDocument()
+    expect(screen.getByRole('combobox', { name: /furnished/i })).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: /payment/i }))
     expect(screen.getByRole('spinbutton', { name: /total amount/i })).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: /owner/i }))
+    expect(screen.getByRole('combobox', { name: /delivery date/i })).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: /review/i }))
     const image = new File(
@@ -153,7 +158,7 @@ describe('Leadra app shell', () => {
     await user.click(screen.getByRole('button', { name: /create unit and notify team/i }))
 
     expect(await screen.findByRole('heading', { name: /NE107BR3Ba2/i })).toBeInTheDocument()
-    expect(screen.getByAltText(/living-room.png/i)).toBeInTheDocument()
+    expect(screen.getAllByAltText(/living-room.png/i).length).toBeGreaterThan(0)
   })
 
   it('blocks create-unit image uploads over 40 MB', async () => {
@@ -232,7 +237,12 @@ describe('Leadra app shell', () => {
     await user.click(screen.getByRole('link', { name: /view all units/i }))
     await user.click(screen.getByRole('button', { name: /open NE105BR3Ba2/i }))
 
-    expect(await screen.findByText(/available/i)).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: /NE105BR3Ba2/i })).toBeInTheDocument()
+    expect(screen.getByText(/unit thumbnail/i)).toBeInTheDocument()
+    expect(screen.getByText(/landscape/i)).toBeInTheDocument()
+    expect(screen.getByText(/furnishing status/i)).toBeInTheDocument()
+    expect(screen.getByText(/finish type/i)).toBeInTheDocument()
+    expect(screen.getByText(/installments table/i)).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: /mark hold/i }))
     expect(await screen.findByText(/unit marked hold/i)).toBeInTheDocument()
 
