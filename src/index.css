@@ -393,13 +393,15 @@ h2 {
   min-height: 44px;
   border-radius: 999px;
   border: 1px solid var(--line);
-  padding: 0.72rem 1rem;
+  padding: 0.62rem 0.95rem;
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 0.45rem;
   font-weight: 900;
   text-decoration: none;
+  line-height: 1.1;
+  white-space: nowrap;
 }
 
 .primary-button:hover,
@@ -449,6 +451,17 @@ h2 {
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 0.8rem;
+}
+
+.settings-form .secondary-button,
+.settings-form .primary-button,
+.filter-bar .secondary-button,
+.filter-bar .primary-button {
+  align-self: end;
+  justify-self: start;
+  min-height: 40px;
+  padding: 0.54rem 0.85rem;
+  font-size: 0.9rem;
 }
 
 label {
@@ -1145,7 +1158,27 @@ dd {
   .action-row .secondary-button,
   .action-row .danger-button,
   .action-row .secondary-link {
-    flex: 1 1 150px;
+    flex: 0 1 auto;
+    min-height: 42px;
+    padding: 0.58rem 0.78rem;
+    font-size: 0.9rem;
+  }
+
+  .action-row.wrap .primary-button,
+  .action-row.wrap .secondary-button,
+  .action-row.wrap .danger-button,
+  .action-row.wrap .secondary-link {
+    flex: 1 1 128px;
+  }
+
+  .settings-form .secondary-button,
+  .settings-form .primary-button,
+  .filter-bar .secondary-button,
+  .filter-bar .primary-button {
+    width: auto;
+    min-height: 42px;
+    justify-self: start;
+    padding: 0.58rem 0.85rem;
   }
 
   .media-grid {
