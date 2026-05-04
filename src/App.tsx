@@ -63,7 +63,7 @@ import {
   renderNotificationTitle,
   type LocalizedFlashMessage,
 } from './lib/messageRendering'
-import { updateManagedUserPassword } from './lib/adminAuth'
+import { updateManagedUserPassword, updateManagedUserProfile } from './lib/adminAuth'
 import { canUseDemoMode, isPerformanceDemoMode, isProductionMissingSupabaseConfig, isSupabaseConfigured, supabase } from './lib/supabase'
 import { loadSupabaseAnalyticsDashboard, loadSupabaseAppState, loadSupabaseProfile, markSupabaseLogin } from './lib/supabaseState'
 import {
@@ -657,11 +657,25 @@ function App() {
                     : { text: result.error, messageKey: result.errorKey ?? null, messageParams: result.errorParams ?? null },
                 )
               }}
-              onUpdateUser={(userId, updates) => {
+              onUpdateUser={async (userId, updates) => {
                 const auditMessage = createAuditMessage('user_profile_updated')
+                const nextUser =
+                  supabase && isSupabaseConfigured
+                    ? await updateManagedUserProfile(supabase, userId, {
+                        fullName: updates.fullName ?? '',
+                        email: updates.email ?? '',
+                        role: updates.role ?? 'sales',
+                        jobTitle: updates.jobTitle ?? '',
+                        phoneNumber: updates.phoneNumber ?? '',
+                        teamId: updates.teamId ?? '',
+                        branchId: updates.branchId ?? '',
+                        status: updates.status ?? 'active',
+                      })
+                    : { ...appState.users.find((item) => item.id === userId), ...updates } as LeadraUser
+
                 setAppState((state) => ({
                   ...state,
-                  users: state.users.map((item) => (item.id === userId ? { ...item, ...updates } : item)),
+                  users: state.users.map((item) => (item.id === userId ? { ...item, ...nextUser } : item)),
                   auditLogs: [
                     {
                       id: `audit-${Date.now()}`,
@@ -677,6 +691,9 @@ function App() {
                     ...state.auditLogs,
                   ],
                 }))
+                if (currentUser?.id === userId) {
+                  setCurrentUser((existing) => (existing ? { ...existing, ...nextUser } : existing))
+                }
                 setFlash(createFlashMessage('flash.userUpdated', 'User profile updated and audit history updated.'))
               }}
               onUpdateUserPassword={async (userId, password) => {
@@ -2158,7 +2175,7 @@ function AdminPage({
   auditLogs: AuditLogItem[]
   lookupCount: number
   onCreateUser: (formData: FormData) => void
-  onUpdateUser: (userId: string, updates: Partial<LeadraUser>) => void
+  onUpdateUser: (userId: string, updates: Partial<LeadraUser>) => Promise<void>
   onUpdateUserPassword: (userId: string, password: string) => Promise<void>
   onSettingsUpdate: (commissionPercentage: number) => void
 }) {
@@ -2364,8 +2381,8 @@ function AdminPage({
                 isEditing={editingUserId === item.id}
                 onEdit={() => setEditingUserId(item.id)}
                 onCancel={() => setEditingUserId(null)}
-                onSave={(updates) => {
-                  onUpdateUser(item.id, updates)
+                onSave={async (updates) => {
+                  await onUpdateUser(item.id, updates)
                   setEditingUserId(null)
                 }}
                 onPasswordUpdate={(password) => onUpdateUserPassword(item.id, password)}
@@ -2449,13 +2466,15 @@ function UserManagementCard({
   isEditing: boolean
   onEdit: () => void
   onCancel: () => void
-  onSave: (updates: Partial<LeadraUser>) => void
+  onSave: (updates: Partial<LeadraUser>) => Promise<void>
   onPasswordUpdate: (password: string) => Promise<void>
 }) {
   const { locale, t } = useLocale()
   const [passwordEditorOpen, setPasswordEditorOpen] = useState(false)
   const [passwordError, setPasswordError] = useState('')
   const [passwordSaving, setPasswordSaving] = useState(false)
+  const [saveError, setSaveError] = useState('')
+  const [savePending, setSavePending] = useState(false)
 
   return (
     <article className={`user-management-card motion-stage ${user.status}`} style={motionStyle(index)}>
@@ -2500,19 +2519,27 @@ function UserManagementCard({
         <form
           className="user-edit-form motion-stage"
           style={motionStyle(0, 90)}
-          onSubmit={(event) => {
+          onSubmit={async (event) => {
             event.preventDefault()
+            setSaveError('')
             const formData = new FormData(event.currentTarget)
-            onSave({
-              fullName: String(formData.get('fullName')),
-              email: String(formData.get('email')),
-              role: String(formData.get('role')) as LeadraUser['role'],
-              jobTitle: String(formData.get('jobTitle')),
-              phoneNumber: String(formData.get('phoneNumber')),
-              teamId: String(formData.get('teamId')),
-              branchId: String(formData.get('branchId')),
-              status: String(formData.get('status')) as LeadraUser['status'],
-            })
+            setSavePending(true)
+            try {
+              await onSave({
+                fullName: String(formData.get('fullName')),
+                email: String(formData.get('email')),
+                role: String(formData.get('role')) as LeadraUser['role'],
+                jobTitle: String(formData.get('jobTitle')),
+                phoneNumber: String(formData.get('phoneNumber')),
+                teamId: String(formData.get('teamId')),
+                branchId: String(formData.get('branchId')),
+                status: String(formData.get('status')) as LeadraUser['status'],
+              })
+            } catch (error) {
+              setSaveError(error instanceof Error ? error.message : t('admin.userUpdateFailed'))
+            } finally {
+              setSavePending(false)
+            }
           }}
         >
           <label>
@@ -2559,9 +2586,12 @@ function UserManagementCard({
             {t('admin.branch')}
             <input name="branchId" defaultValue={user.branchId} required dir="auto" />
           </label>
+          {saveError && <p className="form-error">{saveError}</p>}
           <div className="user-edit-actions">
-            <button className="secondary-button" type="button" onClick={onCancel}>{t('common.cancel')}</button>
-            <button className="primary-button" type="submit">{t('admin.saveUser')}</button>
+            <button className="secondary-button" type="button" onClick={onCancel} disabled={savePending}>{t('common.cancel')}</button>
+            <button className="primary-button" type="submit" disabled={savePending}>
+              {savePending ? t('common.saving') : t('admin.saveUser')}
+            </button>
           </div>
         </form>
       )}
