@@ -53,6 +53,9 @@ const statusLabels: Record<UnitStatus, string> = {
   sold: 'Sold',
 }
 
+const createUnitSteps = ['Property', 'Specs', 'Payment', 'Owner', 'Review'] as const
+const adminSections = ['Users', 'Settings', 'Metrics', 'Audit'] as const
+
 function App() {
   const [currentUser, setCurrentUser] = useState<LeadraUser | null>(null)
   const [view, setView] = useState<View>(() => readHashView())
@@ -583,6 +586,14 @@ function UnitListRow({ user, unit, onOpen }: { user: LeadraUser; unit: LeadraUni
 }
 
 function CreateUnitPage({ onSubmit }: { onSubmit: (event: FormEvent<HTMLFormElement>) => void }) {
+  const [activeStep, setActiveStep] = useState<(typeof createUnitSteps)[number]>('Property')
+  const activeStepIndex = createUnitSteps.indexOf(activeStep)
+
+  function goToRelativeStep(offset: number) {
+    const nextIndex = Math.min(createUnitSteps.length - 1, Math.max(0, activeStepIndex + offset))
+    setActiveStep(createUnitSteps[nextIndex])
+  }
+
   return (
     <section className="content-card create-card">
       <div className="section-heading">
@@ -591,83 +602,130 @@ function CreateUnitPage({ onSubmit }: { onSubmit: (event: FormEvent<HTMLFormElem
           <h2>Create Unit</h2>
         </div>
       </div>
-      <form className="unit-form" onSubmit={onSubmit}>
-        <SelectField name="developerId" label="Developer" values={lookupValues.filter((item) => item.kind === 'developer')} />
-        <SelectField name="projectId" label="Project" values={lookupValues.filter((item) => item.kind === 'project')} />
-        <NumberField name="bua" label="BUA" defaultValue={145} />
-        <SelectField name="destinationId" label="Destination" values={lookupValues.filter((item) => item.kind === 'destination')} />
-        <label>
-          Unit Type
-          <select name="unitType" defaultValue="Apartment">
-            <option>Apartment</option>
-            <option>Villa</option>
-            <option>Townhouse</option>
-          </select>
-        </label>
-        <label>
-          Floor
-          <select name="floor" defaultValue="2nd">
-            {['Ground', '1st', '2nd', '3rd', '4th', '5th', '6th', '7th', '8th', '9th', '10th', 'Roof'].map((floor) => (
-              <option key={floor}>{floor}</option>
-            ))}
-          </select>
-        </label>
-        <NumberField name="roofGardenArea" label="Roof/Garden Area" defaultValue={0} />
-        <SelectField name="viewId" label="View" values={lookupValues.filter((item) => item.kind === 'view')} />
-        <NumberField name="bedrooms" label="Bedrooms" defaultValue={3} min={1} max={10} />
-        <NumberField name="bathrooms" label="Bathrooms" defaultValue={2} min={1} max={10} />
-        <label className="toggle-line"><input name="elevator" type="checkbox" defaultChecked /> Elevator</label>
-        <NumberField name="landArea" label="Land Area" defaultValue={0} />
-        <label className="toggle-line"><input name="furnished" type="checkbox" /> Furnished</label>
-        <label>
-          Finish
-          <select name="finish" defaultValue="Fully Finished">
-            <option>Fully Finished</option>
-            <option>Semi Finished</option>
-            <option>Core and Shell</option>
-          </select>
-        </label>
-        <label>
-          Payment Method
-          <select name="paymentMethod" defaultValue="installment">
-            <option value="cash">Cash</option>
-            <option value="installment">Installment</option>
-          </select>
-        </label>
-        <NumberField name="totalAmount" label="Total Amount" defaultValue={4_500_000} />
-        <NumberField name="downPayment" label="Down Payment" defaultValue={900_000} />
-        <NumberField name="installmentYears" label="Installment Years" defaultValue={5} min={1} />
-        <label>
-          Original Owner Name
-          <input name="ownerName" defaultValue="New Owner" required />
-        </label>
-        <label>
-          Country Code
-          <select name="countryCode" defaultValue="+20">
-            <option value="+20">Egypt +20</option>
-            <option value="+971">UAE +971</option>
-            <option value="+966">Saudi Arabia +966</option>
-          </select>
-        </label>
-        <label>
-          Original Owner Phone
-          <input name="ownerPhone" defaultValue="01012345678" required />
-        </label>
-        <label>
-          Delivery Month
-          <input name="deliveryMonth" type="number" min="1" max="12" defaultValue="3" />
-        </label>
-        <label>
-          Delivery Year
-          <input name="deliveryYear" type="number" min="2026" defaultValue="2028" />
-        </label>
-        <label className="wide-field">
-          Sales Notes
-          <textarea name="salesNotes" defaultValue="Owner is responsive on WhatsApp." />
-        </label>
-        <button className="primary-button wide-field" type="submit">
-          Create unit and notify team
-        </button>
+      <form className="wizard-shell" onSubmit={onSubmit}>
+        <div className="wizard-steps" aria-label="Create unit steps">
+          {createUnitSteps.map((step, index) => (
+            <button
+              key={step}
+              className={`wizard-step ${step === activeStep ? 'active' : ''}`}
+              type="button"
+              aria-current={step === activeStep ? 'step' : undefined}
+              onClick={() => setActiveStep(step)}
+            >
+              <span>{index + 1}</span>
+              {step}
+            </button>
+          ))}
+        </div>
+
+        <fieldset className="unit-form wizard-panel" hidden={activeStep !== 'Property'}>
+          <legend>Property information</legend>
+          <SelectField name="developerId" label="Developer" values={lookupValues.filter((item) => item.kind === 'developer')} />
+          <SelectField name="projectId" label="Project" values={lookupValues.filter((item) => item.kind === 'project')} />
+          <NumberField name="bua" label="BUA" defaultValue={145} />
+          <SelectField name="destinationId" label="Destination" values={lookupValues.filter((item) => item.kind === 'destination')} />
+          <label>
+            Unit Type
+            <select name="unitType" defaultValue="Apartment">
+              <option>Apartment</option>
+              <option>Villa</option>
+              <option>Townhouse</option>
+            </select>
+          </label>
+          <label>
+            Floor
+            <select name="floor" defaultValue="2nd">
+              {['Ground', '1st', '2nd', '3rd', '4th', '5th', '6th', '7th', '8th', '9th', '10th', 'Roof'].map((floor) => (
+                <option key={floor}>{floor}</option>
+              ))}
+            </select>
+          </label>
+        </fieldset>
+
+        <fieldset className="unit-form wizard-panel" hidden={activeStep !== 'Specs'}>
+          <legend>Specs and finishing</legend>
+          <NumberField name="roofGardenArea" label="Roof/Garden Area" defaultValue={0} />
+          <SelectField name="viewId" label="View" values={lookupValues.filter((item) => item.kind === 'view')} />
+          <NumberField name="bedrooms" label="Bedrooms" defaultValue={3} min={1} max={10} />
+          <NumberField name="bathrooms" label="Bathrooms" defaultValue={2} min={1} max={10} />
+          <label className="toggle-line"><input name="elevator" type="checkbox" defaultChecked /> Elevator</label>
+          <NumberField name="landArea" label="Land Area" defaultValue={0} />
+          <label className="toggle-line"><input name="furnished" type="checkbox" /> Furnished</label>
+          <label>
+            Finish
+            <select name="finish" defaultValue="Fully Finished">
+              <option>Fully Finished</option>
+              <option>Semi Finished</option>
+              <option>Core and Shell</option>
+            </select>
+          </label>
+        </fieldset>
+
+        <fieldset className="unit-form wizard-panel" hidden={activeStep !== 'Payment'}>
+          <legend>Payment information</legend>
+          <label>
+            Payment Method
+            <select name="paymentMethod" defaultValue="installment">
+              <option value="cash">Cash</option>
+              <option value="installment">Installment</option>
+            </select>
+          </label>
+          <NumberField name="totalAmount" label="Total Amount" defaultValue={4_500_000} />
+          <NumberField name="downPayment" label="Down Payment" defaultValue={900_000} />
+          <NumberField name="installmentYears" label="Installment Years" defaultValue={5} min={1} />
+        </fieldset>
+
+        <fieldset className="unit-form wizard-panel" hidden={activeStep !== 'Owner'}>
+          <legend>Owner, delivery, and notes</legend>
+          <label>
+            Original Owner Name
+            <input name="ownerName" defaultValue="New Owner" required />
+          </label>
+          <label>
+            Country Code
+            <select name="countryCode" defaultValue="+20">
+              <option value="+20">Egypt +20</option>
+              <option value="+971">UAE +971</option>
+              <option value="+966">Saudi Arabia +966</option>
+            </select>
+          </label>
+          <label>
+            Original Owner Phone
+            <input name="ownerPhone" defaultValue="01012345678" required />
+          </label>
+          <label>
+            Delivery Month
+            <input name="deliveryMonth" type="number" min="1" max="12" defaultValue="3" />
+          </label>
+          <label>
+            Delivery Year
+            <input name="deliveryYear" type="number" min="2026" defaultValue="2028" />
+          </label>
+          <label className="wide-field">
+            Sales Notes
+            <textarea name="salesNotes" defaultValue="Owner is responsive on WhatsApp." />
+          </label>
+        </fieldset>
+
+        <section className="wizard-panel review-panel" hidden={activeStep !== 'Review'}>
+          <p className="eyebrow">Media / Review</p>
+          <h3>Ready to create this resale unit</h3>
+          <p>The placeholder image upload, duplicate phone check, notifications, audit trail, and analytics event are preserved on submit.</p>
+          <button className="primary-button" type="submit">
+            Create unit and notify team
+          </button>
+        </section>
+
+        <div className="wizard-actions">
+          <button className="secondary-button" type="button" disabled={activeStepIndex === 0} onClick={() => goToRelativeStep(-1)}>
+            Back
+          </button>
+          {activeStep !== 'Review' && (
+            <button className="primary-button" type="button" onClick={() => goToRelativeStep(1)}>
+              Next
+            </button>
+          )}
+        </div>
       </form>
     </section>
   )
@@ -698,12 +756,16 @@ function UnitDetailsPage({
         </div>
         <span className={`status-pill ${unit.status}`}>{statusLabels[unit.status]}</span>
       </div>
-      <div className="action-row wrap">
-        <button className="secondary-button" type="button" onClick={() => onStatusChange('hold')}>Mark Hold</button>
-        <button className="secondary-button" type="button" onClick={() => onStatusChange('sold')}>Mark Sold</button>
-        <button className="primary-button" type="button" onClick={onGeneratePdf}><FileText size={18} /> Generate PDF</button>
-        <button className="secondary-button" type="button" onClick={onGeneratePdf}><Download size={18} /> Share/download PDF</button>
-        {canArchiveUnit(user, unit) && <button className="danger-button" type="button" onClick={onArchive}><Archive size={18} /> Archive</button>}
+      <div className="details-actions">
+        <div className="action-row wrap">
+          <button className="secondary-button" type="button" onClick={() => onStatusChange('hold')}>Mark Hold</button>
+          <button className="secondary-button" type="button" onClick={() => onStatusChange('sold')}>Mark Sold</button>
+        </div>
+        <div className="action-row wrap">
+          <button className="primary-button" type="button" onClick={onGeneratePdf}><FileText size={18} /> Generate PDF</button>
+          <button className="secondary-button" type="button" onClick={onGeneratePdf}><Download size={18} /> Share/download PDF</button>
+          {canArchiveUnit(user, unit) && <button className="danger-button" type="button" onClick={onArchive}><Archive size={18} /> Archive</button>}
+        </div>
       </div>
       <InfoSection title="Main unit information" rows={[
         ['Developer', unit.developerName],
@@ -959,9 +1021,25 @@ function AdminPage({
   onCreateUser: (formData: FormData) => void
   onSettingsUpdate: (commissionPercentage: number) => void
 }) {
+  const [activeSection, setActiveSection] = useState<(typeof adminSections)[number]>('Users')
+
   return (
-    <section className="page-grid">
-      <section className="content-card">
+    <section className="wizard-shell admin-workspace">
+      <div className="wizard-steps" aria-label="Admin sections">
+        {adminSections.map((section) => (
+          <button
+            key={section}
+            className={`wizard-step ${section === activeSection ? 'active' : ''}`}
+            type="button"
+            aria-current={section === activeSection ? 'step' : undefined}
+            onClick={() => setActiveSection(section)}
+          >
+            {section}
+          </button>
+        ))}
+      </div>
+
+      <section className="content-card admin-panel" hidden={activeSection !== 'Users'}>
         <h2><Users size={19} /> User Management</h2>
         <form
           className="settings-form"
@@ -1014,7 +1092,8 @@ function AdminPage({
           </div>
         ))}
       </section>
-      <section className="content-card">
+
+      <section className="content-card admin-panel" hidden={activeSection !== 'Settings'}>
         <h2><Settings size={19} /> Unit Management</h2>
         <p>Dropdown values, commission percentage, teams, branches, company logo, media limit, and payment options are managed here.</p>
         <form
@@ -1031,6 +1110,10 @@ function AdminPage({
           </label>
           <button className="secondary-button" type="submit">Save settings</button>
         </form>
+      </section>
+
+      <section className="content-card admin-panel" hidden={activeSection !== 'Metrics'}>
+        <h2>Admin Metrics</h2>
         <div className="metric-grid tight">
           <Metric label="Dropdowns" value={lookupValues.length} />
           <Metric label="Commission" value={`${settings.commissionPercentage}%`} />
@@ -1038,7 +1121,8 @@ function AdminPage({
           <Metric label="Units" value={units.length} />
         </div>
       </section>
-      <section className="content-card wide-panel">
+
+      <section className="content-card admin-panel" hidden={activeSection !== 'Audit'}>
         <h2>Audit Log</h2>
         {auditLogs.map((item) => (
           <div className="admin-row" key={item.id}>

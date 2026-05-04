@@ -80,4 +80,47 @@ describe('Leadra app shell', () => {
     expect(screen.queryAllByRole('button', { name: /^analytics$/i })).toHaveLength(0)
     expect(screen.queryByRole('heading', { name: /team analytics/i })).not.toBeInTheDocument()
   })
+
+  it('uses a create-unit wizard and still submits the complete form', async () => {
+    renderApp()
+    const user = userEvent.setup()
+
+    await user.click(screen.getByRole('button', { name: /continue as admin/i }))
+    await user.click(screen.getByRole('button', { name: /^create$/i }))
+
+    expect(await screen.findByRole('button', { name: /property/i })).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: /specs/i }))
+    expect(screen.getByRole('spinbutton', { name: /bedrooms/i })).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: /payment/i }))
+    expect(screen.getByRole('spinbutton', { name: /total amount/i })).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: /review/i }))
+    await user.click(screen.getByRole('button', { name: /create unit and notify team/i }))
+
+    expect(await screen.findByRole('heading', { name: /NE107BR3Ba2/i })).toBeInTheDocument()
+  })
+
+  it('uses an admin wizard while preserving create-user and settings submits', async () => {
+    renderApp()
+    const user = userEvent.setup()
+
+    await user.click(screen.getByRole('button', { name: /continue as admin/i }))
+    await user.click((await screen.findAllByRole('button', { name: /^admin$/i }))[0])
+
+    expect(await screen.findByRole('button', { name: /^users$/i })).toBeInTheDocument()
+    await user.type(screen.getByRole('textbox', { name: /full name/i }), 'Adapted User')
+    await user.type(screen.getByRole('textbox', { name: /email/i }), 'adapted@leadra.test')
+    await user.click(screen.getByRole('button', { name: /^create user$/i }))
+    expect(await screen.findByText(/adapted user/i)).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: /^settings$/i }))
+    await user.clear(screen.getByRole('spinbutton', { name: /commission percentage/i }))
+    await user.type(screen.getByRole('spinbutton', { name: /commission percentage/i }), '2')
+    await user.click(screen.getByRole('button', { name: /^save settings$/i }))
+    expect(await screen.findByText(/settings updated and audited/i)).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: /^audit$/i }))
+    expect(screen.getByRole('heading', { name: /audit log/i })).toBeInTheDocument()
+  })
 })
