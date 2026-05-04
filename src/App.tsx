@@ -13,7 +13,6 @@ import {
   SlidersHorizontal,
   Search,
   Settings,
-  ShieldCheck,
   Users,
 } from 'lucide-react'
 import type { User as SupabaseUser } from '@supabase/supabase-js'
@@ -102,8 +101,8 @@ function App() {
       setView(nextView)
       if (nextView !== requestedView) writeHashView(nextView)
       setLoginError(null)
-    } catch (error) {
-      setLoginError(error instanceof Error ? error.message : 'Supabase login failed.')
+    } catch {
+      setLoginError('Sign-in is temporarily unavailable. Contact your administrator.')
     } finally {
       setAuthLoading(false)
     }
@@ -520,7 +519,7 @@ function LoginScreen({
           <p className="login-copy">
             A protected workspace for unit intake, project-first browsing, manager oversight, analytics, and branded owner-safe exports.
           </p>
-          <div className="login-proof-grid" aria-label="Leadra production safeguards">
+          <div className="login-proof-grid" aria-label="Leadra access safeguards">
             <span>Role-scoped visibility</span>
             <span>Owner data protection</span>
             <span>Audit-ready workflows</span>
@@ -531,12 +530,6 @@ function LoginScreen({
           <p className="eyebrow">Authorized access</p>
           <h2>Sign in to Leadra</h2>
           <p>Use the company account created for you by a Leadra admin.</p>
-          <div className={`integration-badge ${isProductionMissingSupabaseConfig ? 'danger' : ''}`}>
-            <ShieldCheck size={18} />
-            {isSupabaseConfigured && 'Production cloud active'}
-            {canUseDemoMode && 'Local demo workspace'}
-            {isProductionMissingSupabaseConfig && 'Production configuration missing'}
-          </div>
           {isSupabaseConfigured && (
             <form
               className="auth-form"
@@ -561,18 +554,21 @@ function LoginScreen({
             </form>
           )}
           {canUseDemoMode && (
-            <div className="role-grid" aria-label="Demo role login options">
-              {demoUsers.map((user) => (
-                <button key={user.id} className="role-card" type="button" onClick={() => onLogin(user)}>
-                  <span>{user.role.replace('_', ' ')}</span>
-                  <strong>Continue as {user.role === 'admin' ? 'Admin' : user.fullName}</strong>
-                  <small>{user.email}</small>
-                </button>
-              ))}
-            </div>
+            <>
+              <p className="login-helper">Choose a test role to preview the product.</p>
+              <div className="role-grid" aria-label="Test role login options">
+                {demoUsers.map((user) => (
+                  <button key={user.id} className="role-card" type="button" onClick={() => onLogin(user)}>
+                    <span>{user.role.replace('_', ' ')}</span>
+                    <strong>Continue as {user.role === 'admin' ? 'Admin' : user.fullName}</strong>
+                    <small>{user.email}</small>
+                  </button>
+                ))}
+              </div>
+            </>
           )}
           {isProductionMissingSupabaseConfig && (
-            <p className="form-error">Set VITE_SUPABASE_URL and VITE_SUPABASE_ANON_KEY before deploying this build.</p>
+            <p className="form-error">Sign-in is not available. Contact your administrator.</p>
           )}
         </div>
       </section>
