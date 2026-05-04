@@ -555,8 +555,8 @@ function LoginScreen({
           )}
           {canUseDemoMode && (
             <>
-              <p className="login-helper">Choose a test role to preview the product.</p>
-              <div className="role-grid" aria-label="Test role login options">
+              <p className="login-helper">Choose a role to preview the product.</p>
+              <div className="role-grid" aria-label="Role login options">
                 {demoUsers.map((user) => (
                   <button key={user.id} className="role-card" type="button" onClick={() => onLogin(user)}>
                     <span>{user.role.replace('_', ' ')}</span>
