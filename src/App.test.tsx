@@ -160,7 +160,7 @@ describe('Leadra app shell', () => {
     await user.click(screen.getByRole('button', { name: /create unit and notify team/i }))
 
     expect(await screen.findByRole('heading', { name: /NE107BR3Ba2/i })).toBeInTheDocument()
-    expect(screen.getAllByAltText(/living-room.png/i).length).toBeGreaterThan(0)
+    expect((await screen.findAllByAltText(/living-room.png/i, undefined, { timeout: 3000 })).length).toBeGreaterThan(0)
   })
 
   it('blocks create-unit image uploads over 40 MB', async () => {
@@ -228,6 +228,15 @@ describe('Leadra app shell', () => {
 
     expect(await screen.findByText(/user profile updated and audit history updated/i)).toBeInTheDocument()
     expect(screen.getByText(/senior sales advisor/i)).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: /set password/i }))
+    const passwordForm = screen.getByRole('button', { name: /update password/i }).closest('form')
+    expect(passwordForm).not.toBeNull()
+    await user.type(within(passwordForm as HTMLFormElement).getByLabelText(/^new password$/i), 'LeadraNew!2026')
+    await user.type(within(passwordForm as HTMLFormElement).getByLabelText(/confirm password/i), 'Different!2026')
+    await user.click(screen.getByRole('button', { name: /update password/i }))
+
+    expect(await screen.findByText(/passwords do not match/i)).toBeInTheDocument()
   })
 
   it('lets an admin toggle unit status and manage the shared unit note', async () => {
@@ -240,11 +249,11 @@ describe('Leadra app shell', () => {
     await user.click(screen.getByRole('button', { name: /open NE105BR3Ba2/i }))
 
     expect(await screen.findByRole('heading', { name: /NE105BR3Ba2/i })).toBeInTheDocument()
-    expect(screen.getByText(/unit thumbnail/i)).toBeInTheDocument()
-    expect(screen.getByText(/landscape/i)).toBeInTheDocument()
-    expect(screen.getByText(/furnishing status/i)).toBeInTheDocument()
-    expect(screen.getByText(/finish type/i)).toBeInTheDocument()
-    expect(screen.getByText(/installments table/i)).toBeInTheDocument()
+    expect(await screen.findByText(/unit thumbnail/i, undefined, { timeout: 3000 })).toBeInTheDocument()
+    expect(await screen.findByText(/landscape/i)).toBeInTheDocument()
+    expect(await screen.findByText(/furnishing status/i)).toBeInTheDocument()
+    expect(await screen.findByText(/finish type/i)).toBeInTheDocument()
+    expect(await screen.findByText(/installments table/i)).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: /mark hold/i }))
     expect(await screen.findByText(/unit marked hold/i)).toBeInTheDocument()
 
@@ -254,15 +263,15 @@ describe('Leadra app shell', () => {
     await user.click(screen.getByRole('button', { name: /clear status/i }))
     expect(await screen.findByText(/unit marked available/i)).toBeInTheDocument()
 
-    const noteInput = screen.getByLabelText(/edit shared unit note/i)
+    const noteInput = await screen.findByLabelText(/edit shared unit note/i, undefined, { timeout: 3000 })
     await user.clear(noteInput)
     await user.type(noteInput, 'This unit is clear for relisting.')
     await user.click(screen.getByRole('button', { name: /save note/i }))
     expect(await screen.findByText(/shared unit note saved/i)).toBeInTheDocument()
-    expect(screen.getByDisplayValue(/this unit is clear for relisting\./i)).toBeInTheDocument()
+    expect(await screen.findByDisplayValue(/this unit is clear for relisting\./i, undefined, { timeout: 3000 })).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: /delete note/i }))
     expect(await screen.findByText(/shared unit note deleted/i)).toBeInTheDocument()
     expect(screen.queryByText(/this unit is clear for relisting\./i)).not.toBeInTheDocument()
-  })
+  }, 10000)
 })

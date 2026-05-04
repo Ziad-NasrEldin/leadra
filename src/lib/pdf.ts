@@ -271,12 +271,13 @@ export async function downloadUnitPdf(
   settings: AppSettings,
   locale: LocaleCode = 'en',
 ): Promise<void> {
-  const popup = window.open('', '_blank', 'noopener,noreferrer')
+  const popup = window.open('', '_blank')
   if (!popup) throw new Error('Unable to open print preview window.')
 
   popup.document.open()
   popup.document.write(buildPrintableUnitBriefHtml(user, unit, settings, locale))
   popup.document.close()
+  popup.opener = null
 
   void waitForImages(popup.document, 700).then(() => {
     if (popup.closed) return

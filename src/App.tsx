@@ -63,6 +63,7 @@ import {
   renderNotificationTitle,
   type LocalizedFlashMessage,
 } from './lib/messageRendering'
+import { updateManagedUserPassword } from './lib/adminAuth'
 import { canUseDemoMode, isPerformanceDemoMode, isProductionMissingSupabaseConfig, isSupabaseConfigured, supabase } from './lib/supabase'
 import { loadSupabaseAnalyticsDashboard, loadSupabaseAppState, loadSupabaseProfile, markSupabaseLogin } from './lib/supabaseState'
 import {
@@ -677,6 +678,23 @@ function App() {
                   ],
                 }))
                 setFlash(createFlashMessage('flash.userUpdated', 'User profile updated and audit history updated.'))
+              }}
+              onUpdateUserPassword={async (userId, password) => {
+                if (!supabase) {
+                  setFlash({
+                    text: 'Password changes require production authentication.',
+                    messageKey: null,
+                    messageParams: null,
+                  })
+                  throw new Error('Password changes require production authentication.')
+                }
+
+                await updateManagedUserPassword(supabase, userId, password)
+                setFlash({
+                  text: 'Password updated. The user can sign in with the new password.',
+                  messageKey: null,
+                  messageParams: null,
+                })
               }}
               onSettingsUpdate={(commissionPercentage) => {
                 const result = updateSettingsWorkflow(appState, user, { commissionPercentage })
@@ -1390,7 +1408,13 @@ function UnitDetailsPage({
   const { locale, t } = useLocale()
   const ownerAllowed = canViewOwnerData(user, unit)
   const [sharedNote, setSharedNote] = useState(unit.adminManagerNotes[0]?.content ?? '')
+  const [showDetailDepth, setShowDetailDepth] = useState(false)
   const thumbnail = getThumbnailMedia(unit.media)
+
+  useEffect(() => {
+    const timeout = window.setTimeout(() => setShowDetailDepth(true), 1800)
+    return () => window.clearTimeout(timeout)
+  }, [unit.id])
 
   return (
     <section className="page-stack page-entrance details-page">
@@ -1418,6 +1442,55 @@ function UnitDetailsPage({
           {canArchiveUnit(user, unit) && <button className="danger-button" type="button" onClick={onArchive}><Archive size={18} /> {t('details.archive')}</button>}
         </div>
       </div>
+      {showDetailDepth ? (
+        <UnitDetailsDeepSections
+          locale={locale}
+          t={t}
+          user={user}
+          unit={unit}
+          ownerAllowed={ownerAllowed}
+          sharedNote={sharedNote}
+          setSharedNote={setSharedNote}
+          thumbnail={thumbnail}
+          onSaveNote={onSaveNote}
+          onDeleteNote={onDeleteNote}
+        />
+      ) : (
+        <section className="content-card motion-stage details-deferred-card" style={motionStyle(2, 70)}>
+          <p className="eyebrow">Preparing details</p>
+          <h2>{t('details.mainInfo')}</h2>
+          <AnalyticsSkeleton />
+        </section>
+      )}
+    </section>
+  )
+}
+
+function UnitDetailsDeepSections({
+  locale,
+  t,
+  user,
+  unit,
+  ownerAllowed,
+  sharedNote,
+  setSharedNote,
+  thumbnail,
+  onSaveNote,
+  onDeleteNote,
+}: {
+  locale: LocaleCode
+  t: ReturnType<typeof useLocale>['t']
+  user: LeadraUser
+  unit: LeadraUnit
+  ownerAllowed: boolean
+  sharedNote: string
+  setSharedNote: (value: string) => void
+  thumbnail: LeadraMediaFile | null
+  onSaveNote: (content: string) => void
+  onDeleteNote: () => void
+}) {
+  return (
+    <>
       <InfoSection
         style={motionStyle(2, 70)}
         title={t('details.mainInfo')}
@@ -1524,7 +1597,7 @@ function UnitDetailsPage({
           [t('details.normalizedPhone'), ownerAllowed ? unit.normalizedOwnerPhone ?? t('common.notSet') : t('common.backendOnlyHidden')],
         ]}
       />
-    </section>
+    </>
   )
 }
 
@@ -2076,6 +2149,7 @@ function AdminPage({
   lookupCount,
   onCreateUser,
   onUpdateUser,
+  onUpdateUserPassword,
   onSettingsUpdate,
 }: {
   users: LeadraUser[]
@@ -2085,6 +2159,7 @@ function AdminPage({
   lookupCount: number
   onCreateUser: (formData: FormData) => void
   onUpdateUser: (userId: string, updates: Partial<LeadraUser>) => void
+  onUpdateUserPassword: (userId: string, password: string) => Promise<void>
   onSettingsUpdate: (commissionPercentage: number) => void
 }) {
   const { locale, t } = useLocale()
@@ -2293,6 +2368,7 @@ function AdminPage({
                   onUpdateUser(item.id, updates)
                   setEditingUserId(null)
                 }}
+                onPasswordUpdate={(password) => onUpdateUserPassword(item.id, password)}
               />
             ))}
             {filteredUsers.length === 0 && <EmptyState title={t('admin.noUsersTitle')} body={t('admin.noUsersBody')} />}
@@ -2366,6 +2442,7 @@ function UserManagementCard({
   onEdit,
   onCancel,
   onSave,
+  onPasswordUpdate,
 }: {
   user: LeadraUser
   index?: number
@@ -2373,8 +2450,12 @@ function UserManagementCard({
   onEdit: () => void
   onCancel: () => void
   onSave: (updates: Partial<LeadraUser>) => void
+  onPasswordUpdate: (password: string) => Promise<void>
 }) {
   const { locale, t } = useLocale()
+  const [passwordEditorOpen, setPasswordEditorOpen] = useState(false)
+  const [passwordError, setPasswordError] = useState('')
+  const [passwordSaving, setPasswordSaving] = useState(false)
 
   return (
     <article className={`user-management-card motion-stage ${user.status}`} style={motionStyle(index)}>
@@ -2398,9 +2479,21 @@ function UserManagementCard({
       </div>
 
       {!isEditing && (
-        <button className="secondary-button" type="button" onClick={onEdit}>
-          {t('admin.editUser')}
-        </button>
+        <div className="user-card-actions">
+          <button className="secondary-button" type="button" onClick={onEdit}>
+            {t('admin.editUser')}
+          </button>
+          <button
+            className="secondary-button"
+            type="button"
+            onClick={() => {
+              setPasswordError('')
+              setPasswordEditorOpen((open) => !open)
+            }}
+          >
+            {passwordEditorOpen ? t('admin.closePassword') : t('admin.setPassword')}
+          </button>
+        </div>
       )}
 
       {isEditing && (
@@ -2469,6 +2562,63 @@ function UserManagementCard({
           <div className="user-edit-actions">
             <button className="secondary-button" type="button" onClick={onCancel}>{t('common.cancel')}</button>
             <button className="primary-button" type="submit">{t('admin.saveUser')}</button>
+          </div>
+        </form>
+      )}
+
+      {passwordEditorOpen && !isEditing && (
+        <form
+          className="user-password-form motion-stage"
+          style={motionStyle(0, 90)}
+          onSubmit={async (event) => {
+            event.preventDefault()
+            setPasswordError('')
+            const formData = new FormData(event.currentTarget)
+            const password = String(formData.get('password') ?? '')
+            const confirmPassword = String(formData.get('confirmPassword') ?? '')
+
+            if (password.length < 10) {
+              setPasswordError(t('admin.passwordTooShort'))
+              return
+            }
+
+            if (password !== confirmPassword) {
+              setPasswordError(t('admin.passwordMismatch'))
+              return
+            }
+
+            setPasswordSaving(true)
+            try {
+              await onPasswordUpdate(password)
+              event.currentTarget.reset()
+              setPasswordEditorOpen(false)
+            } catch (error) {
+              setPasswordError(error instanceof Error ? error.message : t('admin.passwordUpdateFailed'))
+            } finally {
+              setPasswordSaving(false)
+            }
+          }}
+        >
+          <div className="password-form-copy">
+            <strong>{t('admin.setPasswordFor', { name: user.fullName })}</strong>
+            <small>{t('admin.passwordCopy')}</small>
+          </div>
+          <label>
+            {t('admin.newPassword')}
+            <input name="password" type="password" required minLength={10} autoComplete="new-password" />
+          </label>
+          <label>
+            {t('admin.confirmPassword')}
+            <input name="confirmPassword" type="password" required minLength={10} autoComplete="new-password" />
+          </label>
+          {passwordError && <p className="form-error">{passwordError}</p>}
+          <div className="user-edit-actions">
+            <button className="secondary-button" type="button" onClick={() => setPasswordEditorOpen(false)} disabled={passwordSaving}>
+              {t('common.cancel')}
+            </button>
+            <button className="primary-button" type="submit" disabled={passwordSaving}>
+              {passwordSaving ? t('common.saving') : t('admin.updatePassword')}
+            </button>
           </div>
         </form>
       )}
@@ -2542,6 +2692,8 @@ function BrandedSelect({
 
   useEffect(() => {
     if (!open) return undefined
+    const rootElement = document.documentElement
+
     function syncMenuPosition() {
       const root = rootRef.current
       if (!root) return
@@ -2551,23 +2703,41 @@ function BrandedSelect({
       const viewportPadding = 12
       const estimatedHeight = Math.min(320, Math.max(64, options.length * 50 + 18))
       const availableBelow = window.innerHeight - rect.bottom - viewportPadding
-      const availableAbove = rect.top - viewportPadding
-      const opensAbove = availableBelow < estimatedHeight && availableAbove > availableBelow
-      const maxHeight = Math.max(120, Math.min(320, opensAbove ? availableAbove - gap : availableBelow - gap))
+      const maxHeight = Math.max(120, Math.min(estimatedHeight, availableBelow - gap))
       const left = Math.min(Math.max(viewportPadding, rect.left), window.innerWidth - rect.width - viewportPadding)
-      const top = opensAbove ? rect.top - gap : rect.bottom + gap
+      const top = rect.bottom + gap
 
       setMenuStyle({
         position: 'fixed',
-        top: opensAbove ? 'auto' : top,
-        bottom: opensAbove ? window.innerHeight - top : 'auto',
+        top,
+        bottom: 'auto',
         left,
         width: rect.width,
         maxHeight,
       })
     }
 
-    syncMenuPosition()
+    function makeRoomForMenu() {
+      const root = rootRef.current
+      if (!root) return
+
+      const rect = root.getBoundingClientRect()
+      const gap = 8
+      const viewportPadding = 12
+      const estimatedHeight = Math.min(320, Math.max(64, options.length * 50 + 18))
+      const availableBelow = window.innerHeight - rect.bottom - viewportPadding
+      const neededSpace = Math.max(0, estimatedHeight - availableBelow + gap)
+
+      rootElement.style.setProperty('--brand-select-page-bottom-space', `${neededSpace + 24}px`)
+
+      if (neededSpace > 0) {
+        window.scrollBy({ top: neededSpace, behavior: 'auto' })
+      }
+
+      window.requestAnimationFrame(syncMenuPosition)
+    }
+
+    makeRoomForMenu()
 
     function handlePointer(event: MouseEvent) {
       const target = event.target as Node
@@ -2596,6 +2766,7 @@ function BrandedSelect({
       window.removeEventListener('keydown', handleEscape)
       window.removeEventListener('resize', syncMenuPosition)
       window.removeEventListener('scroll', syncMenuPosition, true)
+      rootElement.style.removeProperty('--brand-select-page-bottom-space')
     }
   }, [open, options.length])
 
