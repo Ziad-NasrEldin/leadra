@@ -8,6 +8,7 @@ import {
   Home,
   Image as ImageIcon,
   LogOut,
+  MoreHorizontal,
   Plus,
   SlidersHorizontal,
   Search,
@@ -62,6 +63,7 @@ function App() {
   const [ownerPhoneFilter, setOwnerPhoneFilter] = useState('')
   const [statusFilter, setStatusFilter] = useState<UnitStatus | 'all'>('all')
   const [flash, setFlash] = useState<string | null>(null)
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
 
   useEffect(() => {
     function syncViewFromHash() {
@@ -115,6 +117,7 @@ function App() {
       writeHashView(nextView)
     }
     setFlash(null)
+    setMobileMenuOpen(false)
   }
 
   function handleCreateUnit(event: FormEvent<HTMLFormElement>) {
@@ -356,18 +359,29 @@ function App() {
         )}
       </main>
 
+      {mobileMenuOpen && (
+        <div className="mobile-more-sheet" role="menu" aria-label="More mobile destinations">
+          <NavButton active={activeView === 'notifications'} label="Alerts" onClick={() => navigate('notifications')} icon={<Bell />} />
+          {canUseAnalytics && (
+            <NavButton active={activeView === 'analytics'} label="Analytics" onClick={() => navigate('analytics')} icon={<BarChart3 />} />
+          )}
+          <NavButton active={activeView === 'profile'} label="Profile" onClick={() => navigate('profile')} icon={<SlidersHorizontal />} />
+          {canUseAdmin && (
+            <NavButton active={activeView === 'admin'} label="Admin" onClick={() => navigate('admin')} icon={<Settings />} />
+          )}
+        </div>
+      )}
+
       <nav className="bottom-nav" aria-label="Mobile navigation">
         <NavButton active={activeView === 'dashboard'} label="Home" onClick={() => navigate('dashboard')} icon={<Home />} />
         <NavButton active={activeView === 'units'} label="Units" onClick={() => navigate('units')} icon={<Building2 />} />
         <NavButton active={activeView === 'create'} label="Add" onClick={() => navigate('create')} icon={<Plus />} />
-        <NavButton active={activeView === 'notifications'} label="Alerts" onClick={() => navigate('notifications')} icon={<Bell />} />
-        {canUseAnalytics && (
-          <NavButton active={activeView === 'analytics'} label="Analytics" onClick={() => navigate('analytics')} icon={<BarChart3 />} />
-        )}
-        <NavButton active={activeView === 'profile'} label="Profile" onClick={() => navigate('profile')} icon={<SlidersHorizontal />} />
-        {canUseAdmin && (
-          <NavButton active={activeView === 'admin'} label="Admin" onClick={() => navigate('admin')} icon={<Settings />} />
-        )}
+        <NavButton
+          active={mobileMenuOpen || activeView === 'notifications' || activeView === 'analytics' || activeView === 'profile' || activeView === 'admin'}
+          label="More"
+          onClick={() => setMobileMenuOpen((open) => !open)}
+          icon={<MoreHorizontal />}
+        />
       </nav>
     </div>
   )
