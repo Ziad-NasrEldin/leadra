@@ -764,19 +764,30 @@ function NotificationsPage({ notifications, user }: { notifications: Notificatio
 function AnalyticsPage({ dashboard, user }: { dashboard: AnalyticsDashboard; user: LeadraUser }) {
   const topSales = dashboard.salesPerformance.slice(0, 4)
   const latestTimeline = dashboard.activityTimeline.slice(-7)
+  const averageTargetProgress =
+    dashboard.targetProgress.length === 0
+      ? 0
+      : Math.round(dashboard.targetProgress.reduce((total, target) => total + target.activityProgress, 0) / dashboard.targetProgress.length)
 
   return (
     <section className="page-stack analytics-page">
       <div className="details-hero analytics-hero">
-        <div>
+        <div className="analytics-hero-copy">
           <p className="eyebrow">{dashboard.scopeLabel}</p>
           <h2>{user.role === 'manager' ? 'Team Analytics' : 'Company Analytics'}</h2>
           <p>Live executive overview with sales performance, inventory health, workflow risk, and target progress.</p>
         </div>
-        <div className="analytics-range">
-          <span>Live</span>
-          <span>30 days</span>
-          <span>90 days</span>
+        <div className="analytics-hero-side">
+          <div className="analytics-range" aria-label="Analytics time windows">
+            <span>Live</span>
+            <span>30 days</span>
+            <span>90 days</span>
+          </div>
+          <div className="analytics-signal-card">
+            <span>Pipeline signal</span>
+            <strong>{dashboard.overview.availableUnits}/{dashboard.overview.totalActiveUnits}</strong>
+            <small>available units active</small>
+          </div>
         </div>
       </div>
 
@@ -804,7 +815,10 @@ function AnalyticsPage({ dashboard, user }: { dashboard: AnalyticsDashboard; use
                 <strong>{row.userName}</strong>
                 <p>{row.unitsCreated} uploaded / {row.unitsSold} sold / {row.activityCount} events</p>
               </div>
-              <span>{formatCurrency(row.commissionContribution)}</span>
+              <div className="analytics-row-stat">
+                <span>{formatCurrency(row.commissionContribution)}</span>
+                <small>commission</small>
+              </div>
             </div>
           ))}
         </section>
@@ -839,9 +853,9 @@ function AnalyticsPage({ dashboard, user }: { dashboard: AnalyticsDashboard; use
                 <strong>{project.projectName}</strong>
                 <p>{project.developerName} / {project.destinationName}</p>
               </div>
-              <span>{project.availableUnits} available</span>
-              <span>{project.holdRatio}% hold</span>
-              <span>{project.mediaCompleteness}% media</span>
+              <span className="analytics-chip">{project.availableUnits} available</span>
+              <span className="analytics-chip warning">{project.holdRatio}% hold</span>
+              <span className="analytics-chip success">{project.mediaCompleteness}% media</span>
             </div>
           ))}
         </div>
@@ -854,10 +868,14 @@ function AnalyticsPage({ dashboard, user }: { dashboard: AnalyticsDashboard; use
               <p className="eyebrow">Targets</p>
               <h2>Progress</h2>
             </div>
+            <span className="analytics-chip success">{averageTargetProgress}% activity</span>
           </div>
           {dashboard.targetProgress.map((target) => (
             <div className="target-card" key={target.targetId}>
-              <strong>{target.label}</strong>
+              <div className="target-card-header">
+                <strong>{target.label}</strong>
+                <span>{target.activityProgress}%</span>
+              </div>
               <MiniBar label="Units created" value={target.unitsCreatedProgress} total={100} suffix="%" />
               <MiniBar label="Activity" value={target.activityProgress} total={100} suffix="%" />
               <MiniBar label="Sold value" value={target.soldValueProgress} total={100} suffix="%" />
@@ -873,10 +891,11 @@ function AnalyticsPage({ dashboard, user }: { dashboard: AnalyticsDashboard; use
             </div>
           </div>
           <div className="timeline-chart" aria-label="Recent analytics activity timeline">
+            {latestTimeline.length === 0 && <EmptyState title="No timeline data yet" body="Events from unit creation, status changes, and exports will populate this chart." />}
             {latestTimeline.map((point) => (
               <div className="timeline-bar" key={point.date}>
-                <span style={{ height: `${Math.max(12, point.activityCount * 18)}px` }} />
-                <small>{point.date.slice(5)}</small>
+                <span style={{ height: `${Math.max(18, point.activityCount * 20)}px` }} title={`${point.activityCount} events on ${point.date}`} />
+                <small>{point.date.slice(5).replace('-', '/')}</small>
               </div>
             ))}
           </div>

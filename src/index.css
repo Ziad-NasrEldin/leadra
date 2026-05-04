@@ -616,15 +616,49 @@ dd {
 .analytics-hero {
   display: flex;
   justify-content: space-between;
-  gap: var(--space-4);
+  align-items: stretch;
+  gap: var(--space-6);
   background:
-    radial-gradient(circle at 0% 0%, rgba(220, 232, 213, 0.52), transparent 16rem),
-    linear-gradient(135deg, rgba(20, 33, 29, 0.96), rgba(49, 72, 64, 0.94));
+    radial-gradient(circle at 12% 0%, rgba(234, 215, 181, 0.34), transparent 13rem),
+    radial-gradient(circle at 100% 100%, rgba(180, 100, 61, 0.28), transparent 15rem),
+    linear-gradient(135deg, rgba(20, 33, 29, 0.98), rgba(49, 72, 64, 0.95));
   color: #fffaf0;
+  overflow: hidden;
+  position: relative;
+}
+
+.analytics-hero::after {
+  content: "";
+  position: absolute;
+  inset: auto -3rem -4rem auto;
+  width: 13rem;
+  height: 13rem;
+  border: 1px solid rgba(255, 250, 240, 0.12);
+  border-radius: 999px;
+}
+
+.analytics-hero-copy {
+  max-width: 62ch;
+  position: relative;
+  z-index: 1;
+}
+
+.analytics-hero-copy h2 {
+  letter-spacing: -0.055em;
+}
+
+.analytics-hero-side {
+  display: grid;
+  align-content: space-between;
+  justify-items: end;
+  gap: var(--space-4);
+  position: relative;
+  z-index: 1;
 }
 
 .analytics-hero p {
   color: rgba(255, 250, 240, 0.78);
+  max-width: 58ch;
 }
 
 .analytics-range {
@@ -650,10 +684,36 @@ dd {
   color: var(--ink);
 }
 
+.analytics-signal-card {
+  min-width: 172px;
+  border: 1px solid rgba(255, 250, 240, 0.16);
+  border-radius: 1.15rem;
+  padding: var(--space-4);
+  background: rgba(255, 250, 240, 0.1);
+  box-shadow: inset 0 1px 0 rgba(255, 250, 240, 0.18);
+}
+
+.analytics-signal-card span,
+.analytics-signal-card small {
+  color: rgba(255, 250, 240, 0.68);
+  font-size: 0.75rem;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.analytics-signal-card strong {
+  display: block;
+  margin: 0.25rem 0;
+  font-size: 2.25rem;
+  letter-spacing: -0.08em;
+}
+
 .analytics-metrics .metric-card {
   background:
     radial-gradient(circle at 100% 0%, rgba(180, 100, 61, 0.16), transparent 7rem),
     var(--panel);
+  box-shadow: 0 18px 42px rgba(20, 33, 29, 0.08);
 }
 
 .analytics-row {
@@ -661,6 +721,7 @@ dd {
   grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
   gap: var(--space-3);
+  min-height: 66px;
   padding: 0.85rem 0;
   border-bottom: 1px solid var(--line);
 }
@@ -675,13 +736,54 @@ dd {
   font-size: 0.9rem;
 }
 
-.analytics-row > span {
+.analytics-row > span,
+.analytics-row-stat span {
   font-weight: 900;
   color: var(--olive);
 }
 
+.analytics-row-stat {
+  display: grid;
+  justify-items: end;
+  gap: 0.1rem;
+}
+
+.analytics-row-stat small {
+  color: var(--muted);
+  font-size: 0.72rem;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
 .project-health-row {
   grid-template-columns: minmax(0, 1.4fr) repeat(3, auto);
+}
+
+.analytics-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 32px;
+  border: 1px solid color-mix(in oklch, var(--olive), transparent 66%);
+  border-radius: 999px;
+  padding: 0.35rem 0.65rem;
+  background: rgba(220, 232, 213, 0.38);
+  color: var(--olive);
+  font-size: 0.78rem;
+  font-weight: 900;
+  white-space: nowrap;
+}
+
+.analytics-chip.warning {
+  border-color: color-mix(in oklch, var(--copper), transparent 64%);
+  background: rgba(234, 215, 181, 0.46);
+  color: var(--copper);
+}
+
+.analytics-chip.success {
+  border-color: color-mix(in oklch, var(--olive), transparent 54%);
+  background: rgba(220, 232, 213, 0.54);
 }
 
 .status-stack,
@@ -693,8 +795,33 @@ dd {
 .target-card {
   padding: var(--space-4);
   border: 1px solid var(--line);
-  border-radius: 1rem;
-  background: rgba(255, 252, 244, 0.72);
+  border-radius: 1.15rem;
+  background:
+    linear-gradient(180deg, rgba(255, 252, 244, 0.9), rgba(255, 252, 244, 0.64)),
+    var(--panel);
+  box-shadow: 0 14px 34px rgba(20, 33, 29, 0.06);
+}
+
+.target-card + .target-card {
+  margin-top: var(--space-3);
+}
+
+.target-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.target-card-header span {
+  display: grid;
+  place-items: center;
+  min-width: 48px;
+  min-height: 48px;
+  border-radius: 999px;
+  background: var(--ink);
+  color: #fffaf0;
+  font-weight: 900;
 }
 
 .mini-bar {
@@ -726,6 +853,7 @@ dd {
   height: 100%;
   border-radius: inherit;
   background: linear-gradient(90deg, var(--copper), var(--olive));
+  transition: width 260ms var(--ease-out);
 }
 
 .timeline-chart {
@@ -733,7 +861,11 @@ dd {
   align-items: end;
   gap: var(--space-3);
   min-height: 170px;
-  padding-top: var(--space-4);
+  padding: var(--space-4) var(--space-2) 0;
+  border-radius: 1rem;
+  background:
+    linear-gradient(to top, rgba(20, 33, 29, 0.06) 1px, transparent 1px) 0 0 / 100% 25%,
+    rgba(255, 252, 244, 0.48);
 }
 
 .timeline-bar {
@@ -749,6 +881,7 @@ dd {
   min-width: 18px;
   border-radius: 999px 999px 0.45rem 0.45rem;
   background: linear-gradient(180deg, var(--copper), var(--olive));
+  box-shadow: 0 10px 22px rgba(49, 72, 64, 0.16);
 }
 
 .timeline-bar small {
@@ -977,6 +1110,16 @@ dd {
 
   .analytics-hero {
     display: grid;
+    gap: var(--space-4);
+    padding: 1rem;
+  }
+
+  .analytics-hero-copy h2 {
+    font-size: clamp(1.8rem, 10vw, 2.45rem);
+  }
+
+  .analytics-hero-side {
+    justify-items: stretch;
   }
 
   .analytics-range {
@@ -984,12 +1127,50 @@ dd {
     justify-content: space-between;
   }
 
+  .analytics-signal-card {
+    min-width: 0;
+    display: grid;
+    grid-template-columns: 1fr auto;
+    align-items: end;
+    gap: var(--space-2);
+  }
+
+  .analytics-signal-card strong {
+    margin: 0;
+    font-size: 2rem;
+    text-align: right;
+  }
+
+  .analytics-signal-card small {
+    grid-column: 1 / -1;
+  }
+
   .analytics-row,
   .project-health-row {
     grid-template-columns: 1fr;
+    align-items: start;
+    min-height: auto;
+    padding: var(--space-3);
+    border: 1px solid var(--line);
+    border-radius: 1rem;
+    background: rgba(255, 252, 244, 0.58);
   }
 
   .analytics-row > span {
+    justify-self: start;
+  }
+
+  .analytics-table,
+  .content-card .analytics-row + .analytics-row {
+    display: grid;
+    gap: var(--space-3);
+  }
+
+  .analytics-row-stat {
+    justify-items: start;
+  }
+
+  .project-health-row .analytics-chip {
     justify-self: start;
   }
 
