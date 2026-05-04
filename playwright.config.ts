@@ -1,10 +1,12 @@
-import { defineConfig, devices } from '@playwright/test'
+import { defineConfig } from '@playwright/test'
 
 export default defineConfig({
   testDir: './e2e',
   timeout: 45_000,
   expect: { timeout: 10_000 },
   fullyParallel: false,
+  workers: 1,
+  retries: 1,
   reporter: [['list'], ['html', { open: 'never', outputFolder: 'playwright-report' }]],
   use: {
     baseURL: process.env.PLAYWRIGHT_BASE_URL ?? 'http://127.0.0.1:4173',
@@ -12,14 +14,14 @@ export default defineConfig({
     screenshot: 'only-on-failure',
   },
   projects: [
-    { name: 'mobile', use: { ...devices['iPhone 13'] } },
+    { name: 'mobile', use: { viewport: { width: 390, height: 844 }, isMobile: true, hasTouch: true } },
     { name: 'tablet', use: { viewport: { width: 768, height: 1024 } } },
     { name: 'desktop', use: { viewport: { width: 1365, height: 768 } } },
   ],
   webServer: {
-    command: 'npm run preview -- --host 127.0.0.1 --port 4173',
+    command: 'npm run build && npm run preview -- --host 127.0.0.1 --port 4173',
     url: 'http://127.0.0.1:4173',
-    reuseExistingServer: true,
+    reuseExistingServer: false,
     timeout: 30_000,
   },
 })

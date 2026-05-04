@@ -11,6 +11,7 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "typecheck": "tsc -b --pretty false",
+    "seed:admin": "node scripts/seed-admin-user.mjs",
     "e2e": "playwright test",
     "qa:preview": "playwright test",
     "qa:staging": "node scripts/qa-staging.mjs",

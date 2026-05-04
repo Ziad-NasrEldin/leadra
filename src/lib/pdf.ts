@@ -9,8 +9,9 @@ export function buildPrintableUnitBriefText(
   locale: LocaleCode,
 ): string {
   const safeUnit = sanitizeUnitForPdf(user, unit)
+  const includeSalesData = canIncludeSalesExportData(user, unit)
 
-  return [
+  const lines = [
     translate(locale, 'export.title', { companyName: settings.companyName }),
     `${translate(locale, 'export.generatedBy')}: ${user.fullName}`,
     `${translate(locale, 'units.unitCode')}: ${safeUnit.unitCode}`,
@@ -20,14 +21,17 @@ export function buildPrintableUnitBriefText(
     `${translate(locale, 'export.area')}: ${safeUnit.bua}`,
     `${translate(locale, 'export.bedsBaths')}: ${safeUnit.bedrooms} / ${safeUnit.bathrooms}`,
     `${translate(locale, 'export.totalAmount')}: ${formatCurrency(safeUnit.totalAmount, locale)}`,
-    `${translate(locale, 'export.commission')}: ${formatCurrency(safeUnit.commissionAmount, locale)}`,
     `${translate(locale, 'export.paymentMethod')}: ${getPaymentMethodLabel(locale, safeUnit.paymentMethod)}`,
     `${translate(locale, 'export.installment')}: ${formatCurrency(safeUnit.installmentAmount, locale)}`,
     `${translate(locale, 'export.delivery')}: ${formatDeliveryExpectancy(safeUnit, locale)}`,
     `${translate(locale, 'export.contact')}: ${settings.contactDetails}`,
-    safeUnit.salesNotes || translate(locale, 'export.notesEmpty'),
+    includeSalesData ? safeUnit.salesNotes || translate(locale, 'export.notesEmpty') : translate(locale, 'export.notesEmpty'),
     settings.footerText,
-  ].join('\n')
+  ]
+  if (includeSalesData) {
+    lines.splice(10, 0, `${translate(locale, 'export.commission')}: ${formatCurrency(safeUnit.commissionAmount, locale)}`)
+  }
+  return lines.join('\n')
 }
 
 export function buildPermissionSafePdfText(
@@ -57,6 +61,7 @@ export function buildPrintableUnitBriefHtml(
   locale: LocaleCode,
 ): string {
   const safeUnit = sanitizeUnitForPdf(user, unit)
+  const includeSalesData = canIncludeSalesExportData(user, unit)
   const rtl = isRtlLocale(locale)
   const sections = [
     [translate(locale, 'export.project'), safeUnit.projectName],
@@ -66,12 +71,14 @@ export function buildPrintableUnitBriefHtml(
     [translate(locale, 'export.bedsBaths'), `${safeUnit.bedrooms} / ${safeUnit.bathrooms}`],
     [translate(locale, 'export.delivery'), formatDeliveryExpectancy(safeUnit, locale)],
     [translate(locale, 'export.totalAmount'), formatCurrency(safeUnit.totalAmount, locale)],
-    [translate(locale, 'export.commission'), `${formatCurrency(safeUnit.commissionAmount, locale)} (${safeUnit.commissionPercentage}%)`],
     [translate(locale, 'export.paymentMethod'), getPaymentMethodLabel(locale, safeUnit.paymentMethod)],
     [translate(locale, 'export.installment'), formatCurrency(safeUnit.installmentAmount, locale)],
     [translate(locale, 'export.generatedBy'), user.fullName],
     [translate(locale, 'export.contact'), settings.contactDetails || translate(locale, 'common.notSet')],
-  ] as const
+  ]
+  if (includeSalesData) {
+    sections.splice(7, 0, [translate(locale, 'export.commission'), `${formatCurrency(safeUnit.commissionAmount, locale)} (${safeUnit.commissionPercentage}%)`])
+  }
 
   const imageCards =
     safeUnit.media.filter((file) => file.type === 'image').map(renderImageCard).join('') ||
@@ -244,7 +251,7 @@ export function buildPrintableUnitBriefHtml(
 
       <section class="section">
         <h2>${escapeHtml(translate(locale, 'export.sectionNotes'))}</h2>
-        <p class="notes" dir="auto">${escapeHtml(safeUnit.salesNotes || translate(locale, 'export.notesEmpty'))}</p>
+        <p class="notes" dir="auto">${escapeHtml(includeSalesData ? safeUnit.salesNotes || translate(locale, 'export.notesEmpty') : translate(locale, 'export.notesEmpty'))}</p>
       </section>
 
       <section class="section">
@@ -271,9 +278,11 @@ export async function downloadUnitPdf(
   popup.document.write(buildPrintableUnitBriefHtml(user, unit, settings, locale))
   popup.document.close()
 
-  await waitForImages(popup.document)
-  popup.focus()
-  popup.print()
+  void waitForImages(popup.document, 700).then(() => {
+    if (popup.closed) return
+    popup.focus()
+    popup.print()
+  })
 }
 
 function renderImageCard(file: LeadraMediaFile) {
@@ -293,20 +302,28 @@ function escapeAttribute(value: string): string {
   return escapeHtml(value)
 }
 
-async function waitForImages(document: Document): Promise<void> {
-  const images = Array.from(document.images)
-  await Promise.all(
-    images.map(
-      (image) =>
-        new Promise<void>((resolve) => {
-          if (image.complete) {
-            resolve()
-            return
-          }
+function canIncludeSalesExportData(user: LeadraUser, unit: LeadraUnit) {
+  return user.role !== 'sales' || unit.createdBy === user.id
+}
 
-          image.addEventListener('load', () => resolve(), { once: true })
-          image.addEventListener('error', () => resolve(), { once: true })
-        }),
+async function waitForImages(document: Document, timeoutMs: number): Promise<void> {
+  const images = Array.from(document.images)
+  if (images.length === 0) return
+  await Promise.race([
+    Promise.all(
+      images.map(
+        (image) =>
+          new Promise<void>((resolve) => {
+            if (image.complete) {
+              resolve()
+              return
+            }
+
+            image.addEventListener('load', () => resolve(), { once: true })
+            image.addEventListener('error', () => resolve(), { once: true })
+          }),
+      ),
     ),
-  )
+    new Promise((resolve) => window.setTimeout(resolve, timeoutMs)),
+  ])
 }

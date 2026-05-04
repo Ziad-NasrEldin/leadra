@@ -47,26 +47,14 @@ export function buildAnalyticsDashboard(
   const events = filterEventsByFilters(filterAnalyticsEvents(user, state.analyticsEvents), units, filters, now)
   const targets = filterAnalyticsTargets(user, state.analyticsTargets)
   const timeline = buildActivityTimeline(events, filters, now)
+  const overview = buildOverview(units, users, events, now)
 
   return {
     scopeLabel:
       user.role === 'manager'
         ? translate(locale, 'analytics.scope.team', { teamId: user.teamId })
         : translate(locale, 'analytics.scope.company'),
-    overview: {
-      totalActiveUnits: units.filter((unit) => !unit.archived).length,
-      availableUnits: units.filter((unit) => !unit.archived && unit.status === 'available').length,
-      holdUnits: units.filter((unit) => !unit.archived && unit.status === 'hold').length,
-      soldUnits: units.filter((unit) => !unit.archived && unit.status === 'sold').length,
-      soldValue: units.filter((unit) => unit.status === 'sold').reduce((total, unit) => total + unit.totalAmount, 0),
-      projectedCommission: units.filter((unit) => !unit.archived).reduce((total, unit) => total + unit.commissionAmount, 0),
-      activeUsers: users.filter((item) => item.status === 'active').length,
-      duplicateAttempts: events.filter((event) => event.eventType === 'duplicate_phone_blocked').length,
-      pdfExports: events.filter((event) => event.eventType === 'pdf_generated' || event.eventType === 'pdf_shared_or_downloaded').length,
-      inactiveUsers: users.filter((item) => item.status === 'inactive').length,
-      archivedUnits: units.filter((unit) => unit.archived).length,
-      staleUnits: units.filter((unit) => isStale(unit, now)).length,
-    },
+    overview,
     salesPerformance: buildSalesPerformance(users, units, events),
     inventoryHealth: buildInventoryHealth(units, locale, now),
     activityTimeline: timeline,
@@ -83,6 +71,49 @@ export function buildAnalyticsDashboard(
     targetProgress: buildTargetProgress(targets, units, events, locale),
     filterOptions: buildAnalyticsFilterOptions(user, state),
   }
+}
+
+function buildOverview(units: LeadraUnit[], users: LeadraUser[], events: AnalyticsEvent[], now: Date): AnalyticsDashboard['overview'] {
+  const overview: AnalyticsDashboard['overview'] = {
+    totalActiveUnits: 0,
+    availableUnits: 0,
+    holdUnits: 0,
+    soldUnits: 0,
+    soldValue: 0,
+    projectedCommission: 0,
+    activeUsers: 0,
+    duplicateAttempts: 0,
+    pdfExports: 0,
+    inactiveUsers: 0,
+    archivedUnits: 0,
+    staleUnits: 0,
+  }
+
+  for (const unit of units) {
+    if (unit.archived) {
+      overview.archivedUnits += 1
+    } else {
+      overview.totalActiveUnits += 1
+      overview.projectedCommission += unit.commissionAmount
+      if (unit.status === 'available') overview.availableUnits += 1
+      if (unit.status === 'hold') overview.holdUnits += 1
+      if (unit.status === 'sold') overview.soldUnits += 1
+      if (isStale(unit, now)) overview.staleUnits += 1
+    }
+    if (unit.status === 'sold') overview.soldValue += unit.totalAmount
+  }
+
+  for (const user of users) {
+    if (user.status === 'active') overview.activeUsers += 1
+    if (user.status === 'inactive') overview.inactiveUsers += 1
+  }
+
+  for (const event of events) {
+    if (event.eventType === 'duplicate_phone_blocked') overview.duplicateAttempts += 1
+    if (event.eventType === 'pdf_generated' || event.eventType === 'pdf_shared_or_downloaded') overview.pdfExports += 1
+  }
+
+  return overview
 }
 
 export function buildAnalyticsFilterOptions(user: LeadraUser, state: AppDataState): AnalyticsFilterOptions {
@@ -175,11 +206,26 @@ function filterAnalyticsTargets(user: LeadraUser, targets: AnalyticsTarget[]) {
 }
 
 function buildSalesPerformance(users: LeadraUser[], units: LeadraUnit[], events: AnalyticsEvent[]): AnalyticsSalesPerformance[] {
+  const unitsByCreator = new Map<string, LeadraUnit[]>()
+  const eventsByActor = new Map<string, AnalyticsEvent[]>()
+
+  for (const unit of units) {
+    const current = unitsByCreator.get(unit.createdBy)
+    if (current) current.push(unit)
+    else unitsByCreator.set(unit.createdBy, [unit])
+  }
+
+  for (const event of events) {
+    const current = eventsByActor.get(event.actorId)
+    if (current) current.push(event)
+    else eventsByActor.set(event.actorId, [event])
+  }
+
   return users
     .filter((user) => user.role === 'sales')
     .map((user) => {
-      const userUnits = units.filter((unit) => unit.createdBy === user.id)
-      const userEvents = events.filter((event) => event.actorId === user.id)
+      const userUnits = unitsByCreator.get(user.id) ?? []
+      const userEvents = eventsByActor.get(user.id) ?? []
       const soldUnits = userUnits.filter((unit) => unit.status === 'sold')
 
       return {
@@ -201,8 +247,11 @@ function buildSalesPerformance(users: LeadraUser[], units: LeadraUnit[], events:
 
 function buildInventoryHealth(units: LeadraUnit[], locale: LocaleCode, now: Date): AnalyticsInventoryHealth[] {
   const grouped = new Map<string, LeadraUnit[]>()
-  for (const unit of units.filter((item) => !item.archived)) {
-    grouped.set(unit.projectId, [...(grouped.get(unit.projectId) ?? []), unit])
+  for (const unit of units) {
+    if (unit.archived) continue
+    const current = grouped.get(unit.projectId)
+    if (current) current.push(unit)
+    else grouped.set(unit.projectId, [unit])
   }
 
   return Array.from(grouped.entries())

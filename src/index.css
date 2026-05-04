@@ -1015,10 +1015,8 @@ textarea {
 }
 
 .brand-select-menu {
-  position: absolute;
-  top: calc(100% + 0.55rem);
-  inset-inline: 0;
-  z-index: 140;
+  position: fixed;
+  z-index: 10000;
   display: grid;
   gap: 0.28rem;
   padding: 0.45rem;
@@ -1030,6 +1028,8 @@ textarea {
     0 24px 44px rgba(20, 33, 29, 0.16),
     0 1px 0 rgba(255, 255, 255, 0.7) inset;
   backdrop-filter: blur(14px);
+  overflow-y: auto;
+  overscroll-behavior: contain;
   transform-origin: 50% 0;
   animation: select-menu-enter 210ms var(--ease-soft) both;
 }

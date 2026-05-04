@@ -19,8 +19,9 @@ async function signIn(page: Page, role: (typeof roles)[number]) {
   const password = process.env[`LEADRA_QA_${role.toUpperCase()}_PASSWORD`]
   if (!email || !password) throw new Error(`Missing credentials for ${role}. Set LEADRA_QA_${role.toUpperCase()}_EMAIL/PASSWORD.`)
   await page.getByLabel(/email/i).fill(email)
-  await page.getByLabel(/password/i).fill(password)
+  await page.locator('input[name="password"]').fill(password)
   await page.getByRole('button', { name: /^sign in$/i }).click()
+  await expect(page.locator('.app-shell')).toBeVisible()
 }
 
 async function assertPageHealth(page: Page) {
@@ -49,6 +50,14 @@ async function assertPageHealth(page: Page) {
   expect(health.smallTargets, `small targets: ${health.smallTargets.join(', ')}`).toHaveLength(0)
 }
 
+async function navigateRoute(page: Page, route: (typeof routes)[number]) {
+  await page.evaluate((nextRoute) => {
+    window.location.hash = nextRoute
+    window.dispatchEvent(new HashChangeEvent('hashchange'))
+  }, route)
+  await page.waitForLoadState('networkidle')
+}
+
 test.describe('production preview route and role sweep', () => {
   for (const role of roles) {
     test(`${role} routes are stable and role-scoped`, async ({ page }) => {
@@ -60,7 +69,7 @@ test.describe('production preview route and role sweep', () => {
 
       await signIn(page, role)
       for (const route of routes) {
-        await page.goto(`/#${route}`)
+        await navigateRoute(page, route)
         await assertPageHealth(page)
         if (role === 'sales' && route === 'analytics') {
           await expect(page.getByRole('heading', { name: /analytics/i })).toHaveCount(0)
@@ -75,8 +84,8 @@ test.describe('production preview route and role sweep', () => {
 
   test('analytics filters, date windows, and dropdowns stay interactive', async ({ page }) => {
     await signIn(page, 'admin')
-    await page.goto('/#analytics')
-    await expect(page.getByRole('heading', { name: /company analytics/i })).toBeVisible()
+    await navigateRoute(page, 'analytics')
+    await expect(page.getByRole('heading', { name: 'Analytics', exact: true })).toBeVisible()
     await page.getByRole('button', { name: /30 days/i }).click()
     await page.getByRole('button', { name: /90 days/i }).click()
     await page.getByRole('button', { name: /custom/i }).click()

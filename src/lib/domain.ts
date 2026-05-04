@@ -21,6 +21,25 @@ const paymentsPerYear = {
   custom: null,
 } as const
 
+const knownOwnerPhoneCountryCodes = ['+971', '+966', '+20'] as const
+
+export function inferOwnerPhoneCountryCode(input: string, fallback = '+20'): string {
+  const compact = input.trim().replace(/[\s\-()]/g, '')
+  if (!compact) return fallback
+
+  const normalized = compact.startsWith('00')
+    ? `+${compact.slice(2).replace(/\D/g, '')}`
+    : compact.startsWith('+')
+      ? `+${compact.slice(1).replace(/\D/g, '')}`
+      : compact.replace(/\D/g, '')
+
+  const match = normalized.startsWith('+')
+    ? knownOwnerPhoneCountryCodes.find((code) => normalized.startsWith(code))
+    : knownOwnerPhoneCountryCodes.find((code) => normalized.startsWith(code.replace(/\D/g, '')))
+
+  return match ?? fallback
+}
+
 export function normalizeOwnerPhone(input: string, selectedCountryCode: string): string {
   const cleanCountryCode = selectedCountryCode.replace(/[^\d+]/g, '').replace(/^00/, '+')
   let digits = input.trim().replace(/[\s\-()]/g, '')

@@ -49,6 +49,30 @@ For production auth, create users from Supabase Auth or the Admin API and includ
 
 The `handle_new_auth_user` trigger creates the matching `profiles` row and `notification_preferences` row. Keep public sign-up disabled in the Supabase dashboard for the PRD’s admin-created-account model; the app only exposes sign-in.
 
+### Seed an admin account
+
+Use the service-role path instead of public sign-up. The repo includes a one-shot seeder:
+
+```powershell
+$env:LEADRA_SUPABASE_URL=$env:VITE_SUPABASE_URL
+$env:LEADRA_SUPABASE_SERVICE_ROLE_KEY="your-service-role-key"
+$env:LEADRA_SEED_ADMIN_EMAIL="admin@example.com"
+$env:LEADRA_SEED_ADMIN_PASSWORD="StrongPasswordHere"
+$env:LEADRA_SEED_ADMIN_NAME="Platform Admin"
+npm run seed:admin
+```
+
+Optional assignment metadata:
+
+```powershell
+$env:LEADRA_SEED_ADMIN_JOB_TITLE="Managing Admin"
+$env:LEADRA_SEED_ADMIN_PHONE="+201001112223"
+$env:LEADRA_SEED_ADMIN_TEAM_ID="22222222-2222-4222-8222-222222222222"
+$env:LEADRA_SEED_ADMIN_BRANCH_ID="11111111-1111-4111-8111-111111111111"
+```
+
+The seeder writes privileged fields through `app_metadata`, and the auth trigger only trusts `app_metadata` for `role`, `team_id`, and `branch_id`. Public sign-up metadata must not be used for privilege assignment.
+
 ## Production Checklist
 
 - Rotate any database password that was shared outside a secret manager.

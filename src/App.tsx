@@ -22,7 +22,7 @@ import {
 } from 'lucide-react'
 import type { User as SupabaseUser } from '@supabase/supabase-js'
 import { memo, useDeferredValue, useEffect, useId, useMemo, useRef, useState, type CSSProperties, type FormEvent, type ReactNode } from 'react'
-import { flushSync } from 'react-dom'
+import { createPortal, flushSync } from 'react-dom'
 import { demoUsers, initialAppState, lookupValues } from './data/seed'
 import { buildPerformanceWorkspace } from './data/performanceSeed'
 import { buildAnalyticsCsv, buildAnalyticsDashboard, canAccessAnalytics, defaultAnalyticsFilters } from './lib/analytics'
@@ -35,6 +35,7 @@ import {
   formatCurrency,
   formatDeliveryExpectancy,
   getThumbnailMedia,
+  inferOwnerPhoneCountryCode,
   summarizeProjects,
   validateMediaUpload,
   searchUnits,
@@ -357,6 +358,7 @@ function App() {
     const destination = activeLookupValues.find((item) => item.id === destinationId)
     const developer = activeLookupValues.find((item) => item.id === developerId)
     const viewLookup = activeLookupValues.find((item) => item.id === viewId)
+    const rawOwnerPhone = String(formData.get('ownerPhone'))
     const result = createUnitWorkflow(appState, user, {
       developerId,
       developerName: developer?.label ?? 'Unknown developer',
@@ -386,8 +388,8 @@ function App() {
         year: Number(formData.get('deliveryYear')),
       },
       originalOwnerName: String(formData.get('ownerName')),
-      countryCode: String(formData.get('countryCode')),
-      originalOwnerPhone: String(formData.get('ownerPhone')),
+      countryCode: inferOwnerPhoneCountryCode(rawOwnerPhone),
+      originalOwnerPhone: rawOwnerPhone,
       salesNotes: String(formData.get('salesNotes')),
       media: uploadedMedia,
     })
@@ -1268,19 +1270,9 @@ function CreateUnitPage({
             {t('create.ownerName')}
             <input name="ownerName" defaultValue="New Owner" required dir="auto" />
           </label>
-          <NamedSelectField
-            defaultValue="+20"
-            label={t('create.countryCode')}
-            name="countryCode"
-            options={[
-              { value: '+20', label: t('create.countryEgypt') },
-              { value: '+971', label: t('create.countryUae') },
-              { value: '+966', label: t('create.countrySaudi') },
-            ]}
-          />
           <label>
             {t('create.ownerPhone')}
-            <input name="ownerPhone" defaultValue="01012345678" required dir="auto" />
+            <input name="ownerPhone" defaultValue="+201012345678" required placeholder={t('create.ownerPhonePlaceholder')} dir="auto" />
           </label>
           <NamedSelectField defaultValue="2028" label={t('create.deliveryDate')} name="deliveryYear" options={deliveryYearOptions} />
           <label className="wide-field">
@@ -2548,33 +2540,33 @@ function BrandedSelect({
   const selectedValue = isControlled ? value ?? options[0]?.value ?? '' : internalValue
   const selectedOption = options.find((option) => option.value === selectedValue) ?? options[0]
 
-  function syncMenuPosition() {
-    const root = rootRef.current
-    if (!root) return
-
-    const rect = root.getBoundingClientRect()
-    const gap = 8
-    const viewportPadding = 12
-    const estimatedHeight = Math.min(320, Math.max(64, options.length * 50 + 18))
-    const availableBelow = window.innerHeight - rect.bottom - viewportPadding
-    const availableAbove = rect.top - viewportPadding
-    const opensAbove = availableBelow < estimatedHeight && availableAbove > availableBelow
-    const maxHeight = Math.max(120, Math.min(320, opensAbove ? availableAbove - gap : availableBelow - gap))
-    const left = Math.min(Math.max(viewportPadding, rect.left), window.innerWidth - rect.width - viewportPadding)
-    const top = opensAbove ? rect.top - gap : rect.bottom + gap
-
-    setMenuStyle({
-      position: 'fixed',
-      top: opensAbove ? 'auto' : top,
-      bottom: opensAbove ? window.innerHeight - top : 'auto',
-      left,
-      width: rect.width,
-      maxHeight,
-    })
-  }
-
   useEffect(() => {
     if (!open) return undefined
+    function syncMenuPosition() {
+      const root = rootRef.current
+      if (!root) return
+
+      const rect = root.getBoundingClientRect()
+      const gap = 8
+      const viewportPadding = 12
+      const estimatedHeight = Math.min(320, Math.max(64, options.length * 50 + 18))
+      const availableBelow = window.innerHeight - rect.bottom - viewportPadding
+      const availableAbove = rect.top - viewportPadding
+      const opensAbove = availableBelow < estimatedHeight && availableAbove > availableBelow
+      const maxHeight = Math.max(120, Math.min(320, opensAbove ? availableAbove - gap : availableBelow - gap))
+      const left = Math.min(Math.max(viewportPadding, rect.left), window.innerWidth - rect.width - viewportPadding)
+      const top = opensAbove ? rect.top - gap : rect.bottom + gap
+
+      setMenuStyle({
+        position: 'fixed',
+        top: opensAbove ? 'auto' : top,
+        bottom: opensAbove ? window.innerHeight - top : 'auto',
+        left,
+        width: rect.width,
+        maxHeight,
+      })
+    }
+
     syncMenuPosition()
 
     function handlePointer(event: MouseEvent) {
@@ -2605,7 +2597,7 @@ function BrandedSelect({
       window.removeEventListener('resize', syncMenuPosition)
       window.removeEventListener('scroll', syncMenuPosition, true)
     }
-  }, [open])
+  }, [open, options.length])
 
   useEffect(() => {
     if (!open) return
