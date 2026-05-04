@@ -190,6 +190,20 @@ describe('Leadra domain rules', () => {
       message:
         'Upload failed. Total media size exceeds 40 MB per unit. Please remove or compress some files.',
     })
+    expect(
+      validateMediaUpload(
+        Array.from({ length: 11 }, (_, index) => ({
+          id: `image-${index}`,
+          type: 'image' as const,
+          url: `/image-${index}.jpg`,
+          name: `image-${index}.jpg`,
+          sizeBytes: 1000,
+        })),
+      ),
+    ).toEqual({
+      ok: false,
+      message: 'Upload failed. A unit can include up to 10 media files.',
+    })
   })
 
   it('archives only for allowed roles and sanitizes restricted PDF output', () => {

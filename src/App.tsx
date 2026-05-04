@@ -29,10 +29,11 @@ import {
   formatCurrency,
   formatDeliveryExpectancy,
   getThumbnailMedia,
+  validateMediaUpload,
   searchUnits,
   summarizeProjects,
 } from './lib/domain'
-import { downloadTextPdfFallback } from './lib/pdf'
+import { downloadUnitPdf } from './lib/pdf'
 import { isSupabaseConfigured } from './lib/supabase'
 import type { AnalyticsDashboard, AppSettings, AuditLogItem, LeadraMediaFile, LeadraUnit, LeadraUser, NotificationItem, PaymentMethod, UnitStatus } from './lib/types'
 import {
@@ -129,7 +130,7 @@ function App() {
     setMobileMenuOpen(false)
   }
 
-  function handleCreateUnit(event: FormEvent<HTMLFormElement>) {
+  function handleCreateUnit(event: FormEvent<HTMLFormElement>, uploadedMedia: LeadraMediaFile[]) {
     event.preventDefault()
     const formData = new FormData(event.currentTarget)
     const paymentMethod = String(formData.get('paymentMethod')) as PaymentMethod
@@ -147,15 +148,6 @@ function App() {
     const bathrooms = Number(formData.get('bathrooms'))
     const countryCode = String(formData.get('countryCode'))
     const originalOwnerPhone = String(formData.get('ownerPhone'))
-    const newMedia: LeadraMediaFile[] = [
-      {
-        id: `media-${Date.now()}`,
-        type: 'image',
-        url: 'https://images.unsplash.com/photo-1600607688969-a5bfcd646154?auto=format&fit=crop&w=900&q=80',
-        name: 'uploaded-placeholder.jpg',
-        sizeBytes: 1_100_000,
-      },
-    ]
     const result = createUnitWorkflow(appState, user, {
       developerId,
       developerName: developer?.label ?? 'Unknown developer',
@@ -185,7 +177,7 @@ function App() {
       countryCode,
       originalOwnerPhone,
       salesNotes: String(formData.get('salesNotes')),
-      media: newMedia,
+      media: uploadedMedia,
     })
 
     setAppState(result.state)
@@ -214,8 +206,8 @@ function App() {
     if (result.ok) setView('units')
   }
 
-  function generatePdf(unit: LeadraUnit) {
-    downloadTextPdfFallback(user, unit)
+  async function generatePdf(unit: LeadraUnit) {
+    await downloadUnitPdf(user, unit, appState.settings)
     setAppState((state) =>
       addAnalyticsEventWorkflow(
         {
@@ -610,9 +602,13 @@ function UnitListRow({ user, unit, onOpen }: { user: LeadraUser; unit: LeadraUni
   )
 }
 
-function CreateUnitPage({ onSubmit }: { onSubmit: (event: FormEvent<HTMLFormElement>) => void }) {
+function CreateUnitPage({ onSubmit }: { onSubmit: (event: FormEvent<HTMLFormElement>, uploadedMedia: LeadraMediaFile[]) => void }) {
   const [activeStep, setActiveStep] = useState<(typeof createUnitSteps)[number]>('Property')
+  const [selectedMedia, setSelectedMedia] = useState<LeadraMediaFile[]>([])
+  const [mediaError, setMediaError] = useState<string | null>(null)
   const activeStepIndex = createUnitSteps.indexOf(activeStep)
+  const mediaValidation = validateMediaUpload(selectedMedia)
+  const totalMediaMb = selectedMedia.reduce((total, file) => total + file.sizeBytes, 0) / (1024 * 1024)
 
   function goToRelativeStep(offset: number) {
     const nextIndex = Math.min(createUnitSteps.length - 1, Math.max(0, activeStepIndex + offset))
@@ -627,7 +623,20 @@ function CreateUnitPage({ onSubmit }: { onSubmit: (event: FormEvent<HTMLFormElem
           <h2>Create Unit</h2>
         </div>
       </div>
-      <form className="wizard-shell" onSubmit={onSubmit}>
+      <form
+        className="wizard-shell"
+        onSubmit={(event) => {
+          const validation = validateMediaUpload(selectedMedia)
+          if (!validation.ok) {
+            event.preventDefault()
+            setMediaError(validation.message ?? 'Invalid media upload.')
+            return
+          }
+
+          setMediaError(null)
+          onSubmit(event, selectedMedia)
+        }}
+      >
         <div className="wizard-steps" aria-label="Create unit steps">
           {createUnitSteps.map((step, index) => (
             <button
@@ -735,7 +744,54 @@ function CreateUnitPage({ onSubmit }: { onSubmit: (event: FormEvent<HTMLFormElem
         <section className="wizard-panel review-panel" hidden={activeStep !== 'Review'}>
           <p className="eyebrow">Media / Review</p>
           <h3>Ready to create this resale unit</h3>
-          <p>The placeholder image upload, duplicate phone check, notifications, audit trail, and analytics event are preserved on submit.</p>
+          <p>Attach unit images for the gallery and branded PDF. Images are optional, but uploads are capped at 10 files and 40 MB total.</p>
+          <div className="media-upload-panel">
+            <label>
+              Unit images
+              <input
+                type="file"
+                accept="image/*"
+                multiple
+                onChange={async (event) => {
+                  const files = Array.from(event.currentTarget.files ?? [])
+                  const media = await Promise.all(files.map(fileToMedia))
+                  const validation = validateMediaUpload(media)
+                  setSelectedMedia(media)
+                  setMediaError(validation.ok ? null : validation.message ?? 'Invalid media upload.')
+                }}
+              />
+            </label>
+            <div className="media-upload-summary">
+              <strong>{selectedMedia.length} images selected</strong>
+              <span>{totalMediaMb.toFixed(2)} MB / 40 MB</span>
+            </div>
+            {mediaError && <p className="form-error">{mediaError}</p>}
+            {!mediaValidation.ok && !mediaError && <p className="form-error">{mediaValidation.message}</p>}
+            {selectedMedia.length === 0 && <p className="media-empty-note">No images attached. The PDF will still generate with unit details.</p>}
+            <div className="upload-preview-grid">
+              {selectedMedia.map((file) => (
+                <div className="upload-preview-card" key={file.id}>
+                  <img src={file.url} alt={file.name} />
+                  <div>
+                    <strong>{file.name}</strong>
+                    <small>{(file.sizeBytes / (1024 * 1024)).toFixed(2)} MB</small>
+                  </div>
+                  <button
+                    className="secondary-button"
+                    type="button"
+                    onClick={() => {
+                      const nextMedia = selectedMedia.filter((item) => item.id !== file.id)
+                      const validation = validateMediaUpload(nextMedia)
+                      setSelectedMedia(nextMedia)
+                      setMediaError(validation.ok ? null : validation.message ?? 'Invalid media upload.')
+                    }}
+                  >
+                    Remove
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
           <button className="primary-button" type="submit">
             Create unit and notify team
           </button>
@@ -1386,6 +1442,23 @@ function UserManagementCard({
       )}
     </article>
   )
+}
+
+function fileToMedia(file: File): Promise<LeadraMediaFile> {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader()
+    reader.onload = () => {
+      resolve({
+        id: `media-${Date.now()}-${file.name}`,
+        type: 'image',
+        url: String(reader.result),
+        name: file.name,
+        sizeBytes: file.size,
+      })
+    }
+    reader.onerror = () => reject(new Error('Unable to read image file.'))
+    reader.readAsDataURL(file)
+  })
 }
 
 function SelectField({ name, label, values }: { name: string; label: string; values: { id: string; label: string }[] }) {

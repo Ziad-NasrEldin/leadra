@@ -96,9 +96,32 @@ describe('Leadra app shell', () => {
     expect(screen.getByRole('spinbutton', { name: /total amount/i })).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: /review/i }))
+    const image = new File(
+      [Uint8Array.from(atob('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAFgwJ/lZrD9wAAAABJRU5ErkJggg=='), (char) => char.charCodeAt(0))],
+      'living-room.png',
+      { type: 'image/png' },
+    )
+    await user.upload(screen.getByLabelText(/unit images/i), image)
+    expect(await screen.findByText(/living-room.png/i)).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: /create unit and notify team/i }))
 
     expect(await screen.findByRole('heading', { name: /NE107BR3Ba2/i })).toBeInTheDocument()
+    expect(screen.getByAltText(/living-room.png/i)).toBeInTheDocument()
+  })
+
+  it('blocks create-unit image uploads over 40 MB', async () => {
+    renderApp()
+    const user = userEvent.setup()
+
+    await user.click(screen.getByRole('button', { name: /continue as admin/i }))
+    await user.click(screen.getByRole('button', { name: /^create$/i }))
+    await user.click(screen.getByRole('button', { name: /review/i }))
+
+    const oversized = new File(['x'], 'oversized.jpg', { type: 'image/jpeg' })
+    Object.defineProperty(oversized, 'size', { value: 41 * 1024 * 1024 })
+    await user.upload(screen.getByLabelText(/unit images/i), oversized)
+
+    expect(await screen.findByText(/total media size exceeds 40 mb/i)).toBeInTheDocument()
   })
 
   it('uses an admin wizard while preserving create-user and settings submits', async () => {
