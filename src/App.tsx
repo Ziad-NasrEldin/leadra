@@ -4,6 +4,8 @@ import {
   BarChart3,
   Bell,
   Building2,
+  Eye,
+  EyeOff,
   Check,
   ChevronDown,
   Download,
@@ -19,7 +21,7 @@ import {
   Users,
 } from 'lucide-react'
 import type { User as SupabaseUser } from '@supabase/supabase-js'
-import { useDeferredValue, useEffect, useId, useMemo, useRef, useState, type CSSProperties, type FormEvent, type ReactNode } from 'react'
+import { memo, useDeferredValue, useEffect, useId, useMemo, useRef, useState, type CSSProperties, type FormEvent, type ReactNode } from 'react'
 import { flushSync } from 'react-dom'
 import { demoUsers, initialAppState, lookupValues } from './data/seed'
 import { buildPerformanceWorkspace } from './data/performanceSeed'
@@ -179,6 +181,7 @@ function App() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [authLoading, setAuthLoading] = useState(isSupabaseConfigured)
   const [loginError, setLoginError] = useState<UiMessage | null>(null)
+  const [generatingPdfUnitId, setGeneratingPdfUnitId] = useState<number | null>(null)
   const completingAuthUserRef = useRef<string | null>(null)
 
   async function completeSupabaseLogin(authUser: SupabaseUser) {
@@ -452,49 +455,57 @@ function App() {
   }
 
   async function generatePdf(unit: LeadraUnit) {
-    const { downloadUnitPdf } = await import('./lib/pdf')
-    await downloadUnitPdf(user, unit, appState.settings, locale)
-    const notificationMessage = createNotificationMessage('export_generated', { unitCode: unit.unitCode })
-    const auditMessage = createAuditMessage('export_generated')
-    setAppState((state) =>
-      addAnalyticsEventWorkflow(
-        {
-          ...state,
-          notifications: [
-            {
-              id: `notif-${Date.now()}`,
-              title: notificationMessage.title.text,
-              body: notificationMessage.body.text,
-              messageKey: notificationMessage.body.messageKey ?? null,
-              messageParams: notificationMessage.body.messageParams ?? null,
-              audienceRole: user.role === 'sales' ? undefined : 'admin',
-              userId: user.role === 'sales' ? user.id : undefined,
-              createdAt: new Date().toISOString(),
-              read: false,
-            },
-            ...state.notifications,
-          ],
-          auditLogs: [
-            {
-              id: `audit-${Date.now()}`,
-              actorName: user.fullName,
-              actorRole: user.role,
-              actionType: auditMessage.text,
-              messageKey: auditMessage.messageKey ?? null,
-              messageParams: auditMessage.messageParams ?? null,
-              relatedUnitCode: unit.unitCode,
-              createdAt: new Date().toISOString(),
-              ipAddress: null,
-            },
-            ...state.auditLogs,
-          ],
-        },
-        user,
-        'pdf_generated',
-        unit,
-      ),
-    )
-    setFlash(createFlashMessage('flash.exportGenerated', 'Printable brief opened. Use print or Save as PDF from the browser dialog.'))
+    if (generatingPdfUnitId) return
+    setGeneratingPdfUnitId(unit.id)
+    try {
+      const { downloadUnitPdf } = await import('./lib/pdf')
+      await downloadUnitPdf(user, unit, appState.settings, locale)
+      const notificationMessage = createNotificationMessage('export_generated', { unitCode: unit.unitCode })
+      const auditMessage = createAuditMessage('export_generated')
+      setAppState((state) =>
+        addAnalyticsEventWorkflow(
+          {
+            ...state,
+            notifications: [
+              {
+                id: `notif-${Date.now()}`,
+                title: notificationMessage.title.text,
+                body: notificationMessage.body.text,
+                messageKey: notificationMessage.body.messageKey ?? null,
+                messageParams: notificationMessage.body.messageParams ?? null,
+                audienceRole: user.role === 'sales' ? undefined : 'admin',
+                userId: user.role === 'sales' ? user.id : undefined,
+                createdAt: new Date().toISOString(),
+                read: false,
+              },
+              ...state.notifications,
+            ],
+            auditLogs: [
+              {
+                id: `audit-${Date.now()}`,
+                actorName: user.fullName,
+                actorRole: user.role,
+                actionType: auditMessage.text,
+                messageKey: auditMessage.messageKey ?? null,
+                messageParams: auditMessage.messageParams ?? null,
+                relatedUnitCode: unit.unitCode,
+                createdAt: new Date().toISOString(),
+                ipAddress: null,
+              },
+              ...state.auditLogs,
+            ],
+          },
+          user,
+          'pdf_generated',
+          unit,
+        ),
+      )
+      setFlash(createFlashMessage('flash.exportGenerated', 'Printable brief opened. Use print or Save as PDF from the browser dialog.'))
+    } catch {
+      setFlash(createFlashMessage('flash.exportGenerated', 'Export could not open a print preview. Please allow popups and try again.'))
+    } finally {
+      setGeneratingPdfUnitId(null)
+    }
   }
 
   return (
@@ -596,6 +607,7 @@ function App() {
               onArchive={() => archiveUnit(selectedUnit)}
               onStatusChange={(status) => updateUnitStatus(selectedUnit, status)}
               onGeneratePdf={() => generatePdf(selectedUnit)}
+              pdfGenerating={generatingPdfUnitId === selectedUnit.id}
               onSaveNote={(content) => saveSharedNote(selectedUnit, content)}
               onDeleteNote={() => deleteSharedNote(selectedUnit)}
             />
@@ -721,6 +733,7 @@ function LoginScreen({
 }) {
   const { locale, t } = useLocale()
   const [step, setStep] = useState<'intro' | 'login'>('intro')
+  const [passwordVisible, setPasswordVisible] = useState(false)
   const [isCompactViewport, setIsCompactViewport] = useState(() => (
     typeof window !== 'undefined' ? window.innerWidth <= 860 : false
   ))
@@ -830,7 +843,25 @@ function LoginScreen({
                 </label>
                 <label>
                   {t('login.password')}
-                  <input name="password" type="password" autoComplete="current-password" required placeholder={t('login.passwordPlaceholder')} dir="auto" />
+                  <div className="password-input-wrap">
+                    <input
+                      name="password"
+                      type={passwordVisible ? 'text' : 'password'}
+                      autoComplete="current-password"
+                      required
+                      placeholder={t('login.passwordPlaceholder')}
+                      dir="auto"
+                    />
+                    <button
+                      className="password-toggle"
+                      type="button"
+                      aria-label={passwordVisible ? t('login.hidePassword') : t('login.showPassword')}
+                      aria-pressed={passwordVisible}
+                      onClick={() => setPasswordVisible((current) => !current)}
+                    >
+                      {passwordVisible ? <EyeOff size={18} /> : <Eye size={18} />}
+                    </button>
+                  </div>
                 </label>
                 {loginError && <p className="form-error">{renderError(locale, { message: loginError.message, messageKey: loginError.messageKey, messageParams: loginError.messageParams })}</p>}
                 <button className="primary-button" type="submit" disabled={authLoading}>
@@ -1050,7 +1081,7 @@ function UnitsPage({
   )
 }
 
-function UnitListRow({ user, unit, onOpen, index = 0 }: { user: LeadraUser; unit: LeadraUnit; onOpen: () => void; index?: number }) {
+const UnitListRow = memo(function UnitListRow({ user, unit, onOpen, index = 0 }: { user: LeadraUser; unit: LeadraUnit; onOpen: () => void; index?: number }) {
   const { locale, t } = useLocale()
   const thumbnail = getThumbnailMedia(unit.media)
 
@@ -1065,7 +1096,7 @@ function UnitListRow({ user, unit, onOpen, index = 0 }: { user: LeadraUser; unit
       <span className={`status-pill motion-status-pill ${unit.status}`}>{getStatusLabel(locale, unit.status)}</span>
     </button>
   )
-}
+})
 
 function CreateUnitPage({
   lookupValues,
@@ -1351,6 +1382,7 @@ function UnitDetailsPage({
   onArchive,
   onStatusChange,
   onGeneratePdf,
+  pdfGenerating,
   onSaveNote,
   onDeleteNote,
 }: {
@@ -1359,6 +1391,7 @@ function UnitDetailsPage({
   onArchive: () => void
   onStatusChange: (status: UnitStatus) => void
   onGeneratePdf: () => void
+  pdfGenerating: boolean
   onSaveNote: (content: string) => void
   onDeleteNote: () => void
 }) {
@@ -1384,8 +1417,12 @@ function UnitDetailsPage({
           {unit.status !== 'available' && <button className="secondary-button" type="button" onClick={() => onStatusChange('available')}>{t('details.clearStatus')}</button>}
         </div>
         <div className="action-row wrap">
-          <button className="primary-button" type="button" onClick={onGeneratePdf}><FileText size={18} /> {t('details.generateBrief')}</button>
-          <button className="secondary-button" type="button" onClick={onGeneratePdf}><Download size={18} /> {t('details.printBrief')}</button>
+          <button className="primary-button" type="button" onClick={onGeneratePdf} disabled={pdfGenerating}>
+            <FileText size={18} /> {pdfGenerating ? 'Preparing brief...' : t('details.generateBrief')}
+          </button>
+          <button className="secondary-button" type="button" onClick={onGeneratePdf} disabled={pdfGenerating}>
+            <Download size={18} /> {pdfGenerating ? 'Preparing print...' : t('details.printBrief')}
+          </button>
           {canArchiveUnit(user, unit) && <button className="danger-button" type="button" onClick={onArchive}><Archive size={18} /> {t('details.archive')}</button>}
         </div>
       </div>
@@ -1533,13 +1570,19 @@ function NotificationsPage({ notifications, user }: { notifications: Notificatio
 function AnalyticsPage({ appState, user }: { appState: AppDataState; user: LeadraUser }) {
   const { locale, t } = useLocale()
   const [filters, setFilters] = useState<AnalyticsFilters>(defaultAnalyticsFilters)
+  const deferredFilters = useDeferredValue(filters)
   const [filterOpen, setFilterOpen] = useState(false)
+  const [showAnalyticsDepth] = useState(true)
   const [rpcDashboard, setRpcDashboard] = useState<AnalyticsDashboard | null>(null)
   const [analyticsLoading, setAnalyticsLoading] = useState(false)
   const [analyticsError, setAnalyticsError] = useState<string | null>(null)
-  const fallbackDashboard = buildAnalyticsDashboard(user, appState, locale, new Date(), filters)
+  const analyticsNow = useMemo(() => new Date(), [])
+  const fallbackDashboard = useMemo(
+    () => buildAnalyticsDashboard(user, appState, locale, analyticsNow, deferredFilters),
+    [user, appState, locale, analyticsNow, deferredFilters],
+  )
   const dashboard = rpcDashboard ?? fallbackDashboard
-  const topSales = dashboard.salesPerformance.slice(0, 6)
+  const topSales = useMemo(() => dashboard.salesPerformance.slice(0, 6), [dashboard.salesPerformance])
   const latestTimeline = dashboard.activityTimeline
   const activeFilterCount =
     filters.teamIds.length +
@@ -1549,16 +1592,22 @@ function AnalyticsPage({ appState, user }: { appState: AppDataState; user: Leadr
     filters.destinationIds.length +
     filters.statuses.length +
     filters.paymentMethods.length
-  const averageTargetProgress =
-    dashboard.targetProgress.length === 0
-      ? 0
-      : Math.round(dashboard.targetProgress.reduce((total, target) => total + target.activityProgress, 0) / dashboard.targetProgress.length)
-  const rangeOptions: { value: AnalyticsDateWindow; label: string }[] = [
-    { value: 'live', label: t('common.live') },
-    { value: '30d', label: t('common.days30') },
-    { value: '90d', label: t('common.days90') },
-    { value: 'custom', label: t('analytics.custom') },
-  ]
+  const averageTargetProgress = useMemo(
+    () =>
+      dashboard.targetProgress.length === 0
+        ? 0
+        : Math.round(dashboard.targetProgress.reduce((total, target) => total + target.activityProgress, 0) / dashboard.targetProgress.length),
+    [dashboard.targetProgress],
+  )
+  const rangeOptions = useMemo<{ value: AnalyticsDateWindow; label: string }[]>(
+    () => [
+      { value: 'live', label: t('common.live') },
+      { value: '30d', label: t('common.days30') },
+      { value: '90d', label: t('common.days90') },
+      { value: 'custom', label: t('analytics.custom') },
+    ],
+    [t],
+  )
 
   useEffect(() => {
     let cancelled = false
@@ -1716,15 +1765,63 @@ function AnalyticsPage({ appState, user }: { appState: AppDataState; user: Leadr
             </div>
           </div>
           <StatusDonutChart dashboard={dashboard} />
-          <div className="status-stack">
-            <MiniBar label={getStatusLabel(locale, 'available')} value={dashboard.overview.availableUnits} total={dashboard.overview.totalActiveUnits} />
-            <MiniBar label={getStatusLabel(locale, 'hold')} value={dashboard.overview.holdUnits} total={dashboard.overview.totalActiveUnits} />
-            <MiniBar label={getStatusLabel(locale, 'sold')} value={dashboard.overview.soldUnits} total={dashboard.overview.totalActiveUnits} />
-            <MiniBar label={getStatusLabel(locale, 'archived')} value={dashboard.overview.archivedUnits} total={Math.max(1, dashboard.overview.totalActiveUnits + dashboard.overview.archivedUnits)} />
-          </div>
+          {showAnalyticsDepth ? (
+            <div className="status-stack">
+              <MiniBar label={getStatusLabel(locale, 'available')} value={dashboard.overview.availableUnits} total={dashboard.overview.totalActiveUnits} />
+              <MiniBar label={getStatusLabel(locale, 'hold')} value={dashboard.overview.holdUnits} total={dashboard.overview.totalActiveUnits} />
+              <MiniBar label={getStatusLabel(locale, 'sold')} value={dashboard.overview.soldUnits} total={dashboard.overview.totalActiveUnits} />
+              <MiniBar label={getStatusLabel(locale, 'archived')} value={dashboard.overview.archivedUnits} total={Math.max(1, dashboard.overview.totalActiveUnits + dashboard.overview.archivedUnits)} />
+            </div>
+          ) : (
+            <AnalyticsSkeleton />
+          )}
         </section>
       </div>
 
+      {showAnalyticsDepth ? (
+        <AnalyticsDeepSections
+          dashboard={dashboard}
+          averageTargetProgress={averageTargetProgress}
+          latestTimeline={latestTimeline}
+          locale={locale}
+          t={t}
+        />
+      ) : (
+        <section className="content-card motion-stage analytics-deferred-card" style={motionStyle(4, 140)}>
+          <p className="eyebrow">Preparing charts</p>
+          <h2>Loading detailed analytics</h2>
+          <AnalyticsSkeleton />
+        </section>
+      )}
+    </section>
+  )
+}
+
+function AnalyticsSkeleton() {
+  return (
+    <div className="analytics-skeleton" aria-hidden="true">
+      <span />
+      <span />
+      <span />
+    </div>
+  )
+}
+
+function AnalyticsDeepSections({
+  dashboard,
+  averageTargetProgress,
+  latestTimeline,
+  locale,
+  t,
+}: {
+  dashboard: AnalyticsDashboard
+  averageTargetProgress: number
+  latestTimeline: AnalyticsDashboard['activityTimeline']
+  locale: LocaleCode
+  t: ReturnType<typeof useLocale>['t']
+}) {
+  return (
+    <>
       <section className="content-card motion-stage" style={motionStyle(4, 140)}>
         <div className="section-heading">
           <div>
@@ -1790,7 +1887,7 @@ function AnalyticsPage({ appState, user }: { appState: AppDataState; user: Leadr
           <BarChart title="PDF export trend" points={dashboard.pdfExportTrend.slice(-30)} />
         </section>
       </div>
-    </section>
+    </>
   )
 }
 
@@ -2443,17 +2540,51 @@ function BrandedSelect({
 }) {
   const menuId = useId()
   const rootRef = useRef<HTMLDivElement | null>(null)
+  const menuRef = useRef<HTMLDivElement | null>(null)
   const isControlled = value !== undefined
   const [open, setOpen] = useState(false)
+  const [menuStyle, setMenuStyle] = useState<CSSProperties>({})
   const [internalValue, setInternalValue] = useState(defaultValue ?? options[0]?.value ?? '')
   const selectedValue = isControlled ? value ?? options[0]?.value ?? '' : internalValue
   const selectedOption = options.find((option) => option.value === selectedValue) ?? options[0]
 
+  function syncMenuPosition() {
+    const root = rootRef.current
+    if (!root) return
+
+    const rect = root.getBoundingClientRect()
+    const gap = 8
+    const viewportPadding = 12
+    const estimatedHeight = Math.min(320, Math.max(64, options.length * 50 + 18))
+    const availableBelow = window.innerHeight - rect.bottom - viewportPadding
+    const availableAbove = rect.top - viewportPadding
+    const opensAbove = availableBelow < estimatedHeight && availableAbove > availableBelow
+    const maxHeight = Math.max(120, Math.min(320, opensAbove ? availableAbove - gap : availableBelow - gap))
+    const left = Math.min(Math.max(viewportPadding, rect.left), window.innerWidth - rect.width - viewportPadding)
+    const top = opensAbove ? rect.top - gap : rect.bottom + gap
+
+    setMenuStyle({
+      position: 'fixed',
+      top: opensAbove ? 'auto' : top,
+      bottom: opensAbove ? window.innerHeight - top : 'auto',
+      left,
+      width: rect.width,
+      maxHeight,
+    })
+  }
+
   useEffect(() => {
     if (!open) return undefined
+    syncMenuPosition()
 
     function handlePointer(event: MouseEvent) {
-      if (rootRef.current && !rootRef.current.contains(event.target as Node)) {
+      const target = event.target as Node
+      if (
+        rootRef.current &&
+        !rootRef.current.contains(target) &&
+        menuRef.current &&
+        !menuRef.current.contains(target)
+      ) {
         setOpen(false)
       }
     }
@@ -2466,9 +2597,13 @@ function BrandedSelect({
 
     window.addEventListener('mousedown', handlePointer)
     window.addEventListener('keydown', handleEscape)
+    window.addEventListener('resize', syncMenuPosition)
+    window.addEventListener('scroll', syncMenuPosition, true)
     return () => {
       window.removeEventListener('mousedown', handlePointer)
       window.removeEventListener('keydown', handleEscape)
+      window.removeEventListener('resize', syncMenuPosition)
+      window.removeEventListener('scroll', syncMenuPosition, true)
     }
   }, [open])
 
@@ -2506,26 +2641,35 @@ function BrandedSelect({
         <span className="brand-select-value">{selectedOption?.label ?? ''}</span>
         <ChevronDown size={18} />
       </button>
-      {open && (
-        <div aria-labelledby={labelId} className="brand-select-menu" id={menuId} role="listbox">
-          {options.map((option) => {
-            const active = option.value === selectedValue
-            return (
-              <button
-                key={option.value}
-                aria-selected={active}
-                className={`brand-select-option ${active ? 'is-active' : ''}`}
-                role="option"
-                type="button"
-                onClick={() => choose(option.value)}
-              >
-                <span>{option.label}</span>
-                {active && <Check size={16} />}
-              </button>
-            )
-          })}
-        </div>
-      )}
+      {open &&
+        createPortal(
+          <div
+            aria-labelledby={labelId}
+            className="brand-select-menu brand-select-portal-menu"
+            id={menuId}
+            ref={menuRef}
+            role="listbox"
+            style={menuStyle}
+          >
+            {options.map((option) => {
+              const active = option.value === selectedValue
+              return (
+                <button
+                  key={option.value}
+                  aria-selected={active}
+                  className={`brand-select-option ${active ? 'is-active' : ''}`}
+                  role="option"
+                  type="button"
+                  onClick={() => choose(option.value)}
+                >
+                  <span>{option.label}</span>
+                  {active && <Check size={16} />}
+                </button>
+              )
+            })}
+          </div>,
+          document.body,
+        )}
     </div>
   )
 }

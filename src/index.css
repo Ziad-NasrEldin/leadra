@@ -58,6 +58,12 @@ button {
   cursor: pointer;
 }
 
+button:disabled {
+  cursor: wait;
+  opacity: 0.68;
+  transform: none;
+}
+
 button,
 a,
 input,
@@ -155,7 +161,8 @@ p {
 
 h1,
 h2 {
-  font-family: Fraunces, serif;
+  font-family: Fraunces, Georgia, serif;
+  font-size-adjust: 0.5;
   letter-spacing: -0.04em;
 }
 
@@ -247,6 +254,7 @@ h2 {
   font-size: clamp(3rem, 6.2vw, 6.7rem);
   line-height: 0.9;
   max-width: 690px;
+  min-height: 0.9em;
 }
 
 .login-access-panel {
@@ -441,6 +449,37 @@ h2 {
 
 .auth-form .primary-button {
   width: 100%;
+}
+
+.password-input-wrap {
+  position: relative;
+}
+
+.password-input-wrap input {
+  padding-inline-end: 3.35rem;
+}
+
+.password-toggle {
+  position: absolute;
+  inset-block: 0;
+  inset-inline-end: 0.3rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 2.8rem;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+}
+
+.password-toggle:hover {
+  color: var(--ink);
+}
+
+.password-toggle:focus-visible {
+  outline: 2px solid color-mix(in oklch, var(--copper), white 18%);
+  outline-offset: 2px;
+  border-radius: 0.8rem;
 }
 
 .role-card,
@@ -643,6 +682,7 @@ h2 {
 .profile-language-card .locale-button {
   flex: 1 1 0;
   min-height: 46px;
+  min-width: 48px;
   justify-content: center;
   text-align: center;
 }
@@ -1279,8 +1319,9 @@ dd {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-height: 44px;
-  height: 44px;
+  min-height: 48px;
+  min-width: 48px;
+  height: 48px;
   border: 0;
   border-radius: 999px;
   padding: 0.45rem 0.7rem;
@@ -1352,8 +1393,9 @@ dd {
   display: inline-flex;
   align-items: center;
   justify-content: center;
-  min-height: 44px;
-  height: 44px;
+  min-height: 48px;
+  min-width: 48px;
+  height: 48px;
   padding-inline: 1rem;
 }
 
@@ -1477,6 +1519,31 @@ dd {
     rgba(255, 252, 244, 0.88);
   box-shadow: 0 16px 34px rgba(20, 33, 29, 0.08);
   transform: translate3d(0, -1px, 0);
+}
+
+.analytics-skeleton {
+  display: grid;
+  gap: var(--space-3);
+  width: 100%;
+}
+
+.analytics-skeleton span {
+  display: block;
+  min-height: 16px;
+  border-radius: 999px;
+  background: linear-gradient(90deg, rgba(20, 33, 29, 0.08), rgba(20, 33, 29, 0.14), rgba(20, 33, 29, 0.08));
+}
+
+.analytics-skeleton span:nth-child(2) {
+  width: 82%;
+}
+
+.analytics-skeleton span:nth-child(3) {
+  width: 64%;
+}
+
+.analytics-deferred-card {
+  min-height: 190px;
 }
 
 .leaderboard-chart {
@@ -2351,6 +2418,7 @@ dd,
   .login-card h1 {
     font-size: clamp(1.9rem, 8vw, 2.8rem);
     max-width: 8ch;
+    min-height: 10.1rem;
   }
 
   .login-access-panel {
@@ -2635,7 +2703,7 @@ dd,
   .action-row .danger-button,
   .action-row .secondary-link {
     flex: 0 1 auto;
-    min-height: 44px;
+    min-height: 48px;
     padding: 0.58rem 0.78rem;
     font-size: 0.9rem;
   }
@@ -2652,7 +2720,7 @@ dd,
   .filter-bar .secondary-button,
   .filter-bar .primary-button {
     width: auto;
-    min-height: 44px;
+    min-height: 48px;
     justify-self: start;
     padding: 0.58rem 0.85rem;
   }
