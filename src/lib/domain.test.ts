@@ -7,6 +7,7 @@ import {
   filterUnitsForUser,
   generateUnitCode,
   getThumbnailMedia,
+  inferOwnerPhoneCountryCode,
   normalizeOwnerPhone,
   sanitizeUnitForPdf,
   unitHasSameProjectPhoneDuplicate,
@@ -105,6 +106,12 @@ describe('Leadra domain rules', () => {
     expect(normalizeOwnerPhone('00971501234567', '+971')).toBe('+971501234567')
     expect(normalizeOwnerPhone('(010) 1234-5678', '+20')).toBe('+201012345678')
     expect(normalizeOwnerPhone('971501234567', '+971')).toBe('+971501234567')
+  })
+
+  it('infers country code from the combined owner phone field', () => {
+    expect(inferOwnerPhoneCountryCode('+971 50 123 4567')).toBe('+971')
+    expect(inferOwnerPhoneCountryCode('00966501234567')).toBe('+966')
+    expect(inferOwnerPhoneCountryCode('01012345678')).toBe('+20')
   })
 
   it('blocks duplicate normalized owner phone only inside the same project', () => {

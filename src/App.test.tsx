@@ -146,6 +146,8 @@ describe('Leadra app shell', () => {
 
     await user.click(screen.getByRole('button', { name: /owner/i }))
     expect(screen.getByRole('combobox', { name: /delivery date/i })).toBeInTheDocument()
+    expect(screen.queryByRole('combobox', { name: /country code/i })).not.toBeInTheDocument()
+    expect(screen.getByRole('textbox', { name: /original owner phone/i })).toHaveValue('+201012345678')
 
     await user.click(screen.getByRole('button', { name: /review/i }))
     const image = new File(
