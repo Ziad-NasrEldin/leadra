@@ -22,6 +22,7 @@ import type { User as SupabaseUser } from '@supabase/supabase-js'
 import { useDeferredValue, useEffect, useId, useMemo, useRef, useState, type CSSProperties, type FormEvent, type ReactNode } from 'react'
 import { flushSync } from 'react-dom'
 import { demoUsers, initialAppState, lookupValues } from './data/seed'
+import { buildPerformanceWorkspace } from './data/performanceSeed'
 import { buildAnalyticsCsv, buildAnalyticsDashboard, canAccessAnalytics, defaultAnalyticsFilters } from './lib/analytics'
 import {
   canAddAdminManagerNote,
@@ -59,7 +60,7 @@ import {
   renderNotificationTitle,
   type LocalizedFlashMessage,
 } from './lib/messageRendering'
-import { canUseDemoMode, isProductionMissingSupabaseConfig, isSupabaseConfigured, supabase } from './lib/supabase'
+import { canUseDemoMode, isPerformanceDemoMode, isProductionMissingSupabaseConfig, isSupabaseConfigured, supabase } from './lib/supabase'
 import { loadSupabaseAnalyticsDashboard, loadSupabaseAppState, loadSupabaseProfile, markSupabaseLogin } from './lib/supabaseState'
 import {
   addAnalyticsEventWorkflow,
@@ -113,6 +114,10 @@ type UiMessage = { message: string; messageKey?: string | null; messageParams?: 
 
 const createUnitSteps = ['Property', 'Specs', 'Payment', 'Owner', 'Review'] as const
 const adminSections = ['Users', 'Settings', 'Metrics', 'Audit'] as const
+const unitListPageSize = 60
+const notificationPageSize = 60
+const userManagementPageSize = 48
+const auditLogPageSize = 80
 const roleOrder: Record<LeadraUser['role'], number> = {
   admin: 0,
   sub_admin: 1,
@@ -127,12 +132,27 @@ function motionStyle(index: number, delay = 0): CSSProperties {
   } as CSSProperties
 }
 
+function getInitialWorkspace() {
+  if (!isPerformanceDemoMode || typeof window === 'undefined') {
+    return { state: initialAppState, lookupValues }
+  }
+
+  const parameter = new URLSearchParams(window.location.search).get('perfDataset')
+  const stored = window.localStorage.getItem('leadra:perfDataset')
+  const unitCount = Number(parameter ?? stored ?? 1000)
+  const workspace = buildPerformanceWorkspace(Number.isFinite(unitCount) ? unitCount : 1000)
+  window.localStorage.setItem('leadra:perfDataset', String(workspace.state.units.length))
+  return workspace
+}
+
 function App() {
   const { locale, t } = useLocale()
+  const [initialWorkspace] = useState(getInitialWorkspace)
+  const initialWorkspaceRef = useRef(initialWorkspace)
   const [currentUser, setCurrentUser] = useState<LeadraUser | null>(null)
   const [view, setView] = useState<View>(() => readHashView())
-  const [appState, setAppState] = useState(initialAppState)
-  const [activeLookupValues, setActiveLookupValues] = useState<LookupValue[]>(lookupValues)
+  const [appState, setAppState] = useState(initialWorkspace.state)
+  const [activeLookupValues, setActiveLookupValues] = useState<LookupValue[]>(initialWorkspace.lookupValues)
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null)
   const [selectedUnitId, setSelectedUnitId] = useState<number | null>(null)
   const [unitCodeFilter, setUnitCodeFilter] = useState('')
@@ -232,8 +252,8 @@ function App() {
     const { data: listener } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === 'SIGNED_OUT') {
         setCurrentUser(null)
-        setAppState(initialAppState)
-        setActiveLookupValues(lookupValues)
+        setAppState(initialWorkspaceRef.current.state)
+        setActiveLookupValues(initialWorkspaceRef.current.lookupValues)
         setAuthLoading(false)
       }
       if (session?.user && (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED')) {
@@ -937,6 +957,8 @@ function UnitsPage({
   onOpenUnit: (id: number) => void
 }) {
   const { locale, t } = useLocale()
+  const [visibleCount, setVisibleCount] = useState(unitListPageSize)
+  const visibleUnits = units.slice(0, visibleCount)
 
   return (
     <section className="page-stack page-entrance units-page">
@@ -992,9 +1014,14 @@ function UnitsPage({
 
       <section className="unit-list motion-list" key={`${selectedProjectId ?? 'all'}-${unitCodeFilter}-${ownerPhoneFilter}-${statusFilter}`}>
         {units.length === 0 && <EmptyState title={t('units.noMatchesTitle')} body={t('units.noMatchesBody')} />}
-        {units.map((unit, index) => (
+        {visibleUnits.map((unit, index) => (
           <UnitListRow key={unit.id} user={user} unit={unit} index={index} onOpen={() => onOpenUnit(unit.id)} />
         ))}
+        {visibleUnits.length < units.length && (
+          <button className="secondary-button list-load-more" type="button" onClick={() => setVisibleCount((count) => Math.min(count + unitListPageSize, units.length))}>
+            Show {formatCount(locale, Math.min(unitListPageSize, units.length - visibleUnits.length))} more of {formatCount(locale, units.length)}
+          </button>
+        )}
       </section>
     </section>
   )
@@ -1401,15 +1428,17 @@ function UnitDetailsPage({
 
 function NotificationsPage({ notifications, user }: { notifications: NotificationItem[]; user: LeadraUser }) {
   const { locale, t } = useLocale()
+  const [visibleCount, setVisibleCount] = useState(notificationPageSize)
   const visibleNotifications = notifications.filter(
     (notification) => notification.userId === user.id || notification.audienceRole === user.role || (!notification.userId && !notification.audienceRole),
   )
+  const visibleRows = visibleNotifications.slice(0, visibleCount)
 
   return (
     <section className="content-card page-entrance notifications-page motion-stage motion-subtle" style={motionStyle(0)}>
       <h2>{t('notifications.heading')}</h2>
       {visibleNotifications.length === 0 && <EmptyState title={t('notifications.emptyTitle')} body={t('notifications.emptyBody')} />}
-      {visibleNotifications.map((notification, index) => (
+      {visibleRows.map((notification, index) => (
         <div className="notification-row motion-stage" key={notification.id} style={motionStyle(index, 90)}>
           <Bell size={17} />
           <div>
@@ -1419,6 +1448,11 @@ function NotificationsPage({ notifications, user }: { notifications: Notificatio
           </div>
         </div>
       ))}
+      {visibleRows.length < visibleNotifications.length && (
+        <button className="secondary-button list-load-more" type="button" onClick={() => setVisibleCount((count) => Math.min(count + notificationPageSize, visibleNotifications.length))}>
+          Show {formatCount(locale, Math.min(notificationPageSize, visibleNotifications.length - visibleRows.length))} more of {formatCount(locale, visibleNotifications.length)}
+        </button>
+      )}
     </section>
   )
 }
@@ -1900,6 +1934,8 @@ function AdminPage({
   const [sortUsersBy, setSortUsersBy] = useState<'role' | 'name' | 'recent'>('role')
   const [editingUserId, setEditingUserId] = useState<string | null>(null)
   const [createUserOpen, setCreateUserOpen] = useState(false)
+  const [visibleUserCount, setVisibleUserCount] = useState(userManagementPageSize)
+  const [visibleAuditCount, setVisibleAuditCount] = useState(auditLogPageSize)
   const deferredUserQuery = useDeferredValue(userQuery)
   const userListStateKey = `${deferredUserQuery}-${roleFilter}-${statusFilter}-${teamFilter}-${sortUsersBy}`
   const teamOptions = useMemo(
@@ -1932,6 +1968,8 @@ function AdminPage({
         }),
     [deferredUserQuery, locale, roleFilter, sortUsersBy, statusFilter, teamFilter, users],
   )
+  const visibleUsers = filteredUsers.slice(0, visibleUserCount)
+  const visibleAuditLogs = auditLogs.slice(0, visibleAuditCount)
   const userCountsByRole = useMemo(
     () =>
       users.reduce<Record<LeadraUser['role'], number>>(
@@ -2081,7 +2119,7 @@ function AdminPage({
           </div>
 
           <div className="user-management-list" aria-label={t('admin.managedUsers')} key={userListStateKey}>
-            {filteredUsers.map((item, index) => (
+            {visibleUsers.map((item, index) => (
               <UserManagementCard
                 key={item.id}
                 index={index}
@@ -2096,6 +2134,11 @@ function AdminPage({
               />
             ))}
             {filteredUsers.length === 0 && <EmptyState title={t('admin.noUsersTitle')} body={t('admin.noUsersBody')} />}
+            {visibleUsers.length < filteredUsers.length && (
+              <button className="secondary-button list-load-more" type="button" onClick={() => setVisibleUserCount((count) => Math.min(count + userManagementPageSize, filteredUsers.length))}>
+                Show {formatCount(locale, Math.min(userManagementPageSize, filteredUsers.length - visibleUsers.length))} more of {formatCount(locale, filteredUsers.length)}
+              </button>
+            )}
           </div>
         </section>
       )}
@@ -2136,13 +2179,18 @@ function AdminPage({
       {activeSection === 'Audit' && (
         <section className="content-card admin-panel motion-stage motion-subtle" style={motionStyle(1)}>
           <h2>{t('admin.auditLog')}</h2>
-          {auditLogs.map((item, index) => (
+          {visibleAuditLogs.map((item, index) => (
             <div className="admin-row motion-stage" key={item.id} style={motionStyle(index, 110)}>
               <strong>{renderAuditAction(locale, item)}</strong>
               <span>{item.actorName} / {getRoleLabel(locale, item.actorRole)}</span>
               <small>{item.relatedUnitCode} / {formatDateTime(locale, item.createdAt)}</small>
             </div>
           ))}
+          {visibleAuditLogs.length < auditLogs.length && (
+            <button className="secondary-button list-load-more" type="button" onClick={() => setVisibleAuditCount((count) => Math.min(count + auditLogPageSize, auditLogs.length))}>
+              Show {formatCount(locale, Math.min(auditLogPageSize, auditLogs.length - visibleAuditLogs.length))} more of {formatCount(locale, auditLogs.length)}
+            </button>
+          )}
         </section>
       )}
     </section>

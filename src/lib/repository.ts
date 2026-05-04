@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { toUnitInsertPayload, toUnitViewModel, type SupabaseUnitRow } from './supabaseMapper'
+import { toSafeUnitViewModel, toUnitInsertPayload, toUnitViewModel, type SafeUnitRpcRow, type SupabaseUnitRow } from './supabaseMapper'
 import type { CreateUnitInput, LeadraUnit, LeadraUser, UnitStatus } from './types'
 
 const unitSelect = `
@@ -12,6 +12,7 @@ const unitSelect = `
   unit_media(*),
   unit_notes(*, creator:profiles!unit_notes_created_by_fkey(full_name))
 `
+const unitListLimit = 500
 
 export class LeadraRepository {
   private readonly client: SupabaseClient
@@ -21,14 +22,16 @@ export class LeadraRepository {
   }
 
   async listUnits(): Promise<LeadraUnit[]> {
-    const { data, error } = await this.client
-      .from('units')
-      .select(unitSelect)
-      .eq('archived', false)
-      .order('created_at', { ascending: false })
+    const { data, error } = await this.client.rpc('list_units_safe', {
+      limit_count: unitListLimit,
+      offset_count: 0,
+    })
 
     if (error) throw error
-    return ((data ?? []) as unknown as SupabaseUnitRow[]).map(toUnitViewModel)
+    return ((data ?? []) as unknown as SafeUnitRpcRow[])
+      .map(toSafeUnitViewModel)
+      .filter((unit) => !unit.archived)
+      .sort((first, second) => new Date(second.createdAt).getTime() - new Date(first.createdAt).getTime())
   }
 
   async createUnit(actor: LeadraUser, input: CreateUnitInput): Promise<LeadraUnit> {

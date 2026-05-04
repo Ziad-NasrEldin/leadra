@@ -70,6 +70,35 @@ The `handle_new_auth_user` trigger creates the matching `profiles` row and `noti
 ## Verification
 
 ```powershell
+npm run lint
+npm run typecheck
 npm test
 npm run build
 ```
+
+## Final Production QA
+
+Run the non-destructive production-preview sweep locally:
+
+```powershell
+npm run build
+npm run qa:preview
+```
+
+Run the full final gate:
+
+```powershell
+npm run qa:final
+```
+
+Destructive backend QA is staging-only and refuses to run unless `LEADRA_QA_ALLOW_DESTRUCTIVE=true` and all `LEADRA_STAGING_*` plus `LEADRA_QA_*` credentials are configured. Use a separate Supabase staging project cloned from migrations. Do not point staging QA variables at production.
+
+```powershell
+$env:LEADRA_QA_ALLOW_DESTRUCTIVE="true"
+$env:LEADRA_STAGING_SUPABASE_URL="https://your-staging-project.supabase.co"
+$env:LEADRA_STAGING_SUPABASE_ANON_KEY="..."
+$env:LEADRA_STAGING_SUPABASE_SERVICE_ROLE_KEY="..."
+npm run qa:staging
+```
+
+The staging runner creates prefixed `QA_*` users/data, verifies Auth, RLS, owner-field privacy, analytics RPC access, storage privacy, duplicate phone constraints, and then cleans up QA records.

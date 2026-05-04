@@ -62,7 +62,56 @@ export interface SupabaseUnitRow {
   unit_notes?: SupabaseNoteRow[]
 }
 
-interface SupabaseMediaRow {
+export interface SafeUnitRpcRow {
+  id: number
+  unit_code: string
+  developer_id: string
+  developer_label: string | null
+  project_id: string
+  project_label: string | null
+  destination_id: string
+  destination_label: string | null
+  unit_type: string
+  floor: string
+  bua: number
+  roof_garden_area: number | null
+  view_id: string
+  view_label: string | null
+  bedrooms: number
+  bathrooms: number
+  elevator: boolean
+  land_area: number | null
+  furnished: boolean
+  finish: string
+  payment_method: PaymentMethod
+  total_amount: number
+  down_payment: number | null
+  remaining_payment: number | null
+  commission_percentage: number
+  commission_amount: number
+  installment_type: InstallmentType | null
+  installment_years: number | null
+  installment_amount: number | null
+  delivery_month: number | null
+  delivery_year: number
+  original_owner_name: string | null
+  country_code: string | null
+  original_owner_phone: string | null
+  normalized_owner_phone: string | null
+  sales_notes: string | null
+  status: UnitStatus
+  archived: boolean
+  created_by: string
+  creator_full_name: string | null
+  team_id: string
+  branch_id: string
+  created_at: string
+  updated_at: string
+  unit_media?: SupabaseMediaRow[]
+  unit_notes?: SafeUnitRpcNoteRow[]
+}
+
+export interface SupabaseMediaRow {
   id: string
   type: 'image' | 'video'
   storage_path: string
@@ -77,6 +126,15 @@ interface SupabaseNoteRow {
   created_by_role: UserRole
   created_at: string
   creator?: JoinedCreator
+}
+
+export interface SafeUnitRpcNoteRow {
+  id: string
+  content: string
+  created_by: string
+  created_by_role: UserRole
+  created_at: string
+  creator_full_name?: string | null
 }
 
 export function toUnitInsertPayload(input: CreateUnitInput, actor: LeadraUser) {
@@ -165,6 +223,59 @@ export function toUnitViewModel(row: SupabaseUnitRow): LeadraUnit {
   }
 }
 
+export function toSafeUnitViewModel(row: SafeUnitRpcRow): LeadraUnit {
+  return {
+    id: row.id,
+    unitCode: row.unit_code,
+    developerId: row.developer_id,
+    developerName: row.developer_label ?? 'Unknown developer',
+    projectId: row.project_id,
+    projectName: row.project_label ?? 'Unknown project',
+    destinationId: row.destination_id,
+    destinationName: row.destination_label ?? 'Unknown destination',
+    unitType: row.unit_type,
+    floor: row.floor,
+    bua: row.bua,
+    roofGardenArea: row.roof_garden_area,
+    viewId: row.view_id,
+    viewName: row.view_label ?? 'Open view',
+    bedrooms: row.bedrooms,
+    bathrooms: row.bathrooms,
+    elevator: row.elevator,
+    landArea: row.land_area,
+    furnished: row.furnished,
+    finish: row.finish,
+    paymentMethod: row.payment_method,
+    totalAmount: row.total_amount,
+    downPayment: row.down_payment,
+    remainingPayment: row.remaining_payment,
+    commissionPercentage: row.commission_percentage,
+    commissionAmount: row.commission_amount,
+    installmentType: row.installment_type,
+    installmentYears: row.installment_years,
+    installmentAmount: row.installment_amount,
+    deliveryExpectancy:
+      row.delivery_month == null
+        ? { mode: 'year', year: row.delivery_year }
+        : { mode: 'month_year', month: row.delivery_month, year: row.delivery_year },
+    originalOwnerName: row.original_owner_name,
+    countryCode: row.country_code,
+    originalOwnerPhone: row.original_owner_phone,
+    normalizedOwnerPhone: row.normalized_owner_phone,
+    salesNotes: row.sales_notes ?? '',
+    status: row.status,
+    archived: row.archived,
+    createdBy: row.created_by,
+    createdByName: row.creator_full_name ?? 'Leadra user',
+    teamId: row.team_id,
+    branchId: row.branch_id,
+    createdAt: row.created_at,
+    updatedAt: row.updated_at,
+    media: (row.unit_media ?? []).map(toMediaViewModel),
+    adminManagerNotes: (row.unit_notes ?? []).map(toSafeNoteViewModel),
+  }
+}
+
 function toMediaViewModel(row: SupabaseMediaRow): LeadraMediaFile {
   return {
     id: row.id,
@@ -181,6 +292,17 @@ function toNoteViewModel(row: SupabaseNoteRow): LeadraNote {
     content: row.content,
     createdBy: row.created_by,
     createdByName: row.creator?.full_name ?? 'Leadra user',
+    role: row.created_by_role,
+    createdAt: row.created_at,
+  }
+}
+
+function toSafeNoteViewModel(row: SafeUnitRpcNoteRow): LeadraNote {
+  return {
+    id: row.id,
+    content: row.content,
+    createdBy: row.created_by,
+    createdByName: row.creator_full_name ?? 'Leadra user',
     role: row.created_by_role,
     createdAt: row.created_at,
   }

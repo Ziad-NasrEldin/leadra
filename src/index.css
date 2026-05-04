@@ -115,6 +115,11 @@ button:active,
   animation: status-settle var(--duration-layout) var(--ease-soft) both;
 }
 
+.list-load-more {
+  width: 100%;
+  margin-top: var(--space-3);
+}
+
 .page-transition-frame {
   min-width: 0;
   contain: layout paint;

@@ -28,3 +28,6 @@ dist-ssr
 supabase/.temp/
 
 .vercel
+playwright-report/
+test-results/
+performance-reports/

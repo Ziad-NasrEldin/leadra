@@ -16,13 +16,36 @@ import type {
   AuditLogItem,
   LeadraUser,
   LookupValue,
+  MessageParams,
   NotificationItem,
   UserRole,
 } from './types'
 
+const remoteLoadLimits = {
+  users: 250,
+  notifications: 250,
+  auditLogs: 500,
+  analyticsEvents: 1000,
+  analyticsTargets: 200,
+} as const
+
 interface RemoteState {
   state: AppDataState
   lookupValues: LookupValue[]
+}
+
+interface SafeAuditLogRow {
+  id: string
+  actor_name: string | null
+  actor_role: UserRole
+  action_type: string
+  message_key: string | null
+  message_params: MessageParams | null
+  related_unit_code: string | null
+  previous_value: unknown
+  new_value: unknown
+  ip_address: string | null
+  created_at: string
 }
 
 export async function loadSupabaseProfile(client: SupabaseClient, authUser: User): Promise<LeadraUser> {
@@ -72,7 +95,7 @@ export async function loadSupabaseAnalyticsDashboard(client: SupabaseClient, fil
 }
 
 async function loadProfiles(client: SupabaseClient): Promise<LeadraUser[]> {
-  const { data, error } = await client.from('profiles').select('*').order('role').order('full_name')
+  const { data, error } = await client.from('profiles').select('*').order('role').order('full_name').limit(remoteLoadLimits.users)
   if (error) throw new Error(`Users load failed: ${error.message}`)
   return (data ?? []).map(toLeadraUser)
 }
@@ -112,34 +135,32 @@ async function loadNotifications(client: SupabaseClient): Promise<NotificationIt
     .from('notifications')
     .select('id, user_id, audience_role, title, body, message_key, message_params, read_at, created_at')
     .order('created_at', { ascending: false })
+    .limit(remoteLoadLimits.notifications)
   if (error) throw new Error(`Notifications load failed: ${error.message}`)
-  return (data ?? []).map((row) => ({
+  return ((data ?? []) as Record<string, unknown>[]).map((row) => ({
     id: String(row.id),
-    title: row.title,
-    body: row.body,
-    messageKey: row.message_key ?? null,
-    messageParams: row.message_params ?? null,
-    audienceRole: row.audience_role ?? undefined,
-    userId: row.user_id ?? undefined,
-    createdAt: row.created_at,
+    title: String(row.title ?? ''),
+    body: String(row.body ?? ''),
+    messageKey: typeof row.message_key === 'string' ? row.message_key : null,
+    messageParams: row.message_params && typeof row.message_params === 'object' ? row.message_params : null,
+    audienceRole: typeof row.audience_role === 'string' ? row.audience_role : undefined,
+    userId: typeof row.user_id === 'string' ? row.user_id : undefined,
+    createdAt: String(row.created_at ?? ''),
     read: Boolean(row.read_at),
-  }))
+  }) as NotificationItem)
 }
 
 async function loadAuditLogs(client: SupabaseClient): Promise<AuditLogItem[]> {
-  const { data, error } = await client
-    .from('audit_logs')
-    .select('id, actor_role, action_type, message_key, message_params, previous_value, new_value, ip_address, created_at, actor:profiles!audit_logs_actor_id_fkey(full_name), unit:units!audit_logs_related_unit_id_fkey(unit_code)')
-    .order('created_at', { ascending: false })
+  const { data, error } = await client.rpc('list_audit_logs_safe', { limit_count: remoteLoadLimits.auditLogs })
   if (error) throw new Error(`Audit logs load failed: ${error.message}`)
-  return (data ?? []).map((row) => ({
+  return ((data ?? []) as SafeAuditLogRow[]).map((row) => ({
     id: String(row.id),
-    actorName: joinedLabel(row.actor, 'full_name') ?? 'Leadra user',
+    actorName: row.actor_name ?? 'Leadra user',
     actorRole: row.actor_role,
     actionType: row.action_type,
     messageKey: row.message_key ?? null,
     messageParams: row.message_params ?? null,
-    relatedUnitCode: joinedLabel(row.unit, 'unit_code') ?? undefined,
+    relatedUnitCode: row.related_unit_code ?? undefined,
     previousValue: row.previous_value == null ? null : JSON.stringify(row.previous_value),
     newValue: row.new_value == null ? null : JSON.stringify(row.new_value),
     ipAddress: row.ip_address,
@@ -148,9 +169,9 @@ async function loadAuditLogs(client: SupabaseClient): Promise<AuditLogItem[]> {
 }
 
 async function loadAnalyticsEvents(client: SupabaseClient): Promise<AnalyticsEvent[]> {
-  const { data, error } = await client.from('analytics_events').select('*').order('created_at', { ascending: false })
+  const { data, error } = await client.from('analytics_events').select('*').order('created_at', { ascending: false }).limit(remoteLoadLimits.analyticsEvents)
   if (error) throw new Error(`Analytics events load failed: ${error.message}`)
-  return (data ?? []).map((row) => ({
+  return ((data ?? []) as Record<string, unknown>[]).map((row) => ({
     id: String(row.id),
     eventType: row.event_type,
     actorId: row.actor_id,
@@ -167,13 +188,13 @@ async function loadAnalyticsEvents(client: SupabaseClient): Promise<AnalyticsEve
     commissionValue: row.commission_value == null ? null : Number(row.commission_value),
     metadata: row.metadata ?? {},
     createdAt: row.created_at,
-  }))
+  }) as AnalyticsEvent)
 }
 
 async function loadAnalyticsTargets(client: SupabaseClient): Promise<AnalyticsTarget[]> {
-  const { data, error } = await client.from('analytics_targets').select('*').order('starts_at', { ascending: false })
+  const { data, error } = await client.from('analytics_targets').select('*').order('starts_at', { ascending: false }).limit(remoteLoadLimits.analyticsTargets)
   if (error) throw new Error(`Analytics targets load failed: ${error.message}`)
-  return (data ?? []).map((row) => ({
+  return ((data ?? []) as Record<string, unknown>[]).map((row) => ({
     id: String(row.id),
     scopeType: row.scope_type,
     scopeId: row.scope_id,
@@ -188,7 +209,7 @@ async function loadAnalyticsTargets(client: SupabaseClient): Promise<AnalyticsTa
     createdBy: row.created_by,
     createdAt: row.created_at,
     updatedAt: row.updated_at,
-  }))
+  }) as AnalyticsTarget)
 }
 
 function toLeadraUser(row: Record<string, unknown>): LeadraUser {
@@ -205,12 +226,6 @@ function toLeadraUser(row: Record<string, unknown>): LeadraUser {
     createdAt: typeof row.created_at === 'string' ? row.created_at : undefined,
     lastLoginAt: typeof row.last_login_at === 'string' ? row.last_login_at : null,
   }
-}
-
-function joinedLabel(value: unknown, key: string): string | null {
-  if (Array.isArray(value)) return joinedLabel(value[0], key)
-  if (value && typeof value === 'object' && key in value) return String((value as Record<string, unknown>)[key])
-  return null
 }
 
 function toAnalyticsDashboard(row: Record<string, unknown>): AnalyticsDashboard {

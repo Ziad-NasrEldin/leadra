@@ -10,7 +10,12 @@
     "preview": "vite preview",
     "test": "vitest run",
     "test:watch": "vitest",
-    "e2e": "playwright test"
+    "typecheck": "tsc -b --pretty false",
+    "e2e": "playwright test",
+    "qa:preview": "playwright test",
+    "qa:staging": "node scripts/qa-staging.mjs",
+    "qa:final": "node scripts/qa-final.mjs",
+    "perf:audit": "node scripts/performance-audit.mjs"
   },
   "dependencies": {
     "@hookform/resolvers": "^5.2.2",
@@ -36,6 +41,7 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@playwright/test": "^1.59.1",
     "@types/node": "^24.12.2",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
