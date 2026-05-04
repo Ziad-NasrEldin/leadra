@@ -2335,6 +2335,15 @@ function BrandedSelect({
     }
   }, [open])
 
+  useEffect(() => {
+    if (!open) return
+    window.requestAnimationFrame(() => {
+      if (typeof rootRef.current?.scrollIntoView === 'function') {
+        rootRef.current.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'smooth' })
+      }
+    })
+  }, [open])
+
   function choose(nextValue: string) {
     if (!isControlled) {
       setInternalValue(nextValue)
