@@ -40,7 +40,7 @@ describe('Leadra app shell', () => {
     const user = userEvent.setup()
 
     await user.click(screen.getByRole('button', { name: /continue as admin/i }))
-    await user.click(await screen.findByRole('button', { name: /^admin$/i }))
+    await user.click((await screen.findAllByRole('button', { name: /^admin$/i }))[0])
     expect(await screen.findByRole('heading', { name: /user management/i })).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: /sign out/i }))

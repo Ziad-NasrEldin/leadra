@@ -8,12 +8,13 @@ import {
   Image as ImageIcon,
   LogOut,
   Plus,
+  SlidersHorizontal,
   Search,
   Settings,
   ShieldCheck,
   Users,
 } from 'lucide-react'
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { FormEvent } from 'react'
 import { demoUsers, initialAppState, lookupValues } from './data/seed'
 import {
@@ -52,6 +53,17 @@ function App() {
   const [ownerPhoneFilter, setOwnerPhoneFilter] = useState('')
   const [statusFilter, setStatusFilter] = useState<UnitStatus | 'all'>('all')
   const [flash, setFlash] = useState<string | null>(null)
+
+  useEffect(() => {
+    function syncViewFromHash() {
+      const requestedView = readHashView()
+      setView(requestedView)
+      setFlash(null)
+    }
+
+    window.addEventListener('hashchange', syncViewFromHash)
+    return () => window.removeEventListener('hashchange', syncViewFromHash)
+  }, [])
 
   if (!currentUser) {
     return (
@@ -233,18 +245,24 @@ function App() {
             <p className="eyebrow">Leadra internal resale system</p>
             <h1>{user.role === 'admin' ? 'Admin command' : `${user.fullName.split(' ')[0]} command`}</h1>
           </div>
-          <button
-            className="ghost-button"
-            type="button"
-            onClick={() => {
-              setCurrentUser(null)
-              setView('dashboard')
-              writeHashView('dashboard')
-              setFlash(null)
-            }}
-          >
-            <LogOut size={17} /> Sign out
-          </button>
+          <div className="topbar-actions">
+            <button className="user-chip" type="button" onClick={() => navigate('profile')}>
+              <span>{user.fullName.split(' ').map((part) => part[0]).join('').slice(0, 2)}</span>
+              <strong>{user.role.replace('_', ' ')}</strong>
+            </button>
+            <button
+              className="ghost-button"
+              type="button"
+              onClick={() => {
+                setCurrentUser(null)
+                setView('dashboard')
+                writeHashView('dashboard')
+                setFlash(null)
+              }}
+            >
+              <LogOut size={17} /> Sign out
+            </button>
+          </div>
         </header>
 
         {flash && <div className="flash">{flash}</div>}
@@ -322,6 +340,10 @@ function App() {
         <NavButton active={activeView === 'units'} label="Units" onClick={() => navigate('units')} icon={<Building2 />} />
         <NavButton active={activeView === 'create'} label="Add" onClick={() => navigate('create')} icon={<Plus />} />
         <NavButton active={activeView === 'notifications'} label="Alerts" onClick={() => navigate('notifications')} icon={<Bell />} />
+        <NavButton active={activeView === 'profile'} label="Profile" onClick={() => navigate('profile')} icon={<SlidersHorizontal />} />
+        {canUseAdmin && (
+          <NavButton active={activeView === 'admin'} label="Admin" onClick={() => navigate('admin')} icon={<Settings />} />
+        )}
       </nav>
     </div>
   )
@@ -340,7 +362,7 @@ function LoginScreen({ onLogin }: { onLogin: (user: LeadraUser) => void }) {
           <ShieldCheck size={18} />
           {isSupabaseConfigured ? 'Supabase connected' : 'Local demo mode. Add Supabase env vars to connect production services.'}
         </div>
-        <div className="role-grid">
+        <div className="role-grid" aria-label="Demo role login options">
           {demoUsers.map((user) => (
             <button key={user.id} className="role-card" type="button" onClick={() => onLogin(user)}>
               <span>{user.role.replace('_', ' ')}</span>
@@ -395,6 +417,7 @@ function Dashboard({
 
       <section className="content-card">
         <h2>Latest activity</h2>
+        {latestUnits.length === 0 && <EmptyState title="No visible units yet" body="Create the first resale unit to start tracking activity." />}
         {latestUnits.map((unit) => (
           <UnitListRow key={unit.id} user={user} unit={unit} onOpen={() => onNavigate('details')} />
         ))}
@@ -402,6 +425,7 @@ function Dashboard({
 
       <section className="content-card">
         <h2>Notification center</h2>
+        {notifications.length === 0 && <EmptyState title="No notifications" body="Important comments, status changes, and PDF exports will appear here." />}
         {notifications.slice(0, 3).map((notification) => (
           <div className="notification-row" key={notification.id}>
             <Bell size={16} />
@@ -492,6 +516,7 @@ function UnitsPage({
       </div>
 
       <section className="unit-list">
+        {units.length === 0 && <EmptyState title="No units match these filters" body="Clear the filters or select another project to continue browsing." />}
         {units.map((unit) => (
           <UnitListRow key={unit.id} user={user} unit={unit} onOpen={() => onOpenUnit(unit.id)} />
         ))}
@@ -697,6 +722,7 @@ function NotificationsPage({ notifications, user }: { notifications: Notificatio
   return (
     <section className="content-card">
       <h2>Notifications Center</h2>
+      {visibleNotifications.length === 0 && <EmptyState title="No notifications yet" body="You're caught up. New comments and status changes will show here." />}
       {visibleNotifications.map((notification) => (
         <div className="notification-row" key={notification.id}>
           <Bell size={17} />
@@ -713,15 +739,25 @@ function NotificationsPage({ notifications, user }: { notifications: Notificatio
 
 function ProfilePage({ user }: { user: LeadraUser }) {
   return (
-    <InfoSection title="Profile & Settings" rows={[
-      ['Name', user.fullName],
-      ['Email', user.email],
-      ['Phone', user.phoneNumber],
-      ['Role', user.role],
-      ['Team', user.teamId],
-      ['Branch', user.branchId],
-      ['Status', user.status],
-    ]} />
+    <section className="page-stack">
+      <div className="profile-hero">
+        <div className="profile-avatar">{user.fullName.split(' ').map((part) => part[0]).join('').slice(0, 2)}</div>
+        <div>
+          <p className="eyebrow">Profile & Settings</p>
+          <h2>{user.fullName}</h2>
+          <p>{user.jobTitle}</p>
+        </div>
+      </div>
+      <InfoSection title="Account details" rows={[
+        ['Name', user.fullName],
+        ['Email', user.email],
+        ['Phone', user.phoneNumber],
+        ['Role', user.role],
+        ['Team', user.teamId],
+        ['Branch', user.branchId],
+        ['Status', user.status],
+      ]} />
+    </section>
   )
 }
 
@@ -876,6 +912,15 @@ function Metric({ label, value }: { label: string; value: string | number }) {
     <div className="metric-card">
       <span>{label}</span>
       <strong>{value}</strong>
+    </div>
+  )
+}
+
+function EmptyState({ title, body }: { title: string; body: string }) {
+  return (
+    <div className="empty-state">
+      <strong>{title}</strong>
+      <p>{body}</p>
     </div>
   )
 }
