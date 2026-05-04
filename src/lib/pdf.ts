@@ -279,11 +279,13 @@ export async function downloadUnitPdf(
   popup.document.close()
   popup.opener = null
 
-  void waitForImages(popup.document, 700).then(() => {
-    if (popup.closed) return
-    popup.focus()
-    popup.print()
-  })
+  window.setTimeout(() => {
+    void waitForImages(popup.document, 700).then(() => {
+      if (popup.closed) return
+      popup.focus()
+      popup.print()
+    })
+  }, 250)
 }
 
 function renderImageCard(file: LeadraMediaFile) {
