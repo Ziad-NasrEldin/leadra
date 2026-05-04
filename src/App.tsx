@@ -261,10 +261,10 @@ function App() {
       </aside>
 
       <main className="main-panel">
-        <header className="topbar">
+        <header className={`topbar ${activeView !== 'dashboard' ? 'compact-topbar' : ''}`}>
           <div>
             <p className="eyebrow">Leadra internal resale system</p>
-            <h1>{user.role === 'admin' ? 'Admin command' : `${user.fullName.split(' ')[0]} command`}</h1>
+            <h1>{getViewTitle(activeView, user)}</h1>
           </div>
           <div className="topbar-actions">
             <button className="user-chip" type="button" onClick={() => navigate('profile')}>
@@ -274,6 +274,7 @@ function App() {
             <button
               className="ghost-button"
               type="button"
+              aria-label="Sign out"
               onClick={() => {
                 setCurrentUser(null)
                 setView('dashboard')
@@ -281,7 +282,7 @@ function App() {
                 setFlash(null)
               }}
             >
-              <LogOut size={17} /> Sign out
+              <LogOut size={17} /> <span className="signout-label">Sign out</span>
             </button>
           </div>
         </header>
@@ -1142,6 +1143,16 @@ function dashboardDescription(role: LeadraUser['role']) {
   if (role === 'sales') return 'Owner-sensitive information is only visible for units you uploaded.'
   if (role === 'manager') return 'Managers see team units only; branch assignment does not expand visibility.'
   return 'Admins and sub-admins manage users, dropdowns, audit history, and PDF branding.'
+}
+
+function getViewTitle(view: View, user: LeadraUser): string {
+  if (view === 'dashboard') return user.role === 'admin' ? 'Admin command' : `${user.fullName.split(' ')[0]} command`
+  if (view === 'units' || view === 'details') return 'Unit desk'
+  if (view === 'create') return 'New resale'
+  if (view === 'notifications') return 'Alerts'
+  if (view === 'profile') return 'Profile'
+  if (view === 'analytics') return 'Analytics'
+  return 'Admin'
 }
 
 function canAccessAdmin(user: LeadraUser): boolean {

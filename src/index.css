@@ -288,6 +288,14 @@ h2 {
   font-size: clamp(2rem, 5vw, 4.5rem);
 }
 
+.compact-topbar {
+  margin-bottom: var(--space-3);
+}
+
+.compact-topbar h1 {
+  font-size: clamp(1.8rem, 4vw, 3.15rem);
+}
+
 .page-stack {
   display: grid;
   gap: var(--space-4);
@@ -952,10 +960,30 @@ dd {
     line-height: 0.95;
   }
 
+  .compact-topbar {
+    align-items: center;
+    padding: 0.2rem 0 0.1rem;
+  }
+
+  .compact-topbar h1 {
+    font-size: clamp(1.45rem, 7vw, 2rem);
+    letter-spacing: -0.06em;
+  }
+
+  .compact-topbar .eyebrow {
+    font-size: 0.62rem;
+    letter-spacing: 0.12em;
+  }
+
   .topbar-actions {
     align-items: flex-end;
     flex-direction: column;
     gap: 0.45rem;
+  }
+
+  .compact-topbar .topbar-actions {
+    flex-direction: row;
+    align-items: center;
   }
 
   .ghost-button {
@@ -963,9 +991,29 @@ dd {
     padding: 0.55rem 0.75rem;
   }
 
+  .compact-topbar .ghost-button {
+    width: 38px;
+    min-height: 38px;
+    justify-content: center;
+    padding: 0;
+    border-radius: 999px;
+  }
+
+  .compact-topbar .signout-label {
+    display: none;
+  }
+
   .user-chip {
     min-height: 38px;
     padding: 0.3rem 0.65rem 0.3rem 0.3rem;
+  }
+
+  .compact-topbar .user-chip {
+    padding: 0.25rem;
+  }
+
+  .compact-topbar .user-chip strong {
+    display: none;
   }
 
   .user-chip span {
