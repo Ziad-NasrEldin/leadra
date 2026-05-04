@@ -991,7 +991,7 @@ textarea {
 
 .brand-select-option {
   width: 100%;
-  min-height: 44px;
+  min-height: 46px;
   border: 0;
   border-radius: 0.8rem;
   background: transparent;
@@ -1166,6 +1166,25 @@ dd {
 
 .empty-state p {
   color: var(--muted);
+}
+
+@supports (content-visibility: auto) {
+  .content-card,
+  .unit-row,
+  .media-card,
+  .notification-row,
+  .user-management-card,
+  .analytics-row,
+  .target-card {
+    content-visibility: auto;
+    contain-intrinsic-size: auto 260px;
+  }
+
+  .unit-row,
+  .notification-row,
+  .analytics-row {
+    contain-intrinsic-size: auto 96px;
+  }
 }
 
 .profile-hero {

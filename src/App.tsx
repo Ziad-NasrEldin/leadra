@@ -19,7 +19,7 @@ import {
   Users,
 } from 'lucide-react'
 import type { User as SupabaseUser } from '@supabase/supabase-js'
-import { useEffect, useId, useRef, useState, type CSSProperties, type FormEvent, type ReactNode } from 'react'
+import { useDeferredValue, useEffect, useId, useMemo, useRef, useState, type CSSProperties, type FormEvent, type ReactNode } from 'react'
 import { flushSync } from 'react-dom'
 import { demoUsers, initialAppState, lookupValues } from './data/seed'
 import { buildAnalyticsCsv, buildAnalyticsDashboard, canAccessAnalytics, defaultAnalyticsFilters } from './lib/analytics'
@@ -142,9 +142,12 @@ function App() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [authLoading, setAuthLoading] = useState(isSupabaseConfigured)
   const [loginError, setLoginError] = useState<UiMessage | null>(null)
+  const completingAuthUserRef = useRef<string | null>(null)
 
   async function completeSupabaseLogin(authUser: SupabaseUser) {
     if (!supabase) return
+    if (completingAuthUserRef.current === authUser.id) return
+    completingAuthUserRef.current = authUser.id
     try {
       setAuthLoading(true)
       const profile = await loadSupabaseProfile(supabase, authUser)
@@ -176,6 +179,7 @@ function App() {
         messageParams: null,
       })
     } finally {
+      completingAuthUserRef.current = null
       setAuthLoading(false)
     }
   }
@@ -1002,7 +1006,7 @@ function UnitListRow({ user, unit, onOpen, index = 0 }: { user: LeadraUser; unit
 
   return (
     <button className="unit-row motion-stage" type="button" aria-label={t('units.openUnit', { unitCode: unit.unitCode })} style={motionStyle(index)} onClick={onOpen}>
-      <div className="thumb">{thumbnail ? <img src={thumbnail.url} alt="" /> : <ImageIcon />}</div>
+      <div className="thumb">{thumbnail ? <img src={thumbnail.url} alt="" loading="lazy" decoding="async" /> : <ImageIcon />}</div>
       <div>
         <strong>{unit.unitCode}</strong>
         <p dir="auto">{unit.projectName} / {unit.unitType} / {t('units.areaBua', { bua: formatCount(locale, unit.bua) })}</p>
@@ -1225,7 +1229,7 @@ function CreateUnitPage({
             <div className="upload-preview-grid">
               {selectedMedia.map((file, index) => (
                 <div className="upload-preview-card motion-stage" key={file.id} style={motionStyle(index, 170)}>
-                  <img src={file.url} alt={file.name} />
+                  <img src={file.url} alt={file.name} loading="lazy" decoding="async" />
                   <div>
                     <strong dir="auto">{file.name}</strong>
                     <small>{(file.sizeBytes / (1024 * 1024)).toFixed(2)} MB</small>
@@ -1378,7 +1382,7 @@ function UnitDetailsPage({
       <section className="media-grid motion-stage" style={motionStyle(6, 190)}>
         {unit.media.map((file, index) => (
           <div className="media-card motion-stage" key={file.id} style={motionStyle(index, 240)}>
-            {file.type === 'image' ? <img src={file.url} alt={file.name} /> : <div className="video-placeholder">{t('details.videoIgnored')}</div>}
+            {file.type === 'image' ? <img src={file.url} alt={file.name} loading="lazy" decoding="async" /> : <div className="video-placeholder">{t('details.videoIgnored')}</div>}
           </div>
         ))}
       </section>
@@ -1896,33 +1900,45 @@ function AdminPage({
   const [sortUsersBy, setSortUsersBy] = useState<'role' | 'name' | 'recent'>('role')
   const [editingUserId, setEditingUserId] = useState<string | null>(null)
   const [createUserOpen, setCreateUserOpen] = useState(false)
-  const userListStateKey = `${userQuery}-${roleFilter}-${statusFilter}-${teamFilter}-${sortUsersBy}`
-  const teamOptions = Array.from(new Set(users.map((item) => item.teamId))).sort((first, second) => compareText(locale, first, second))
-  const filteredUsers = users
-    .filter((item) => {
-      const query = userQuery.trim().toLowerCase()
-      const matchesQuery =
-        query.length === 0 ||
-        item.fullName.toLowerCase().includes(query) ||
-        item.email.toLowerCase().includes(query) ||
-        item.teamId.toLowerCase().includes(query) ||
-        item.branchId.toLowerCase().includes(query) ||
-        item.jobTitle.toLowerCase().includes(query)
-      const matchesRole = roleFilter === 'all' || item.role === roleFilter
-      const matchesStatus = statusFilter === 'all' || item.status === statusFilter
-      const matchesTeam = teamFilter === 'all' || item.teamId === teamFilter
-      return matchesQuery && matchesRole && matchesStatus && matchesTeam
-    })
-    .sort((first, second) => {
-      if (sortUsersBy === 'name') return compareText(locale, first.fullName, second.fullName)
-      if (sortUsersBy === 'recent') {
-        return new Date(second.lastLoginAt ?? second.createdAt ?? 0).getTime() - new Date(first.lastLoginAt ?? first.createdAt ?? 0).getTime()
-      }
-      return roleOrder[first.role] - roleOrder[second.role] || compareText(locale, first.fullName, second.fullName)
-    })
-  const userCountsByRole = users.reduce<Record<LeadraUser['role'], number>>(
-    (counts, item) => ({ ...counts, [item.role]: counts[item.role] + 1 }),
-    { admin: 0, sub_admin: 0, manager: 0, sales: 0 },
+  const deferredUserQuery = useDeferredValue(userQuery)
+  const userListStateKey = `${deferredUserQuery}-${roleFilter}-${statusFilter}-${teamFilter}-${sortUsersBy}`
+  const teamOptions = useMemo(
+    () => Array.from(new Set(users.map((item) => item.teamId))).sort((first, second) => compareText(locale, first, second)),
+    [users, locale],
+  )
+  const filteredUsers = useMemo(
+    () =>
+      users
+        .filter((item) => {
+          const query = deferredUserQuery.trim().toLowerCase()
+          const matchesQuery =
+            query.length === 0 ||
+            item.fullName.toLowerCase().includes(query) ||
+            item.email.toLowerCase().includes(query) ||
+            item.teamId.toLowerCase().includes(query) ||
+            item.branchId.toLowerCase().includes(query) ||
+            item.jobTitle.toLowerCase().includes(query)
+          const matchesRole = roleFilter === 'all' || item.role === roleFilter
+          const matchesStatus = statusFilter === 'all' || item.status === statusFilter
+          const matchesTeam = teamFilter === 'all' || item.teamId === teamFilter
+          return matchesQuery && matchesRole && matchesStatus && matchesTeam
+        })
+        .sort((first, second) => {
+          if (sortUsersBy === 'name') return compareText(locale, first.fullName, second.fullName)
+          if (sortUsersBy === 'recent') {
+            return new Date(second.lastLoginAt ?? second.createdAt ?? 0).getTime() - new Date(first.lastLoginAt ?? first.createdAt ?? 0).getTime()
+          }
+          return roleOrder[first.role] - roleOrder[second.role] || compareText(locale, first.fullName, second.fullName)
+        }),
+    [deferredUserQuery, locale, roleFilter, sortUsersBy, statusFilter, teamFilter, users],
+  )
+  const userCountsByRole = useMemo(
+    () =>
+      users.reduce<Record<LeadraUser['role'], number>>(
+        (counts, item) => ({ ...counts, [item.role]: counts[item.role] + 1 }),
+        { admin: 0, sub_admin: 0, manager: 0, sales: 0 },
+      ),
+    [users],
   )
 
   return (
