@@ -34,6 +34,7 @@ import type { AppSettings, AuditLogItem, LeadraMediaFile, LeadraUnit, LeadraUser
 import { archiveUnitWorkflow, createUnitWorkflow, createUserWorkflow, updateSettingsWorkflow, updateUnitStatusWorkflow } from './lib/workflows'
 
 type View = 'dashboard' | 'units' | 'create' | 'details' | 'notifications' | 'profile' | 'admin'
+type HashView = Exclude<View, 'details'>
 
 const statusLabels: Record<UnitStatus, string> = {
   available: 'Available',
@@ -43,7 +44,7 @@ const statusLabels: Record<UnitStatus, string> = {
 
 function App() {
   const [currentUser, setCurrentUser] = useState<LeadraUser | null>(null)
-  const [view, setView] = useState<View>('dashboard')
+  const [view, setView] = useState<View>(() => readHashView())
   const [appState, setAppState] = useState(initialAppState)
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null)
   const [selectedUnitId, setSelectedUnitId] = useState<number | null>(null)
@@ -53,10 +54,21 @@ function App() {
   const [flash, setFlash] = useState<string | null>(null)
 
   if (!currentUser) {
-    return <LoginScreen onLogin={(user) => setCurrentUser(user)} />
+    return (
+      <LoginScreen
+        onLogin={(nextUser) => {
+          setCurrentUser(nextUser)
+          const requestedView = readHashView()
+          setView(requestedView === 'admin' && !canAccessAdmin(nextUser) ? 'dashboard' : requestedView)
+          setFlash(null)
+        }}
+      />
+    )
   }
 
   const user = currentUser
+  const canUseAdmin = canAccessAdmin(user)
+  const activeView = view === 'admin' && !canUseAdmin ? 'dashboard' : view
   const visibleUnits = filterUnitsForUser(user, appState.units)
   const projectSummaries = summarizeProjects(visibleUnits)
   const activeSelectedProjectId = selectedProjectId ?? projectSummaries[0]?.projectId ?? null
@@ -75,6 +87,9 @@ function App() {
 
   function navigate(nextView: View) {
     setView(nextView)
+    if (nextView !== 'details') {
+      writeHashView(nextView)
+    }
     setFlash(null)
   }
 
@@ -203,12 +218,12 @@ function App() {
     <div className="app-shell">
       <aside className="side-rail" aria-label="Desktop navigation">
         <div className="brand-mark">L</div>
-        <NavButton active={view === 'dashboard'} label="Dashboard" onClick={() => navigate('dashboard')} icon={<Home />} />
-        <NavButton active={view === 'units'} label="Units" onClick={() => navigate('units')} icon={<Building2 />} />
-        <NavButton active={view === 'create'} label="Create" onClick={() => navigate('create')} icon={<Plus />} />
-        <NavButton active={view === 'notifications'} label={`Alerts ${unreadCount}`} onClick={() => navigate('notifications')} icon={<Bell />} />
-        {(user.role === 'admin' || user.role === 'sub_admin') && (
-          <NavButton active={view === 'admin'} label="Admin" onClick={() => navigate('admin')} icon={<Settings />} />
+        <NavButton active={activeView === 'dashboard'} label="Dashboard" onClick={() => navigate('dashboard')} icon={<Home />} />
+        <NavButton active={activeView === 'units'} label="Units" onClick={() => navigate('units')} icon={<Building2 />} />
+        <NavButton active={activeView === 'create'} label="Create" onClick={() => navigate('create')} icon={<Plus />} />
+        <NavButton active={activeView === 'notifications'} label={`Alerts ${unreadCount}`} onClick={() => navigate('notifications')} icon={<Bell />} />
+        {canUseAdmin && (
+          <NavButton active={activeView === 'admin'} label="Admin" onClick={() => navigate('admin')} icon={<Settings />} />
         )}
       </aside>
 
@@ -218,14 +233,23 @@ function App() {
             <p className="eyebrow">Leadra internal resale system</p>
             <h1>{user.role === 'admin' ? 'Admin command' : `${user.fullName.split(' ')[0]} command`}</h1>
           </div>
-          <button className="ghost-button" type="button" onClick={() => setCurrentUser(null)}>
+          <button
+            className="ghost-button"
+            type="button"
+            onClick={() => {
+              setCurrentUser(null)
+              setView('dashboard')
+              writeHashView('dashboard')
+              setFlash(null)
+            }}
+          >
             <LogOut size={17} /> Sign out
           </button>
         </header>
 
         {flash && <div className="flash">{flash}</div>}
 
-        {view === 'dashboard' && (
+        {activeView === 'dashboard' && (
           <Dashboard
             user={user}
             units={visibleUnits}
@@ -233,7 +257,7 @@ function App() {
             onNavigate={navigate}
           />
         )}
-        {view === 'units' && (
+        {activeView === 'units' && (
           <UnitsPage
             user={user}
             projects={projectSummaries}
@@ -252,8 +276,8 @@ function App() {
             }}
           />
         )}
-        {view === 'create' && <CreateUnitPage onSubmit={handleCreateUnit} />}
-        {view === 'details' && selectedUnit && (
+        {activeView === 'create' && <CreateUnitPage onSubmit={handleCreateUnit} />}
+        {activeView === 'details' && selectedUnit && (
           <UnitDetailsPage
             user={user}
             unit={selectedUnit}
@@ -262,9 +286,9 @@ function App() {
             onGeneratePdf={() => generatePdf(selectedUnit)}
           />
         )}
-        {view === 'notifications' && <NotificationsPage notifications={appState.notifications} user={user} />}
-        {view === 'profile' && <ProfilePage user={user} />}
-        {view === 'admin' && (
+        {activeView === 'notifications' && <NotificationsPage notifications={appState.notifications} user={user} />}
+        {activeView === 'profile' && <ProfilePage user={user} />}
+        {activeView === 'admin' && canUseAdmin && (
           <AdminPage
             users={appState.users}
             units={appState.units}
@@ -294,10 +318,10 @@ function App() {
       </main>
 
       <nav className="bottom-nav" aria-label="Mobile navigation">
-        <NavButton active={view === 'dashboard'} label="Home" onClick={() => navigate('dashboard')} icon={<Home />} />
-        <NavButton active={view === 'units'} label="Units" onClick={() => navigate('units')} icon={<Building2 />} />
-        <NavButton active={view === 'create'} label="Add" onClick={() => navigate('create')} icon={<Plus />} />
-        <NavButton active={view === 'notifications'} label="Alerts" onClick={() => navigate('notifications')} icon={<Bell />} />
+        <NavButton active={activeView === 'dashboard'} label="Home" onClick={() => navigate('dashboard')} icon={<Home />} />
+        <NavButton active={activeView === 'units'} label="Units" onClick={() => navigate('units')} icon={<Building2 />} />
+        <NavButton active={activeView === 'create'} label="Add" onClick={() => navigate('create')} icon={<Plus />} />
+        <NavButton active={activeView === 'notifications'} label="Alerts" onClick={() => navigate('notifications')} icon={<Bell />} />
       </nav>
     </div>
   )
@@ -875,6 +899,24 @@ function dashboardDescription(role: LeadraUser['role']) {
   if (role === 'sales') return 'Owner-sensitive information is only visible for units you uploaded.'
   if (role === 'manager') return 'Managers see team units only; branch assignment does not expand visibility.'
   return 'Admins and sub-admins manage users, dropdowns, audit history, and PDF branding.'
+}
+
+function canAccessAdmin(user: LeadraUser): boolean {
+  return user.role === 'admin' || user.role === 'sub_admin'
+}
+
+function readHashView(): HashView {
+  const value = window.location.hash.replace('#', '')
+  if (value === 'units' || value === 'create' || value === 'notifications' || value === 'profile' || value === 'admin') {
+    return value
+  }
+
+  return 'dashboard'
+}
+
+function writeHashView(view: HashView) {
+  const nextHash = view === 'dashboard' ? '' : `#${view}`
+  window.history.replaceState(null, '', `${window.location.pathname}${nextHash}`)
 }
 
 export default App
