@@ -59,7 +59,6 @@ import {
   renderNotificationTitle,
   type LocalizedFlashMessage,
 } from './lib/messageRendering'
-import { downloadUnitPdf } from './lib/pdf'
 import { canUseDemoMode, isProductionMissingSupabaseConfig, isSupabaseConfigured, supabase } from './lib/supabase'
 import { loadSupabaseAnalyticsDashboard, loadSupabaseAppState, loadSupabaseProfile, markSupabaseLogin } from './lib/supabaseState'
 import {
@@ -406,6 +405,7 @@ function App() {
   }
 
   async function generatePdf(unit: LeadraUnit) {
+    const { downloadUnitPdf } = await import('./lib/pdf')
     await downloadUnitPdf(user, unit, appState.settings, locale)
     const notificationMessage = createNotificationMessage('export_generated', { unitCode: unit.unitCode })
     const auditMessage = createAuditMessage('export_generated')
