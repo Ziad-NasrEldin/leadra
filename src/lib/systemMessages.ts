@@ -46,6 +46,7 @@ export type LocalizedMessageKey =
   | 'error.uploadLimitFiles'
   | 'error.uploadLimitSize'
   | 'error.duplicateOwnerPhoneBlocked'
+  | 'error.invalidOwnerPhoneForCountry'
   | 'error.unitNotFound'
   | 'error.archiveNotAllowed'
   | 'error.unitOutsideVisibility'

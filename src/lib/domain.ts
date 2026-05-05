@@ -23,27 +23,111 @@ const paymentsPerYear = {
   custom: null,
 } as const
 
+type OwnerPhoneCountrySpec = {
+  code: string
+  labels: Record<LocaleCode, string>
+  placeholder: string
+  localPattern: RegExp
+  trunkPrefix?: string
+}
+
 export function getInstallmentPaymentsPerYear(type: InstallmentType | null | undefined): number | null {
   return type ? paymentsPerYear[type] : null
 }
 
-const knownOwnerPhoneCountryCodes = ['+971', '+966', '+20'] as const
+const ownerPhoneCountrySpecs: OwnerPhoneCountrySpec[] = [
+  { code: '+20', labels: { en: 'Egypt +20', ar: 'مصر +20' }, placeholder: '01012345678', localPattern: /^01[0125]\d{8}$/, trunkPrefix: '0' },
+  { code: '+971', labels: { en: 'UAE +971', ar: 'الإمارات +971' }, placeholder: '0501234567', localPattern: /^05\d{8}$/, trunkPrefix: '0' },
+  { code: '+966', labels: { en: 'Saudi Arabia +966', ar: 'السعودية +966' }, placeholder: '0501234567', localPattern: /^05\d{8}$/, trunkPrefix: '0' },
+  { code: '+974', labels: { en: 'Qatar +974', ar: 'قطر +974' }, placeholder: '33123456', localPattern: /^[3567]\d{7}$/ },
+  { code: '+965', labels: { en: 'Kuwait +965', ar: 'الكويت +965' }, placeholder: '55123456', localPattern: /^[569]\d{7}$/ },
+  { code: '+973', labels: { en: 'Bahrain +973', ar: 'البحرين +973' }, placeholder: '36123456', localPattern: /^[36]\d{7}$/ },
+  { code: '+968', labels: { en: 'Oman +968', ar: 'عُمان +968' }, placeholder: '92123456', localPattern: /^[79]\d{7}$/ },
+  { code: '+962', labels: { en: 'Jordan +962', ar: 'الأردن +962' }, placeholder: '0791234567', localPattern: /^07\d{8}$/, trunkPrefix: '0' },
+  { code: '+90', labels: { en: 'Turkey +90', ar: 'تركيا +90' }, placeholder: '05321234567', localPattern: /^05\d{9}$/, trunkPrefix: '0' },
+  { code: '+44', labels: { en: 'United Kingdom +44', ar: 'المملكة المتحدة +44' }, placeholder: '07123456789', localPattern: /^07\d{9}$/, trunkPrefix: '0' },
+  { code: '+1', labels: { en: 'United States +1', ar: 'الولايات المتحدة +1' }, placeholder: '4155552671', localPattern: /^[2-9]\d{9}$/ },
+  { code: '+33', labels: { en: 'France +33', ar: 'فرنسا +33' }, placeholder: '0612345678', localPattern: /^0[67]\d{8}$/, trunkPrefix: '0' },
+  { code: '+49', labels: { en: 'Germany +49', ar: 'ألمانيا +49' }, placeholder: '015121234567', localPattern: /^01[5-7]\d{8,10}$/, trunkPrefix: '0' },
+]
 
-export function inferOwnerPhoneCountryCode(input: string, fallback = '+20'): string {
-  const compact = input.trim().replace(/[\s\-()]/g, '')
-  if (!compact) return fallback
+function getOwnerPhoneCountrySpec(code: string): OwnerPhoneCountrySpec {
+  return ownerPhoneCountrySpecs.find((item) => item.code === code) ?? ownerPhoneCountrySpecs[0]
+}
 
-  const normalized = compact.startsWith('00')
-    ? `+${compact.slice(2).replace(/\D/g, '')}`
-    : compact.startsWith('+')
-      ? `+${compact.slice(1).replace(/\D/g, '')}`
-      : compact.replace(/\D/g, '')
+function cleanOwnerPhoneInput(input: string): string {
+  return input.trim().replace(/[\s\-()]/g, '')
+}
 
-  const match = normalized.startsWith('+')
-    ? knownOwnerPhoneCountryCodes.find((code) => normalized.startsWith(code))
-    : knownOwnerPhoneCountryCodes.find((code) => normalized.startsWith(code.replace(/\D/g, '')))
+function stripCountryCodeFromPhone(input: string, countryCode: string) {
+  const cleanCountryCode = countryCode.replace(/[^\d+]/g, '').replace(/^00/, '+')
+  const countryDigits = cleanCountryCode.replace(/\D/g, '')
+  let digits = cleanOwnerPhoneInput(input)
 
-  return match ?? fallback
+  if (digits.startsWith('00')) {
+    digits = `+${digits.slice(2)}`
+  }
+
+  if (digits.startsWith('+')) {
+    const normalizedDigits = digits.slice(1).replace(/\D/g, '')
+    if (!normalizedDigits.startsWith(countryDigits)) {
+      return { localDigits: normalizedDigits, mismatchedCountry: true }
+    }
+    return { localDigits: normalizedDigits.slice(countryDigits.length), mismatchedCountry: false }
+  }
+
+  const normalizedDigits = digits.replace(/\D/g, '')
+  if (normalizedDigits.startsWith(countryDigits)) {
+    return { localDigits: normalizedDigits.slice(countryDigits.length), mismatchedCountry: false }
+  }
+
+  return { localDigits: normalizedDigits, mismatchedCountry: false }
+}
+
+function formatLocalOwnerPhone(localDigits: string, spec: OwnerPhoneCountrySpec): string {
+  if (!localDigits) return ''
+  if (spec.trunkPrefix && !localDigits.startsWith(spec.trunkPrefix)) {
+    return `${spec.trunkPrefix}${localDigits}`
+  }
+  return localDigits
+}
+
+export function getOwnerPhoneCountryOptions(locale: LocaleCode) {
+  return ownerPhoneCountrySpecs.map((spec) => ({
+    value: spec.code,
+    label: spec.labels[locale],
+    placeholder: spec.placeholder,
+  }))
+}
+
+export function getOwnerPhoneCountryMeta(countryCode: string, locale: LocaleCode) {
+  const spec = getOwnerPhoneCountrySpec(countryCode)
+  return {
+    code: spec.code,
+    label: spec.labels[locale],
+    placeholder: spec.placeholder,
+  }
+}
+
+export function validateOwnerPhoneForCountry(input: string, countryCode: string, locale: LocaleCode = 'en') {
+  const spec = getOwnerPhoneCountrySpec(countryCode)
+  const { localDigits, mismatchedCountry } = stripCountryCodeFromPhone(input, spec.code)
+  const localPhone = formatLocalOwnerPhone(localDigits, spec)
+
+  if (mismatchedCountry || !spec.localPattern.test(localPhone)) {
+    return {
+      ok: false as const,
+      countryLabel: spec.labels[locale],
+      example: spec.placeholder,
+    }
+  }
+
+  return {
+    ok: true as const,
+    localPhone,
+    countryLabel: spec.labels[locale],
+    example: spec.placeholder,
+  }
 }
 
 export function normalizeOwnerPhone(input: string, selectedCountryCode: string): string {

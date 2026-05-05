@@ -10,11 +10,13 @@ import {
   summarizeDestinations,
   summarizeProjects,
   buildInstallmentSchedule,
+  getOwnerPhoneCountryMeta,
+  getOwnerPhoneCountryOptions,
   getThumbnailMedia,
-  inferOwnerPhoneCountryCode,
   normalizeOwnerPhone,
   sanitizeUnitForPdf,
   unitHasSameProjectPhoneDuplicate,
+  validateOwnerPhoneForCountry,
   validateMediaUpload,
 } from './domain'
 import type { LeadraMediaFile, LeadraUnit, LeadraUser } from './types'
@@ -112,10 +114,26 @@ describe('Leadra domain rules', () => {
     expect(normalizeOwnerPhone('971501234567', '+971')).toBe('+971501234567')
   })
 
-  it('infers country code from the combined owner phone field', () => {
-    expect(inferOwnerPhoneCountryCode('+971 50 123 4567')).toBe('+971')
-    expect(inferOwnerPhoneCountryCode('00966501234567')).toBe('+966')
-    expect(inferOwnerPhoneCountryCode('01012345678')).toBe('+20')
+  it('returns localized owner phone country metadata for the selector', () => {
+    expect(getOwnerPhoneCountryMeta('+20', 'en')).toMatchObject({ code: '+20', label: 'Egypt +20', placeholder: '01012345678' })
+    expect(getOwnerPhoneCountryMeta('+971', 'ar')).toMatchObject({ code: '+971', label: 'الإمارات +971', placeholder: '0501234567' })
+    expect(getOwnerPhoneCountryOptions('en').some((option) => option.value === '+44')).toBe(true)
+  })
+
+  it('validates and formats owner phones against the selected country', () => {
+    expect(validateOwnerPhoneForCountry('+971 50 123 4567', '+971')).toMatchObject({
+      ok: true,
+      localPhone: '0501234567',
+    })
+    expect(validateOwnerPhoneForCountry('1012345678', '+20')).toMatchObject({
+      ok: true,
+      localPhone: '01012345678',
+    })
+    expect(validateOwnerPhoneForCountry('12345', '+20')).toMatchObject({
+      ok: false,
+      countryLabel: 'Egypt +20',
+      example: '01012345678',
+    })
   })
 
   it('blocks duplicate normalized owner phone only inside the same project', () => {

@@ -5,6 +5,7 @@ import {
   canViewUnit,
   generateUnitCode,
   normalizeOwnerPhone,
+  validateOwnerPhoneForCountry,
   unitHasSameProjectPhoneDuplicate,
   validateMediaUpload,
 } from './domain'
@@ -103,7 +104,20 @@ export function createUnitWorkflow(
     }
   }
 
-  const normalizedOwnerPhone = normalizeOwnerPhone(input.originalOwnerPhone, input.countryCode)
+  const ownerPhoneValidation = validateOwnerPhoneForCountry(input.originalOwnerPhone, input.countryCode)
+  if (!ownerPhoneValidation.ok) {
+    return {
+      ok: false,
+      state,
+      ...createErrorMessage(
+        'error.invalidOwnerPhoneForCountry',
+        `Owner phone must match ${ownerPhoneValidation.countryLabel}. Example: ${ownerPhoneValidation.example}.`,
+        { country: ownerPhoneValidation.countryLabel, example: ownerPhoneValidation.example },
+      ),
+    }
+  }
+
+  const normalizedOwnerPhone = normalizeOwnerPhone(ownerPhoneValidation.localPhone, input.countryCode)
   if (input.paymentMethod === 'installment') {
     if ((input.downPayment ?? 0) > input.totalAmount) {
       return { ok: false, state, error: 'Down payment cannot exceed total amount.', errorKey: null, errorParams: null }
@@ -154,7 +168,7 @@ export function createUnitWorkflow(
     deliveryExpectancy: input.deliveryExpectancy,
     originalOwnerName: input.originalOwnerName,
     countryCode: input.countryCode,
-    originalOwnerPhone: input.originalOwnerPhone,
+    originalOwnerPhone: ownerPhoneValidation.localPhone,
     normalizedOwnerPhone,
     salesNotes: input.salesNotes,
     status: 'available',

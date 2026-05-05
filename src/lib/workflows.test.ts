@@ -168,6 +168,39 @@ describe('Leadra product workflows', () => {
     })
   })
 
+  it('rejects owner phone values that do not match the selected country format', () => {
+    const result = createUnitWorkflow(state(), sales, {
+      developerId: 'dev-palm',
+      developerName: 'Palm Hills',
+      projectId: 'project-zed',
+      projectName: 'ZED East',
+      destinationId: 'dest-new-cairo',
+      destinationName: 'New Cairo',
+      unitType: 'Apartment',
+      floor: '1st',
+      bua: 155,
+      viewId: 'view-garden',
+      viewName: 'Garden',
+      bedrooms: 3,
+      bathrooms: 2,
+      elevator: true,
+      finish: 'Fully Finished',
+      furnished: false,
+      paymentMethod: 'cash',
+      totalAmount: 6_000_000,
+      deliveryExpectancy: { mode: 'year', year: 2029 },
+      originalOwnerName: 'Invalid Owner',
+      countryCode: '+20',
+      originalOwnerPhone: '12345',
+      salesNotes: 'Invalid local phone.',
+      media: [],
+    })
+
+    expect(result.ok).toBe(false)
+    expect(result.error).toContain('Owner phone must match Egypt +20')
+    expect(result.errorKey).toBe('error.invalidOwnerPhoneForCountry')
+  })
+
   it('archives and changes status only when the actor has permission', () => {
     const sold = updateUnitStatusWorkflow(state(), sales, 105, 'sold')
     expect(sold.ok).toBe(true)

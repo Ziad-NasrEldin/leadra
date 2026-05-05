@@ -33,14 +33,16 @@ import {
   canSearchOwnerPhone,
   canViewSalesSensitiveData,
   canViewOwnerData,
+  getOwnerPhoneCountryMeta,
+  getOwnerPhoneCountryOptions,
   filterUnitsForUser,
   formatCurrency,
   formatDeliveryExpectancy,
   buildInstallmentSchedule,
   getThumbnailMedia,
-  inferOwnerPhoneCountryCode,
   summarizeDestinations,
   summarizeProjects,
+  validateOwnerPhoneForCountry,
   validateMediaUpload,
   searchUnits,
 } from './lib/domain'
@@ -372,6 +374,20 @@ function App() {
     const developer = activeLookupValues.find((item) => item.id === developerId)
     const viewLookup = activeLookupValues.find((item) => item.id === viewId)
     const rawOwnerPhone = String(formData.get('ownerPhone'))
+    const selectedCountryCode = String(formData.get('countryCode') ?? '+20')
+    const ownerPhoneValidation = validateOwnerPhoneForCountry(rawOwnerPhone, selectedCountryCode, locale)
+
+    if (!ownerPhoneValidation.ok) {
+      setFlash(
+        createFlashMessage(
+          'error.invalidOwnerPhoneForCountry',
+          `Owner phone must match ${ownerPhoneValidation.countryLabel}. Example: ${ownerPhoneValidation.example}.`,
+          { country: ownerPhoneValidation.countryLabel, example: ownerPhoneValidation.example },
+        ),
+      )
+      return
+    }
+
     const result = createUnitWorkflow(appState, user, {
       developerId,
       developerName: developer?.label ?? 'Unknown developer',
@@ -401,8 +417,8 @@ function App() {
         year: Number(formData.get('deliveryYear')),
       },
       originalOwnerName: String(formData.get('ownerName')),
-      countryCode: inferOwnerPhoneCountryCode(rawOwnerPhone),
-      originalOwnerPhone: rawOwnerPhone,
+      countryCode: selectedCountryCode,
+      originalOwnerPhone: ownerPhoneValidation.localPhone,
       salesNotes: String(formData.get('salesNotes')),
       media: uploadedMedia,
     })
@@ -1054,14 +1070,14 @@ function LoginStoryItem({ icon, title, body, index }: { icon: ReactNode; title: 
 
 function PaletteSamplePage() {
   const sampleStats = [
-    ['Active listings', '248', 'Champagne CTA on Onyx'],
-    ['Qualified buyers', '1,420', 'Deep Navy text on Royal Ivory'],
+    ['Active listings', '248', 'Champagne metrics on Onyx'],
+    ['Qualified buyers', '1,420', 'Ivory text on Graphite'],
     ['Booked tours', '36', 'Gold accent states'],
   ]
   const sampleUnits = [
-    ['Seaview Villa', 'Royal Ivory card / Deep Navy copy', 'Gold Accent'],
-    ['Ras El Hekma Chalet', 'Soft Grey section / Graphite border', 'Onyx CTA'],
-    ['North Coast Residence', 'Light Grey surface / Champagne status', 'Deep Navy'],
+    ['Seaview Villa', 'Charcoal card / Ivory copy', 'Gold Accent'],
+    ['Ras El Hekma Chalet', 'Graphite section / Champagne border', 'Onyx CTA'],
+    ['North Coast Residence', 'Onyx surface / Champagne status', 'Deep Navy'],
   ]
 
   return (
@@ -1069,8 +1085,8 @@ function PaletteSamplePage() {
       <div className="palette-sample-hero motion-stage" style={motionStyle(0)}>
         <div>
           <p className="eyebrow">Leadra color sample</p>
-          <h2>Luxury resale workspace</h2>
-          <p>Sample page only. Layout is copied from the product language; the test here is color direction.</p>
+          <h2>Dark luxury workspace</h2>
+          <p>Sample page only. This version uses the primary dark identity from the reference: Onyx, Graphite, Charcoal, and Champagne Gold.</p>
         </div>
         <div className="palette-sample-logo" aria-hidden="true">L</div>
       </div>
@@ -1108,7 +1124,7 @@ function PaletteSamplePage() {
         <div className="section-heading">
           <div>
             <p className="eyebrow">Unit cards</p>
-            <h2>Secondary palette sample</h2>
+            <h2>Primary dark palette sample</h2>
           </div>
           <button className="palette-primary-button" type="button">View details</button>
         </div>
@@ -1556,6 +1572,8 @@ function CreateUnitPage({
   const [downPayment, setDownPayment] = useState(900_000)
   const [installmentType, setInstallmentType] = useState<InstallmentType>('quarterly')
   const [installmentYears, setInstallmentYears] = useState(5)
+  const [ownerCountryCode, setOwnerCountryCode] = useState('+20')
+  const [ownerPhone, setOwnerPhone] = useState('01012345678')
   const activeStepIndex = createUnitSteps.indexOf(activeStep)
   const mediaValidation = validateMediaUpload(selectedMedia)
   const totalMediaMb = selectedMedia.reduce((total, file) => total + file.sizeBytes, 0) / (1024 * 1024)
@@ -1596,6 +1614,8 @@ function CreateUnitPage({
     const year = String(2026 + index)
     return { value: year, label: year }
   })
+  const ownerPhoneCountryOptions = getOwnerPhoneCountryOptions(locale)
+  const selectedOwnerPhoneCountry = getOwnerPhoneCountryMeta(ownerCountryCode, locale)
 
   function goToRelativeStep(offset: number) {
     const nextIndex = Math.min(createUnitSteps.length - 1, Math.max(0, activeStepIndex + offset))
@@ -1759,10 +1779,15 @@ function CreateUnitPage({
             {t('create.ownerName')}
             <input name="ownerName" defaultValue="New Owner" required dir="auto" />
           </label>
-          <label>
-            {t('create.ownerPhone')}
-            <input name="ownerPhone" defaultValue="+201012345678" required placeholder={t('create.ownerPhonePlaceholder')} dir="auto" />
-          </label>
+          <OwnerPhoneField
+            countryCode={ownerCountryCode}
+            countryOptions={ownerPhoneCountryOptions}
+            hint={t('create.ownerPhoneHint', { country: selectedOwnerPhoneCountry.label, example: selectedOwnerPhoneCountry.placeholder })}
+            ownerPhone={ownerPhone}
+            placeholder={selectedOwnerPhoneCountry.placeholder}
+            onCountryCodeChange={setOwnerCountryCode}
+            onOwnerPhoneChange={setOwnerPhone}
+          />
           <NamedSelectField defaultValue="2028" label={t('create.deliveryDate')} name="deliveryYear" options={deliveryYearOptions} />
           <label className="wide-field">
             {t('create.salesNotes')}
@@ -3401,6 +3426,60 @@ function NamedSelectField({
       <span id={labelId}>{label}</span>
       <BrandedSelect defaultValue={defaultValue} labelId={labelId} name={name} options={options} />
     </label>
+  )
+}
+
+function OwnerPhoneField({
+  countryCode,
+  countryOptions,
+  hint,
+  ownerPhone,
+  placeholder,
+  onCountryCodeChange,
+  onOwnerPhoneChange,
+}: {
+  countryCode: string
+  countryOptions: Array<BrandedSelectOption & { placeholder?: string }>
+  hint: string
+  ownerPhone: string
+  placeholder: string
+  onCountryCodeChange: (value: string) => void
+  onOwnerPhoneChange: (value: string) => void
+}) {
+  const { t } = useLocale()
+  const phoneLabelId = useId()
+  const countryLabelId = useId()
+  const hintId = useId()
+
+  return (
+    <div className="owner-phone-field">
+      <span className="owner-phone-label" id={phoneLabelId}>{t('create.ownerPhone')}</span>
+      <div className="owner-phone-shell" role="group" aria-labelledby={phoneLabelId}>
+        <div className="owner-phone-country">
+          <span className="sr-only" id={countryLabelId}>{t('create.countryCode')}</span>
+          <BrandedSelect
+            labelId={countryLabelId}
+            name="countryCode"
+            options={countryOptions}
+            value={countryCode}
+            onValueChange={onCountryCodeChange}
+          />
+        </div>
+        <input
+          aria-describedby={hintId}
+          aria-labelledby={phoneLabelId}
+          autoComplete="tel-national"
+          dir="auto"
+          inputMode="tel"
+          name="ownerPhone"
+          placeholder={placeholder}
+          required
+          value={ownerPhone}
+          onChange={(event) => onOwnerPhoneChange(event.target.value)}
+        />
+      </div>
+      <small className="sr-only" id={hintId}>{hint}</small>
+    </div>
   )
 }
 

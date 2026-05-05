@@ -147,8 +147,12 @@ describe('Leadra app shell', () => {
 
     await user.click(screen.getByRole('button', { name: /owner/i }))
     expect(screen.getByRole('combobox', { name: /delivery date/i })).toBeInTheDocument()
-    expect(screen.queryByRole('combobox', { name: /country code/i })).not.toBeInTheDocument()
-    expect(screen.getByRole('textbox', { name: /original owner phone/i })).toHaveValue('+201012345678')
+    expect(screen.getByRole('combobox', { name: /country code/i })).toBeInTheDocument()
+    expect(screen.getByRole('textbox', { name: /original owner phone/i })).toHaveValue('01012345678')
+    await chooseFromSelect(user, /country code/i, /uae \+971/i)
+    expect(screen.getByRole('textbox', { name: /original owner phone/i })).toHaveAttribute('placeholder', '0501234567')
+    await user.clear(screen.getByRole('textbox', { name: /original owner phone/i }))
+    await user.type(screen.getByRole('textbox', { name: /original owner phone/i }), '0501234568')
 
     await user.click(screen.getByRole('button', { name: /review/i }))
     const image = new File(

@@ -31,3 +31,5 @@ supabase/.temp/
 playwright-report/
 test-results/
 performance-reports/
+
+.vercel
