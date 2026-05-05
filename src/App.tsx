@@ -1356,11 +1356,13 @@ function UnitsPage({
 }) {
   const { locale, t } = useLocale()
   const [visibleCount, setVisibleCount] = useState(unitListPageSize)
+  const [filtersOpen, setFiltersOpen] = useState(false)
   const visibleUnits = units.slice(0, visibleCount)
   const developerOptions = lookupValues.filter((item) => item.kind === 'developer')
   const destinationOptions = lookupValues.filter((item) => item.kind === 'destination')
   const projectOptions = lookupValues.filter((item) => item.kind === 'project')
   const unitTypeOptions = Array.from(new Set(units.map((unit) => unit.unitType))).sort((a, b) => compareText(locale, a, b))
+  const activeFilterCount = countActiveUnitFilters(filters)
 
   return (
     <section className="page-stack page-entrance units-page">
@@ -1402,7 +1404,38 @@ function UnitsPage({
         ))}
       </div>
 
-      <div className="filter-bar advanced-filter-bar motion-stage" style={motionStyle(3, 60)}>
+      <section className={`units-filter-shell motion-stage ${filtersOpen ? 'is-open' : ''}`} style={motionStyle(3, 60)}>
+        <div className="units-filter-summary">
+          <div>
+            <p className="eyebrow">{t('units.advancedSearch')}</p>
+            <h3>{filtersOpen ? t('units.hideFilters') : t('units.showFilters')}</h3>
+            <small>
+              {activeFilterCount === 0
+                ? t('units.filtersHidden')
+                : t('units.activeFilters', { count: activeFilterCount })}
+            </small>
+          </div>
+          <div className="units-filter-actions">
+            {activeFilterCount > 0 && (
+              <button className="ghost-button compact-action" type="button" onClick={onResetFilters}>
+                {t('analytics.reset')}
+              </button>
+            )}
+            <button
+              className="secondary-button compact-action"
+              type="button"
+              aria-expanded={filtersOpen}
+              aria-controls="units-advanced-filters"
+              onClick={() => setFiltersOpen((open) => !open)}
+            >
+              <SlidersHorizontal size={17} /> {filtersOpen ? t('units.hideFilters') : t('units.showFilters')}
+            </button>
+          </div>
+        </div>
+      </section>
+
+      {filtersOpen && (
+      <div id="units-advanced-filters" className="filter-bar advanced-filter-bar motion-stage" style={motionStyle(4, 60)}>
         <label>
           {t('units.unitCode')}
           <input value={filters.unitCode ?? ''} onChange={(event) => onFilterChange('unitCode', event.target.value)} placeholder="NE105BR3Ba2" dir="auto" />
@@ -1484,6 +1517,7 @@ function UnitsPage({
         </label>
         <button className="secondary-button" type="button" onClick={onResetFilters}>{t('analytics.reset')}</button>
       </div>
+      )}
 
       <section className="unit-list motion-list" key={`${selectedDestinationId ?? 'all'}-${selectedProjectId ?? 'all'}-${JSON.stringify(filters)}`}>
         {units.length === 0 && <EmptyState title={t('units.noMatchesTitle')} body={t('units.noMatchesBody')} />}
@@ -1504,6 +1538,10 @@ function parseOptionalNumber(value: string): number | undefined {
   if (value.trim() === '') return undefined
   const parsed = Number(value)
   return Number.isFinite(parsed) ? parsed : undefined
+}
+
+function countActiveUnitFilters(filters: UnitFilters): number {
+  return Object.values(filters).filter((value) => value !== undefined && value !== '' && value !== 'all').length
 }
 
 function NumberFilter({ label, value, onChange }: { label: string; value?: number; onChange: (value: number | undefined) => void }) {
