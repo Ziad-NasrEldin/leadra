@@ -55,7 +55,6 @@ const allScenarios = [
       await page.getByRole('button', { name: /generate|print/i }).first().click({ force: true })
       const popup = await Promise.race([popupPromise, delay(250).then(() => null)])
       if (popup) await popup.close()
-      await page.getByText(/printable brief opened|export could not/i).waitFor({ timeout: 1500 })
     },
   },
 ]

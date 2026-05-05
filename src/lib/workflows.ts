@@ -104,6 +104,14 @@ export function createUnitWorkflow(
   }
 
   const normalizedOwnerPhone = normalizeOwnerPhone(input.originalOwnerPhone, input.countryCode)
+  if (input.paymentMethod === 'installment') {
+    if ((input.downPayment ?? 0) > input.totalAmount) {
+      return { ok: false, state, error: 'Down payment cannot exceed total amount.', errorKey: null, errorParams: null }
+    }
+    if ((input.installmentType ?? 'custom') !== 'custom' && (!input.installmentYears || input.installmentYears < 1)) {
+      return { ok: false, state, error: 'Installment years are required for automatic installment calculations.', errorKey: null, errorParams: null }
+    }
+  }
   const nextId = state.units.reduce((highest, unit) => Math.max(highest, unit.id), 0) + 1
   const payment = calculatePaymentSummary({
     paymentMethod: input.paymentMethod,

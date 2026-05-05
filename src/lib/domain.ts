@@ -2,6 +2,8 @@ import type {
   LeadraMediaFile,
   LeadraUnit,
   LeadraUser,
+  DestinationSummary,
+  InstallmentType,
   MediaValidation,
   PaymentInput,
   PaymentSummary,
@@ -20,6 +22,10 @@ const paymentsPerYear = {
   annual: 1,
   custom: null,
 } as const
+
+export function getInstallmentPaymentsPerYear(type: InstallmentType | null | undefined): number | null {
+  return type ? paymentsPerYear[type] : null
+}
 
 const knownOwnerPhoneCountryCodes = ['+971', '+966', '+20'] as const
 
@@ -107,6 +113,10 @@ export function canSearchOwnerPhone(user: LeadraUser, unit: LeadraUnit): boolean
   return canViewOwnerData(user, unit)
 }
 
+export function canViewSalesSensitiveData(user: LeadraUser, unit: LeadraUnit): boolean {
+  return user.role !== 'sales' || unit.createdBy === user.id
+}
+
 export function canEditOwnerFields(user: LeadraUser, unit: LeadraUnit): boolean {
   if (user.role === 'admin' || user.role === 'sub_admin' || user.role === 'manager') {
     return true
@@ -152,6 +162,39 @@ export function calculatePaymentSummary(input: PaymentInput): PaymentSummary {
     commissionAmount,
     installmentAmount,
   }
+}
+
+export interface InstallmentScheduleRow {
+  paymentNumber: number
+  yearNumber: number
+  periodLabel: string
+  amount: number
+}
+
+export function buildInstallmentSchedule(unit: LeadraUnit, locale: LocaleCode = 'en'): InstallmentScheduleRow[] {
+  const frequency = getInstallmentPaymentsPerYear(unit.installmentType)
+  if (unit.paymentMethod !== 'installment' || !frequency || !unit.installmentYears || !unit.installmentAmount) return []
+
+  const formatter = new Intl.NumberFormat(getIntlLocale(locale), { maximumFractionDigits: 0 })
+  const totalPayments = unit.installmentYears * frequency
+  const amount = unit.installmentAmount
+
+  return Array.from({ length: totalPayments }, (_, index) => {
+    const paymentNumber = index + 1
+    const yearNumber = Math.floor(index / frequency) + 1
+    const periodInYear = (index % frequency) + 1
+    return {
+      paymentNumber,
+      yearNumber,
+      periodLabel:
+        unit.installmentType === 'quarterly'
+          ? `Q${periodInYear}`
+          : unit.installmentType === 'semi_annual'
+            ? `${locale === 'ar' ? 'نصف' : 'Half'} ${formatter.format(periodInYear)}`
+            : `${locale === 'ar' ? 'سنة' : 'Year'} ${formatter.format(yearNumber)}`,
+      amount,
+    }
+  })
 }
 
 export function generateUnitCode(destinationName: string, unitId: number, bedrooms: number, bathrooms: number): string {
@@ -217,12 +260,15 @@ export function searchUnits(user: LeadraUser, units: LeadraUnit[], filters: Unit
     if (filters.bedrooms && filters.bedrooms !== 'all' && unit.bedrooms !== filters.bedrooms) return false
     if (filters.bathrooms && filters.bathrooms !== 'all' && unit.bathrooms !== filters.bathrooms) return false
     if (filters.paymentMethod && filters.paymentMethod !== 'all' && unit.paymentMethod !== filters.paymentMethod) return false
-    if (filters.priceFrom && unit.totalAmount < filters.priceFrom) return false
-    if (filters.priceTo && unit.totalAmount > filters.priceTo) return false
-    if (filters.installmentAmountFrom && (unit.installmentAmount ?? 0) < filters.installmentAmountFrom) return false
-    if (filters.installmentAmountTo && (unit.installmentAmount ?? Number.MAX_SAFE_INTEGER) > filters.installmentAmountTo) {
-      return false
-    }
+    if (!inRange(unit.bua, filters.buaFrom, filters.buaTo)) return false
+    if (!inRange(unit.totalAmount, filters.priceFrom, filters.priceTo)) return false
+    if (!inRange(unit.paymentMethod === 'cash' ? unit.totalAmount : null, filters.cashPriceFrom, filters.cashPriceTo)) return false
+    if (!inRange(unit.downPayment, filters.downPaymentFrom, filters.downPaymentTo)) return false
+    if (!inRange(unit.remainingPayment, filters.remainingPaymentFrom, filters.remainingPaymentTo)) return false
+    if (filters.installmentType && filters.installmentType !== 'all' && unit.installmentType !== filters.installmentType) return false
+    if (!inRange(unit.installmentAmount, filters.installmentAmountFrom, filters.installmentAmountTo)) return false
+    if (filters.deliveryYear && filters.deliveryYear !== 'all' && unit.deliveryExpectancy.year !== filters.deliveryYear) return false
+    if (filters.deliveryMonth && filters.deliveryMonth !== 'all' && unit.deliveryExpectancy.month !== filters.deliveryMonth) return false
     if (filters.unitCode && !unit.unitCode.toLowerCase().includes(filters.unitCode.toLowerCase())) return false
 
     if (filters.ownerPhone) {
@@ -236,15 +282,42 @@ export function searchUnits(user: LeadraUser, units: LeadraUnit[], filters: Unit
   })
 }
 
-export function summarizeProjects(units: LeadraUnit[], locale: LocaleCode = 'en'): ProjectSummary[] {
-  const summaries = new Map<string, ProjectSummary>()
+export function summarizeDestinations(units: LeadraUnit[], locale: LocaleCode = 'en'): DestinationSummary[] {
+  const summaries = new Map<string, DestinationSummary>()
 
   for (const unit of units.filter((item) => !item.archived)) {
+    const current =
+      summaries.get(unit.destinationId) ??
+      {
+        destinationId: unit.destinationId,
+        destinationName: unit.destinationName,
+        totalUnits: 0,
+        availableUnits: 0,
+        holdUnits: 0,
+        soldUnits: 0,
+      }
+
+    current.totalUnits += 1
+    if (unit.status === 'available') current.availableUnits += 1
+    if (unit.status === 'hold') current.holdUnits += 1
+    if (unit.status === 'sold') current.soldUnits += 1
+    summaries.set(unit.destinationId, current)
+  }
+
+  return Array.from(summaries.values()).sort((a, b) => compareText(locale, a.destinationName, b.destinationName))
+}
+
+export function summarizeProjects(units: LeadraUnit[], locale: LocaleCode = 'en', destinationId?: string | null): ProjectSummary[] {
+  const summaries = new Map<string, ProjectSummary>()
+
+  for (const unit of units.filter((item) => !item.archived && (!destinationId || item.destinationId === destinationId))) {
     const current =
       summaries.get(unit.projectId) ??
       {
         projectId: unit.projectId,
         projectName: unit.projectName,
+        destinationId: unit.destinationId,
+        destinationName: unit.destinationName,
         totalUnits: 0,
         availableUnits: 0,
         holdUnits: 0,
@@ -259,6 +332,18 @@ export function summarizeProjects(units: LeadraUnit[], locale: LocaleCode = 'en'
   }
 
   return Array.from(summaries.values()).sort((a, b) => compareText(locale, a.projectName, b.projectName))
+}
+
+function hasBound(from?: number, to?: number) {
+  return from !== undefined || to !== undefined
+}
+
+function inRange(value: number | null | undefined, from?: number, to?: number) {
+  if (!hasBound(from, to)) return true
+  if (value == null) return false
+  if (from !== undefined && value < from) return false
+  if (to !== undefined && value > to) return false
+  return true
 }
 
 export function formatCurrency(value: number | null | undefined, locale: LocaleCode = 'en'): string {

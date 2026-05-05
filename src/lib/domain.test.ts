@@ -6,6 +6,10 @@ import {
   canViewOwnerData,
   filterUnitsForUser,
   generateUnitCode,
+  searchUnits,
+  summarizeDestinations,
+  summarizeProjects,
+  buildInstallmentSchedule,
   getThumbnailMedia,
   inferOwnerPhoneCountryCode,
   normalizeOwnerPhone,
@@ -175,6 +179,57 @@ describe('Leadra domain rules', () => {
         installmentYears: 4,
       }).installmentAmount,
     ).toBeNull()
+  })
+
+  it('builds equal installment schedules for automatic frequencies only', () => {
+    const quarterlySchedule = buildInstallmentSchedule(baseUnit)
+
+    expect(quarterlySchedule).toHaveLength(20)
+    expect(quarterlySchedule[0]).toMatchObject({ paymentNumber: 1, yearNumber: 1, periodLabel: 'Q1', amount: 200_000 })
+    expect(buildInstallmentSchedule({ ...baseUnit, installmentType: 'custom', installmentAmount: null })).toEqual([])
+  })
+
+  it('summarizes destinations before projects and scopes projects by destination', () => {
+    const secondDestinationUnit = {
+      ...baseUnit,
+      id: 106,
+      destinationId: 'dest-north-coast',
+      destinationName: 'North Coast',
+      projectId: 'project-marassi',
+      projectName: 'Marassi',
+      status: 'sold' as const,
+    }
+
+    const destinations = summarizeDestinations([baseUnit, secondDestinationUnit])
+    const newCairoProjects = summarizeProjects([baseUnit, secondDestinationUnit], 'en', 'dest-new-cairo')
+
+    expect(destinations.map((destination) => destination.destinationName)).toEqual(['New Cairo', 'North Coast'])
+    expect(destinations[0]).toMatchObject({ totalUnits: 1, availableUnits: 1 })
+    expect(newCairoProjects).toHaveLength(1)
+    expect(newCairoProjects[0]).toMatchObject({ projectId: 'project-new-cairo', destinationId: 'dest-new-cairo' })
+  })
+
+  it('applies advanced search filters including zero bounds and protected owner phone', () => {
+    const otherSalesUnit = {
+      ...baseUnit,
+      id: 106,
+      unitCode: 'NC106BR2Ba1',
+      createdBy: 'sales-b',
+      teamId: 'team-b',
+      originalOwnerPhone: '01099999999',
+      normalizedOwnerPhone: '+201099999999',
+      bedrooms: 2,
+      bathrooms: 1,
+      bua: 90,
+      downPayment: 0,
+      remainingPayment: 5_000_000,
+      installmentAmount: 625_000,
+    }
+
+    expect(searchUnits(admin, [baseUnit, otherSalesUnit], { buaFrom: 0, buaTo: 100 })).toEqual([otherSalesUnit])
+    expect(searchUnits(admin, [baseUnit, otherSalesUnit], { installmentType: 'quarterly', installmentAmountFrom: 150_000, installmentAmountTo: 250_000 })).toEqual([baseUnit])
+    expect(searchUnits(salesA, [baseUnit, otherSalesUnit], { ownerPhone: '01099999999' })).toEqual([])
+    expect(searchUnits(salesA, [baseUnit, otherSalesUnit], { ownerPhone: '501234567' })).toEqual([baseUnit])
   })
 
   it('generates the PRD unit code format from destination, id, bedrooms, and bathrooms', () => {

@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
 import { toSafeUnitViewModel, toUnitInsertPayload, toUnitViewModel, type SafeUnitRpcRow, type SupabaseUnitRow } from './supabaseMapper'
-import type { CreateUnitInput, LeadraUnit, LeadraUser, UnitStatus } from './types'
+import type { CreateUnitInput, LeadraUnit, LeadraUser, UnitFilters, UnitStatus } from './types'
 
 const unitSelect = `
   *,
@@ -23,6 +23,20 @@ export class LeadraRepository {
 
   async listUnits(): Promise<LeadraUnit[]> {
     const { data, error } = await this.client.rpc('list_units_safe', {
+      limit_count: unitListLimit,
+      offset_count: 0,
+    })
+
+    if (error) throw error
+    return ((data ?? []) as unknown as SafeUnitRpcRow[])
+      .map(toSafeUnitViewModel)
+      .filter((unit) => !unit.archived)
+      .sort((first, second) => new Date(second.createdAt).getTime() - new Date(first.createdAt).getTime())
+  }
+
+  async searchUnits(filters: UnitFilters): Promise<LeadraUnit[]> {
+    const { data, error } = await this.client.rpc('search_units_safe', {
+      filters: compactUnitFilters(filters),
       limit_count: unitListLimit,
       offset_count: 0,
     })
@@ -59,4 +73,10 @@ export class LeadraRepository {
     void unitId
     throw new Error('The generate-unit-pdf edge function is retired. Use the localized printable brief export in the web client.')
   }
+}
+
+function compactUnitFilters(filters: UnitFilters): Record<string, unknown> {
+  return Object.fromEntries(
+    Object.entries(filters).filter(([, value]) => value !== undefined && value !== '' && value !== 'all'),
+  )
 }

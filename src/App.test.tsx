@@ -39,7 +39,7 @@ describe('Leadra app shell', () => {
     window.history.replaceState(null, '', '/')
   })
 
-  it('lets a demo user enter the project-first unit browser', async () => {
+  it('lets a demo user enter the destination-first unit browser', async () => {
     renderApp()
     const user = userEvent.setup()
 
@@ -50,7 +50,8 @@ describe('Leadra app shell', () => {
     expect(await screen.findByRole('heading', { name: /admin command/i })).toBeInTheDocument()
     await user.click(screen.getByRole('link', { name: /view all units/i }))
 
-    expect(await screen.findByRole('heading', { name: /choose a project/i })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: /choose a destination/i })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: /^new cairo\s/i })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /new cairo estates/i })).toBeInTheDocument()
   })
 
@@ -79,7 +80,7 @@ describe('Leadra app shell', () => {
     await openLoginPage(user)
     await signInAs(user, /continue as admin/i)
 
-    expect(await screen.findByRole('heading', { name: /choose a project/i })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: /choose a destination/i })).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: /^create$/i }))
     expect(window.location.hash).toBe('#create')
   })

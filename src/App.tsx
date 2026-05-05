@@ -17,6 +17,7 @@ import {
   Plus,
   Search,
   Settings,
+  Share2,
   SlidersHorizontal,
   Users,
 } from 'lucide-react'
@@ -30,12 +31,15 @@ import {
   canAddAdminManagerNote,
   canArchiveUnit,
   canSearchOwnerPhone,
+  canViewSalesSensitiveData,
   canViewOwnerData,
   filterUnitsForUser,
   formatCurrency,
   formatDeliveryExpectancy,
+  buildInstallmentSchedule,
   getThumbnailMedia,
   inferOwnerPhoneCountryCode,
+  summarizeDestinations,
   summarizeProjects,
   validateMediaUpload,
   searchUnits,
@@ -64,6 +68,7 @@ import {
   type LocalizedFlashMessage,
 } from './lib/messageRendering'
 import { updateManagedUserPassword, updateManagedUserProfile } from './lib/adminAuth'
+import { LeadraRepository } from './lib/repository'
 import { canUseDemoMode, isPerformanceDemoMode, isProductionMissingSupabaseConfig, isSupabaseConfigured, supabase } from './lib/supabase'
 import { loadSupabaseAnalyticsDashboard, loadSupabaseAppState, loadSupabaseProfile, markSupabaseLogin } from './lib/supabaseState'
 import {
@@ -92,11 +97,13 @@ import type {
   MessageParams,
   NotificationItem,
   PaymentMethod,
+  InstallmentType,
+  UnitFilters,
   UnitStatus,
 } from './lib/types'
 
-type View = 'dashboard' | 'units' | 'create' | 'details' | 'notifications' | 'profile' | 'analytics' | 'admin'
-type HashView = Exclude<View, 'details'>
+type View = 'dashboard' | 'units' | 'create' | 'details' | 'notifications' | 'profile' | 'analytics' | 'admin' | 'palette'
+type HashView = View
 
 type TransitionDocument = Document & {
   startViewTransition?: (callback: () => void) => {
@@ -174,16 +181,17 @@ function App() {
   const [view, setView] = useState<View>(() => readHashView())
   const [appState, setAppState] = useState(initialWorkspace.state)
   const [activeLookupValues, setActiveLookupValues] = useState<LookupValue[]>(initialWorkspace.lookupValues)
+  const [selectedDestinationId, setSelectedDestinationId] = useState<string | null>(null)
   const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null)
-  const [selectedUnitId, setSelectedUnitId] = useState<number | null>(null)
-  const [unitCodeFilter, setUnitCodeFilter] = useState('')
-  const [ownerPhoneFilter, setOwnerPhoneFilter] = useState('')
-  const [statusFilter, setStatusFilter] = useState<UnitStatus | 'all'>('all')
+  const [selectedUnitId, setSelectedUnitId] = useState<number | null>(() => readHashUnitId())
+  const [unitFilters, setUnitFilters] = useState<UnitFilters>({ status: 'all' })
+  const [remoteSearchUnits, setRemoteSearchUnits] = useState<LeadraUnit[] | null>(null)
   const [flash, setFlash] = useState<LocalizedFlashMessage | null>(null)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [authLoading, setAuthLoading] = useState(isSupabaseConfigured)
   const [loginError, setLoginError] = useState<UiMessage | null>(null)
   const [generatingPdfUnitId, setGeneratingPdfUnitId] = useState<number | null>(null)
+  const [generatedPdfs, setGeneratedPdfs] = useState<Record<number, { blob: Blob; fileName: string }>>({})
   const completingAuthUserRef = useRef<string | null>(null)
 
   async function completeSupabaseLogin(authUser: SupabaseUser) {
@@ -242,7 +250,9 @@ function App() {
   useEffect(() => {
     function syncViewFromHash() {
       const requestedView = readHashView()
+      const hashUnitId = readHashUnitId()
       runPageTransition(() => {
+        if (hashUnitId) setSelectedUnitId(hashUnitId)
         setView(requestedView)
         setFlash(null)
       })
@@ -314,15 +324,17 @@ function App() {
   const canUseAnalytics = canAccessAnalytics(user)
   const activeView = isViewAllowedForUser(view, user) ? view : 'dashboard'
   const visibleUnits = filterUnitsForUser(user, appState.units)
-  const projectSummaries = summarizeProjects(visibleUnits, locale)
-  const activeSelectedProjectId = selectedProjectId ?? projectSummaries[0]?.projectId ?? null
-  const selectedUnit = appState.units.find((unit) => unit.id === selectedUnitId) ?? visibleUnits[0] ?? null
+  const destinationSummaries = summarizeDestinations(visibleUnits, locale)
+  const activeSelectedDestinationId = unitFilters.destinationId || selectedDestinationId || destinationSummaries[0]?.destinationId || null
+  const projectSummaries = summarizeProjects(visibleUnits, locale, activeSelectedDestinationId)
+  const activeSelectedProjectId = unitFilters.projectId || selectedProjectId || projectSummaries[0]?.projectId || null
+  const selectedUnit = visibleUnits.find((unit) => unit.id === selectedUnitId) ?? (activeView === 'details' ? null : visibleUnits[0] ?? null)
   const filteredUnits = searchUnits(user, appState.units, {
+    ...unitFilters,
+    destinationId: unitFilters.destinationId || activeSelectedDestinationId || undefined,
     projectId: activeSelectedProjectId ?? undefined,
-    unitCode: unitCodeFilter,
-    ownerPhone: ownerPhoneFilter,
-    status: statusFilter,
   })
+  const displayedUnits = remoteSearchUnits ?? filteredUnits
   const unreadCount = appState.notifications.filter(
     (notification) =>
       !notification.read &&
@@ -382,8 +394,8 @@ function App() {
       paymentMethod,
       totalAmount: Number(formData.get('totalAmount')),
       downPayment: paymentMethod === 'installment' ? Number(formData.get('downPayment')) : null,
-      installmentType: paymentMethod === 'installment' ? 'quarterly' : null,
-      installmentYears: paymentMethod === 'installment' ? Number(formData.get('installmentYears')) : null,
+      installmentType: paymentMethod === 'installment' ? String(formData.get('installmentType')) as InstallmentType : null,
+      installmentYears: paymentMethod === 'installment' && String(formData.get('installmentType')) !== 'custom' ? Number(formData.get('installmentYears')) : null,
       deliveryExpectancy: {
         mode: 'year',
         year: Number(formData.get('deliveryYear')),
@@ -461,8 +473,10 @@ function App() {
     if (generatingPdfUnitId) return
     setGeneratingPdfUnitId(unit.id)
     try {
-      const { downloadUnitPdf } = await import('./lib/pdf')
-      await downloadUnitPdf(user, unit, appState.settings, locale)
+      const { generateUnitPdfFile, downloadGeneratedPdf } = await import('./lib/pdf')
+      const generated = await generateUnitPdfFile(user, unit, appState.settings, locale)
+      setGeneratedPdfs((items) => ({ ...items, [unit.id]: generated }))
+      downloadGeneratedPdf(generated)
       const notificationMessage = createNotificationMessage('export_generated', { unitCode: unit.unitCode })
       const auditMessage = createAuditMessage('export_generated')
       setAppState((state) =>
@@ -503,11 +517,69 @@ function App() {
           unit,
         ),
       )
-      setFlash(createFlashMessage('flash.exportGenerated', 'Printable brief opened. Use print or Save as PDF from the browser dialog.'))
+      setFlash({ text: 'PDF generated. You can now share or download it from the unit details actions.', messageKey: null, messageParams: null })
     } catch {
-      setFlash(createFlashMessage('flash.exportGenerated', 'Export could not open a print preview. Please allow popups and try again.'))
+      setFlash({ text: 'PDF could not be generated. Please try again.', messageKey: null, messageParams: null })
     } finally {
       setGeneratingPdfUnitId(null)
+    }
+  }
+
+  async function sharePdf(unit: LeadraUnit) {
+    const generated = generatedPdfs[unit.id]
+    if (!generated) {
+      setFlash({ text: 'Generate the PDF first, then share it.', messageKey: null, messageParams: null })
+      return
+    }
+    const { shareGeneratedPdf, downloadGeneratedPdf } = await import('./lib/pdf')
+    const shared = await shareGeneratedPdf(generated)
+    setAppState((state) => addAnalyticsEventWorkflow(state, user, 'pdf_shared_or_downloaded', unit))
+    if (shared) {
+      setFlash({ text: 'PDF share sheet opened.', messageKey: null, messageParams: null })
+      return
+    }
+    downloadGeneratedPdf(generated)
+    setFlash({ text: 'Native sharing is unavailable in this browser. The PDF was downloaded so you can send it manually.', messageKey: null, messageParams: null })
+  }
+
+  async function copyUnitShareLink(unit: LeadraUnit) {
+    const url = `${window.location.origin}${window.location.pathname}#details/${unit.id}`
+    try {
+      await navigator.clipboard.writeText(url)
+      setFlash({ text: 'Internal unit share link copied. It only works for logged-in users with permission.', messageKey: null, messageParams: null })
+    } catch {
+      setFlash({ text: url, messageKey: null, messageParams: null })
+    }
+  }
+
+  function updateUnitFilter<K extends keyof UnitFilters>(key: K, value: UnitFilters[K]) {
+    const nextFilters = { ...unitFilters, [key]: value }
+    setUnitFilters(nextFilters)
+    void loadRemoteUnitSearch(nextFilters)
+  }
+
+  function resetUnitFilters() {
+    setUnitFilters({ status: 'all' })
+    setSelectedDestinationId(null)
+    setSelectedProjectId(null)
+    setRemoteSearchUnits(null)
+  }
+
+  async function loadRemoteUnitSearch(nextFilters: UnitFilters, destinationId = activeSelectedDestinationId, projectId = activeSelectedProjectId) {
+    if (!supabase || !isSupabaseConfigured) {
+      setRemoteSearchUnits(null)
+      return
+    }
+    try {
+      const repository = new LeadraRepository(supabase)
+      const units = await repository.searchUnits({
+        ...nextFilters,
+        destinationId: nextFilters.destinationId || destinationId || undefined,
+        projectId: nextFilters.projectId || projectId || undefined,
+      })
+      setRemoteSearchUnits(units)
+    } catch {
+      setRemoteSearchUnits(null)
     }
   }
 
@@ -525,6 +597,7 @@ function App() {
         {canUseAdmin && (
           <NavButton active={activeView === 'admin'} label={t('nav.admin')} onClick={() => navigate('admin')} icon={<Settings />} className="motion-stage" style={motionStyle(5)} />
         )}
+        <NavButton active={activeView === 'palette'} label="Palette" onClick={() => navigate('palette')} icon={<Share2 />} className="motion-stage" style={motionStyle(6)} />
       </aside>
 
       <main className="main-panel">
@@ -561,6 +634,7 @@ function App() {
           <div className="page-transition-frame" key={activeView}>
             <Dashboard
               user={user}
+              appState={appState}
               units={visibleUnits}
               notifications={appState.notifications}
               onNavigate={navigate}
@@ -568,29 +642,50 @@ function App() {
                 runPageTransition(() => {
                   setSelectedUnitId(unitId)
                   setView('details')
+                  window.history.replaceState(null, '', `${window.location.pathname}#details/${unitId}`)
                 })
               }}
             />
+          </div>
+        )}
+        {activeView === 'palette' && (
+          <div className="page-transition-frame" key={activeView}>
+            <PaletteSamplePage />
           </div>
         )}
         {activeView === 'units' && (
           <div className="page-transition-frame" key={activeView}>
             <UnitsPage
               user={user}
+              lookupValues={activeLookupValues}
+              destinations={destinationSummaries}
               projects={projectSummaries}
+              selectedDestinationId={activeSelectedDestinationId}
               selectedProjectId={activeSelectedProjectId}
-              units={filteredUnits}
-              unitCodeFilter={unitCodeFilter}
-              ownerPhoneFilter={ownerPhoneFilter}
-              statusFilter={statusFilter}
-              onProjectSelect={setSelectedProjectId}
-              onUnitCodeFilter={setUnitCodeFilter}
-              onOwnerPhoneFilter={setOwnerPhoneFilter}
-              onStatusFilter={setStatusFilter}
+              units={displayedUnits}
+              filters={unitFilters}
+              onDestinationSelect={(id) => {
+                setSelectedDestinationId(id)
+                const destinationProjects = summarizeProjects(visibleUnits, locale, id)
+                const nextProjectId = destinationProjects[0]?.projectId ?? null
+                setSelectedProjectId(nextProjectId)
+                const nextFilters = { ...unitFilters, destinationId: undefined, projectId: undefined }
+                setUnitFilters(nextFilters)
+                void loadRemoteUnitSearch(nextFilters, id, nextProjectId)
+              }}
+              onProjectSelect={(id) => {
+                setSelectedProjectId(id)
+                const nextFilters = { ...unitFilters, projectId: undefined }
+                setUnitFilters(nextFilters)
+                void loadRemoteUnitSearch(nextFilters, activeSelectedDestinationId, id)
+              }}
+              onFilterChange={updateUnitFilter}
+              onResetFilters={resetUnitFilters}
               onOpenUnit={(id) => {
                 runPageTransition(() => {
                   setSelectedUnitId(id)
                   setView('details')
+                  window.history.replaceState(null, '', `${window.location.pathname}#details/${id}`)
                 })
               }}
             />
@@ -610,10 +705,20 @@ function App() {
               onArchive={() => archiveUnit(selectedUnit)}
               onStatusChange={(status) => updateUnitStatus(selectedUnit, status)}
               onGeneratePdf={() => generatePdf(selectedUnit)}
+              onSharePdf={() => sharePdf(selectedUnit)}
+              onCopyShareLink={() => copyUnitShareLink(selectedUnit)}
               pdfGenerating={generatingPdfUnitId === selectedUnit.id}
+              pdfReady={Boolean(generatedPdfs[selectedUnit.id])}
               onSaveNote={(content) => saveSharedNote(selectedUnit, content)}
               onDeleteNote={() => deleteSharedNote(selectedUnit)}
             />
+          </div>
+        )}
+        {activeView === 'details' && !selectedUnit && (
+          <div className="page-transition-frame" key="details-denied">
+            <section className="content-card page-entrance">
+              <EmptyState title="Unit unavailable" body="This internal link only works for logged-in users with permission to view the unit." />
+            </section>
           </div>
         )}
         {activeView === 'notifications' && (
@@ -737,6 +842,7 @@ function App() {
           {canUseAdmin && (
             <NavButton active={activeView === 'admin'} label={t('nav.admin')} onClick={() => navigate('admin')} icon={<Settings />} className="motion-stage" style={motionStyle(3)} />
           )}
+          <NavButton active={activeView === 'palette'} label="Palette" onClick={() => navigate('palette')} icon={<Share2 />} className="motion-stage" style={motionStyle(4)} />
         </div>
       )}
 
@@ -946,14 +1052,93 @@ function LoginStoryItem({ icon, title, body, index }: { icon: ReactNode; title: 
   )
 }
 
+function PaletteSamplePage() {
+  const sampleStats = [
+    ['Active listings', '248', 'Champagne CTA on Onyx'],
+    ['Qualified buyers', '1,420', 'Deep Navy text on Royal Ivory'],
+    ['Booked tours', '36', 'Gold accent states'],
+  ]
+  const sampleUnits = [
+    ['Seaview Villa', 'Royal Ivory card / Deep Navy copy', 'Gold Accent'],
+    ['Ras El Hekma Chalet', 'Soft Grey section / Graphite border', 'Onyx CTA'],
+    ['North Coast Residence', 'Light Grey surface / Champagne status', 'Deep Navy'],
+  ]
+
+  return (
+    <section className="palette-sample page-entrance">
+      <div className="palette-sample-hero motion-stage" style={motionStyle(0)}>
+        <div>
+          <p className="eyebrow">Leadra color sample</p>
+          <h2>Luxury resale workspace</h2>
+          <p>Sample page only. Layout is copied from the product language; the test here is color direction.</p>
+        </div>
+        <div className="palette-sample-logo" aria-hidden="true">L</div>
+      </div>
+
+      <div className="palette-swatch-grid motion-stage" style={motionStyle(1, 40)}>
+        {[
+          ['Onyx', '#0D0D0F'],
+          ['Champagne Gold', '#D4AF37'],
+          ['Graphite', '#1A1A1D'],
+          ['Charcoal', '#2A2A2E'],
+          ['Royal Ivory', '#F7F3E9'],
+          ['Deep Navy', '#0F1B2D'],
+          ['Soft Grey', '#E6E8EC'],
+          ['Light Grey', '#F1F3F6'],
+        ].map(([name, value], index) => (
+          <div className="palette-swatch motion-stage" key={name} style={motionStyle(index, 80)}>
+            <span style={{ background: value }} />
+            <strong>{name}</strong>
+            <small>{value}</small>
+          </div>
+        ))}
+      </div>
+
+      <section className="palette-sample-grid">
+        {sampleStats.map(([label, value, note], index) => (
+          <div className="palette-stat-card motion-stage" key={label} style={motionStyle(index, 120)}>
+            <span>{label}</span>
+            <strong>{value}</strong>
+            <small>{note}</small>
+          </div>
+        ))}
+      </section>
+
+      <section className="palette-list-panel motion-stage" style={motionStyle(2, 140)}>
+        <div className="section-heading">
+          <div>
+            <p className="eyebrow">Unit cards</p>
+            <h2>Secondary palette sample</h2>
+          </div>
+          <button className="palette-primary-button" type="button">View details</button>
+        </div>
+        <div className="palette-unit-list">
+          {sampleUnits.map(([name, detail, status], index) => (
+            <button className="palette-unit-row motion-stage" key={name} style={motionStyle(index, 170)} type="button">
+              <div className="palette-thumb" />
+              <div>
+                <strong>{name}</strong>
+                <p>{detail}</p>
+              </div>
+              <span>{status}</span>
+            </button>
+          ))}
+        </div>
+      </section>
+    </section>
+  )
+}
+
 function Dashboard({
   user,
+  appState,
   units,
   notifications,
   onNavigate,
   onOpenUnit,
 }: {
   user: LeadraUser
+  appState: AppDataState
   units: LeadraUnit[]
   notifications: NotificationItem[]
   onNavigate: (view: View) => void
@@ -964,6 +1149,10 @@ function Dashboard({
   const available = units.filter((unit) => unit.status === 'available').length
   const hold = units.filter((unit) => unit.status === 'hold').length
   const sold = units.filter((unit) => unit.status === 'sold').length
+
+  if (user.role === 'manager') {
+    return <ManagerDashboard user={user} appState={appState} units={units} notifications={notifications} onNavigate={onNavigate} onOpenUnit={onOpenUnit} />
+  }
 
   return (
     <section className="page-grid page-entrance dashboard-page">
@@ -1020,36 +1209,142 @@ function Dashboard({
   )
 }
 
-function UnitsPage({
+function ManagerDashboard({
   user,
-  projects,
-  selectedProjectId,
+  appState,
   units,
-  unitCodeFilter,
-  ownerPhoneFilter,
-  statusFilter,
-  onProjectSelect,
-  onUnitCodeFilter,
-  onOwnerPhoneFilter,
-  onStatusFilter,
+  notifications,
+  onNavigate,
   onOpenUnit,
 }: {
   user: LeadraUser
+  appState: AppDataState
+  units: LeadraUnit[]
+  notifications: NotificationItem[]
+  onNavigate: (view: View) => void
+  onOpenUnit: (unitId: number) => void
+}) {
+  const { locale, t } = useLocale()
+  const [now] = useState(() => Date.now())
+  const teamUnits = units.filter((unit) => unit.teamId === user.teamId)
+  const latestTeamUnits = [...teamUnits].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).slice(0, 4)
+  const teamEvents = appState.analyticsEvents.filter((event) => event.teamId === user.teamId)
+  const recentStatusEvents = teamEvents.filter((event) => event.eventType === 'status_changed').slice(0, 4)
+  const installmentUpdates = teamUnits
+    .filter((unit) => unit.paymentMethod === 'installment')
+    .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
+    .slice(0, 4)
+  const inactiveUsers = appState.users.filter((member) => {
+    if (member.teamId !== user.teamId || member.status !== 'active') return false
+    if (!member.lastLoginAt) return true
+    return now - new Date(member.lastLoginAt).getTime() > 72 * 60 * 60 * 1000
+  })
+
+  return (
+    <section className="page-grid page-entrance dashboard-page manager-dashboard">
+      <div className="hero-panel motion-stage motion-hero" style={motionStyle(0)}>
+        <p className="eyebrow">{t('dashboard.eyebrow', { role: getRoleLabel(locale, user.role) })}</p>
+        <h2>{dashboardTitle(user.role, locale)}</h2>
+        <p>{dashboardDescription(user.role, locale)}</p>
+        <div className="action-row">
+          <button className="primary-button" type="button" onClick={() => onNavigate('create')}><Plus size={18} /> {t('dashboard.quickAdd')}</button>
+          <button className="secondary-button" type="button" onClick={() => onNavigate('units')}>{t('dashboard.viewAllUnits')}</button>
+        </div>
+      </div>
+      <div className="metric-grid motion-stage" style={motionStyle(1, 40)}>
+        <Metric label={t('dashboard.visibleUnits')} value={formatCount(locale, teamUnits.length)} style={motionStyle(0, 120)} />
+        <Metric label={t('dashboard.teamActivity')} value={formatCount(locale, teamEvents.length)} style={motionStyle(1, 150)} />
+        <Metric label={t('dashboard.installmentUpdates')} value={formatCount(locale, installmentUpdates.length)} style={motionStyle(2, 180)} />
+        <Metric label={t('dashboard.inactivityAlerts')} value={formatCount(locale, inactiveUsers.length)} style={motionStyle(3, 210)} />
+      </div>
+      <ManagerPanel title={t('dashboard.latestTeamUploads')}>
+        {latestTeamUnits.map((unit, index) => <UnitListRow key={unit.id} user={user} unit={unit} index={index} onOpen={() => onOpenUnit(unit.id)} />)}
+      </ManagerPanel>
+      <ManagerPanel title={t('dashboard.teamStatusChanges')}>
+        {recentStatusEvents.length === 0 && <EmptyState title={t('dashboard.noUnitsTitle')} body={t('dashboard.noUnitsBody')} />}
+        {recentStatusEvents.map((event, index) => (
+          <div className="notification-row motion-stage" key={event.id} style={motionStyle(index, 120)}>
+            <Bell size={16} />
+            <div>
+              <strong>{event.unitStatusAfter ? getStatusLabel(locale, event.unitStatusAfter) : t('status.available')}</strong>
+              <p>{event.metadata?.unitCode ?? event.unitId}</p>
+            </div>
+          </div>
+        ))}
+      </ManagerPanel>
+      <ManagerPanel title={t('dashboard.installmentUpdates')}>
+        {installmentUpdates.map((unit, index) => <UnitListRow key={unit.id} user={user} unit={unit} index={index} onOpen={() => onOpenUnit(unit.id)} />)}
+      </ManagerPanel>
+      <ManagerPanel title={t('dashboard.inactivityAlerts')}>
+        {inactiveUsers.length === 0 && <EmptyState title={t('dashboard.noNotificationsTitle')} body={t('dashboard.noNotificationsBody')} />}
+        {inactiveUsers.map((member, index) => (
+          <div className="notification-row motion-stage" key={member.id} style={motionStyle(index, 120)}>
+            <Bell size={16} />
+            <div>
+              <strong>{member.fullName}</strong>
+              <p>{member.lastLoginAt ? t('common.lastLogin', { date: formatDate(locale, member.lastLoginAt) }) : t('common.noLoginYet')}</p>
+            </div>
+          </div>
+        ))}
+      </ManagerPanel>
+      <section className="content-card motion-stage" style={motionStyle(5, 130)}>
+        <h2>{t('dashboard.notificationCenter')}</h2>
+        {notifications.slice(0, 3).map((notification, index) => (
+          <div className="notification-row motion-stage" key={notification.id} style={motionStyle(index, 180)}>
+            <Bell size={16} />
+            <div><strong>{renderNotificationTitle(locale, notification)}</strong><p>{renderNotificationBody(locale, notification)}</p></div>
+          </div>
+        ))}
+      </section>
+    </section>
+  )
+}
+
+function ManagerPanel({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <section className="content-card motion-stage" style={motionStyle(2, 90)}>
+      <h2>{title}</h2>
+      {children}
+    </section>
+  )
+}
+
+function UnitsPage({
+  user,
+  lookupValues,
+  destinations,
+  projects,
+  selectedDestinationId,
+  selectedProjectId,
+  units,
+  filters,
+  onDestinationSelect,
+  onProjectSelect,
+  onFilterChange,
+  onResetFilters,
+  onOpenUnit,
+}: {
+  user: LeadraUser
+  lookupValues: LookupValue[]
+  destinations: ReturnType<typeof summarizeDestinations>
   projects: ReturnType<typeof summarizeProjects>
+  selectedDestinationId: string | null
   selectedProjectId: string | null
   units: LeadraUnit[]
-  unitCodeFilter: string
-  ownerPhoneFilter: string
-  statusFilter: UnitStatus | 'all'
+  filters: UnitFilters
+  onDestinationSelect: (id: string) => void
   onProjectSelect: (id: string) => void
-  onUnitCodeFilter: (value: string) => void
-  onOwnerPhoneFilter: (value: string) => void
-  onStatusFilter: (value: UnitStatus | 'all') => void
+  onFilterChange: <K extends keyof UnitFilters>(key: K, value: UnitFilters[K]) => void
+  onResetFilters: () => void
   onOpenUnit: (id: number) => void
 }) {
   const { locale, t } = useLocale()
   const [visibleCount, setVisibleCount] = useState(unitListPageSize)
   const visibleUnits = units.slice(0, visibleCount)
+  const developerOptions = lookupValues.filter((item) => item.kind === 'developer')
+  const destinationOptions = lookupValues.filter((item) => item.kind === 'destination')
+  const projectOptions = lookupValues.filter((item) => item.kind === 'project')
+  const unitTypeOptions = Array.from(new Set(units.map((unit) => unit.unitType))).sort((a, b) => compareText(locale, a, b))
 
   return (
     <section className="page-stack page-entrance units-page">
@@ -1061,12 +1356,27 @@ function UnitsPage({
         <Search size={22} />
       </div>
       <div className="project-grid motion-stage" style={motionStyle(1, 30)}>
+        {destinations.map((destination, index) => (
+          <button
+            key={destination.destinationId}
+            className={`project-card motion-stage ${selectedDestinationId === destination.destinationId ? 'active' : ''}`}
+            type="button"
+            style={motionStyle(index, 110)}
+            onClick={() => onDestinationSelect(destination.destinationId)}
+          >
+            <strong dir="auto">{destination.destinationName}</strong>
+            <span>{t('units.totalUnits', { count: formatCount(locale, destination.totalUnits) })}</span>
+            <small>{t('units.summary', { available: formatCount(locale, destination.availableUnits), hold: formatCount(locale, destination.holdUnits), sold: formatCount(locale, destination.soldUnits) })}</small>
+          </button>
+        ))}
+      </div>
+      <div className="project-grid compact motion-stage" style={motionStyle(2, 45)}>
         {projects.map((project, index) => (
           <button
             key={project.projectId}
             className={`project-card motion-stage ${selectedProjectId === project.projectId ? 'active' : ''}`}
             type="button"
-            style={motionStyle(index, 110)}
+            style={motionStyle(index, 130)}
             onClick={() => onProjectSelect(project.projectId)}
           >
             <strong dir="auto">{project.projectName}</strong>
@@ -1076,10 +1386,10 @@ function UnitsPage({
         ))}
       </div>
 
-      <div className="filter-bar motion-stage" style={motionStyle(2, 60)}>
+      <div className="filter-bar advanced-filter-bar motion-stage" style={motionStyle(3, 60)}>
         <label>
           {t('units.unitCode')}
-          <input value={unitCodeFilter} onChange={(event) => onUnitCodeFilter(event.target.value)} placeholder="NE105BR3Ba2" dir="auto" />
+          <input value={filters.unitCode ?? ''} onChange={(event) => onFilterChange('unitCode', event.target.value)} placeholder="NE105BR3Ba2" dir="auto" />
         </label>
         <ControlledSelectField
           label={t('units.status')}
@@ -1089,21 +1399,77 @@ function UnitsPage({
             { value: 'hold', label: getStatusLabel(locale, 'hold') },
             { value: 'sold', label: getStatusLabel(locale, 'sold') },
           ]}
-          value={statusFilter}
-          onValueChange={(value) => onStatusFilter(value as UnitStatus | 'all')}
+          value={filters.status ?? 'all'}
+          onValueChange={(value) => onFilterChange('status', value as UnitStatus | 'all')}
         />
+        <ControlledSelectField
+          label={t('details.developer')}
+          options={[{ value: '', label: t('common.all') }, ...developerOptions.map((item) => ({ value: item.id, label: item.label }))]}
+          value={filters.developerId ?? ''}
+          onValueChange={(value) => onFilterChange('developerId', value || undefined)}
+        />
+        <ControlledSelectField
+          label={t('details.destination')}
+          options={[{ value: '', label: t('common.all') }, ...destinationOptions.map((item) => ({ value: item.id, label: item.label }))]}
+          value={filters.destinationId ?? ''}
+          onValueChange={(value) => onFilterChange('destinationId', value || undefined)}
+        />
+        <ControlledSelectField
+          label={t('details.project')}
+          options={[{ value: '', label: t('common.all') }, ...projectOptions.map((item) => ({ value: item.id, label: item.label }))]}
+          value={filters.projectId ?? ''}
+          onValueChange={(value) => onFilterChange('projectId', value || undefined)}
+        />
+        <ControlledSelectField
+          label={t('details.unitType')}
+          options={[{ value: '', label: t('common.all') }, ...unitTypeOptions.map((item) => ({ value: item, label: item }))]}
+          value={filters.unitType ?? ''}
+          onValueChange={(value) => onFilterChange('unitType', value || undefined)}
+        />
+        <NumberFilter label={t('details.bedrooms')} value={filters.bedrooms === 'all' ? undefined : filters.bedrooms} onChange={(value) => onFilterChange('bedrooms', value ?? 'all')} />
+        <NumberFilter label={t('details.bathrooms')} value={filters.bathrooms === 'all' ? undefined : filters.bathrooms} onChange={(value) => onFilterChange('bathrooms', value ?? 'all')} />
+        <RangeFilter label="BUA" from={filters.buaFrom} to={filters.buaTo} onFrom={(value) => onFilterChange('buaFrom', value)} onTo={(value) => onFilterChange('buaTo', value)} />
+        <RangeFilter label={t('details.totalAmount')} from={filters.priceFrom} to={filters.priceTo} onFrom={(value) => onFilterChange('priceFrom', value)} onTo={(value) => onFilterChange('priceTo', value)} />
+        <ControlledSelectField
+          label={t('details.paymentMethod')}
+          options={[
+            { value: 'all', label: t('common.all') },
+            { value: 'cash', label: t('create.cash') },
+            { value: 'installment', label: t('create.installment') },
+          ]}
+          value={filters.paymentMethod ?? 'all'}
+          onValueChange={(value) => onFilterChange('paymentMethod', value as PaymentMethod | 'all')}
+        />
+        <RangeFilter label="Cash price" from={filters.cashPriceFrom} to={filters.cashPriceTo} onFrom={(value) => onFilterChange('cashPriceFrom', value)} onTo={(value) => onFilterChange('cashPriceTo', value)} />
+        <RangeFilter label={t('create.downPayment')} from={filters.downPaymentFrom} to={filters.downPaymentTo} onFrom={(value) => onFilterChange('downPaymentFrom', value)} onTo={(value) => onFilterChange('downPaymentTo', value)} />
+        <RangeFilter label={t('details.remainingPayment')} from={filters.remainingPaymentFrom} to={filters.remainingPaymentTo} onFrom={(value) => onFilterChange('remainingPaymentFrom', value)} onTo={(value) => onFilterChange('remainingPaymentTo', value)} />
+        <ControlledSelectField
+          label={t('details.installmentType')}
+          options={[
+            { value: 'all', label: t('common.all') },
+            { value: 'quarterly', label: t('create.quarterly') },
+            { value: 'semi_annual', label: t('create.semiAnnual') },
+            { value: 'annual', label: t('create.annual') },
+            { value: 'custom', label: t('create.customInstallments') },
+          ]}
+          value={filters.installmentType ?? 'all'}
+          onValueChange={(value) => onFilterChange('installmentType', value as InstallmentType | 'all')}
+        />
+        <RangeFilter label={t('details.installmentAmount')} from={filters.installmentAmountFrom} to={filters.installmentAmountTo} onFrom={(value) => onFilterChange('installmentAmountFrom', value)} onTo={(value) => onFilterChange('installmentAmountTo', value)} />
+        <NumberFilter label={t('details.expectedDelivery')} value={filters.deliveryYear === 'all' ? undefined : filters.deliveryYear} onChange={(value) => onFilterChange('deliveryYear', value ?? 'all')} />
         <label>
           {t('units.ownerPhone')}
           <input
-            value={ownerPhoneFilter}
-            onChange={(event) => onOwnerPhoneFilter(event.target.value)}
+            value={filters.ownerPhone ?? ''}
+            onChange={(event) => onFilterChange('ownerPhone', event.target.value)}
             placeholder={units.some((unit) => canSearchOwnerPhone(user, unit)) ? t('units.ownerPhonePlaceholder') : t('units.ownerPhoneHidden')}
             dir="auto"
           />
         </label>
+        <button className="secondary-button" type="button" onClick={onResetFilters}>{t('analytics.reset')}</button>
       </div>
 
-      <section className="unit-list motion-list" key={`${selectedProjectId ?? 'all'}-${unitCodeFilter}-${ownerPhoneFilter}-${statusFilter}`}>
+      <section className="unit-list motion-list" key={`${selectedDestinationId ?? 'all'}-${selectedProjectId ?? 'all'}-${JSON.stringify(filters)}`}>
         {units.length === 0 && <EmptyState title={t('units.noMatchesTitle')} body={t('units.noMatchesBody')} />}
         {visibleUnits.map((unit, index) => (
           <UnitListRow key={unit.id} user={user} unit={unit} index={index} onOpen={() => onOpenUnit(unit.id)} />
@@ -1115,6 +1481,43 @@ function UnitsPage({
         )}
       </section>
     </section>
+  )
+}
+
+function parseOptionalNumber(value: string): number | undefined {
+  if (value.trim() === '') return undefined
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed : undefined
+}
+
+function NumberFilter({ label, value, onChange }: { label: string; value?: number; onChange: (value: number | undefined) => void }) {
+  return (
+    <label>
+      {label}
+      <input type="number" value={value ?? ''} onChange={(event) => onChange(parseOptionalNumber(event.target.value))} />
+    </label>
+  )
+}
+
+function RangeFilter({
+  label,
+  from,
+  to,
+  onFrom,
+  onTo,
+}: {
+  label: string
+  from?: number
+  to?: number
+  onFrom: (value: number | undefined) => void
+  onTo: (value: number | undefined) => void
+}) {
+  return (
+    <div className="range-filter">
+      <span>{label}</span>
+      <input aria-label={`${label} from`} type="number" value={from ?? ''} placeholder="From" onChange={(event) => onFrom(parseOptionalNumber(event.target.value))} />
+      <input aria-label={`${label} to`} type="number" value={to ?? ''} placeholder="To" onChange={(event) => onTo(parseOptionalNumber(event.target.value))} />
+    </div>
   )
 }
 
@@ -1148,9 +1551,20 @@ function CreateUnitPage({
   const [activeStep, setActiveStep] = useState<(typeof createUnitSteps)[number]>('Property')
   const [selectedMedia, setSelectedMedia] = useState<LeadraMediaFile[]>([])
   const [mediaError, setMediaError] = useState<UiMessage | null>(null)
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('installment')
+  const [totalAmount, setTotalAmount] = useState(4_500_000)
+  const [downPayment, setDownPayment] = useState(900_000)
+  const [installmentType, setInstallmentType] = useState<InstallmentType>('quarterly')
+  const [installmentYears, setInstallmentYears] = useState(5)
   const activeStepIndex = createUnitSteps.indexOf(activeStep)
   const mediaValidation = validateMediaUpload(selectedMedia)
   const totalMediaMb = selectedMedia.reduce((total, file) => total + file.sizeBytes, 0) / (1024 * 1024)
+  const remainingPayment = Math.max(0, totalAmount - downPayment)
+  const paymentsPerYear = installmentType === 'quarterly' ? 4 : installmentType === 'semi_annual' ? 2 : installmentType === 'annual' ? 1 : null
+  const calculatedInstallment =
+    paymentMethod === 'installment' && paymentsPerYear && installmentYears > 0
+      ? remainingPayment / (installmentYears * paymentsPerYear)
+      : null
 
   const unitTypeOptions = [
     { value: 'Apartment', label: t('create.apartment') },
@@ -1285,18 +1699,58 @@ function CreateUnitPage({
 
         <fieldset className="unit-form wizard-panel" data-active={activeStep === 'Payment'} aria-hidden={activeStep !== 'Payment'}>
           <legend>{t('create.legend.payment')}</legend>
-          <NamedSelectField
-            defaultValue="installment"
+          <input name="paymentMethod" type="hidden" value={paymentMethod} />
+          <ControlledSelectField
             label={t('create.paymentMethod')}
-            name="paymentMethod"
             options={[
               { value: 'cash', label: t('create.cash') },
               { value: 'installment', label: t('create.installment') },
             ]}
+            value={paymentMethod}
+            onValueChange={(value) => setPaymentMethod(value as PaymentMethod)}
           />
-          <NumberField name="totalAmount" label={t('create.totalAmount')} defaultValue={4_500_000} />
-          <NumberField name="downPayment" label={t('create.downPayment')} defaultValue={900_000} />
-          <NumberField name="installmentYears" label={t('create.installmentYears')} defaultValue={5} min={1} />
+          <label>
+            {t('create.totalAmount')}
+            <input name="totalAmount" type="number" min={0} value={totalAmount} onChange={(event) => setTotalAmount(Number(event.target.value))} />
+          </label>
+          {paymentMethod === 'installment' && (
+            <>
+              <label>
+                {t('create.downPayment')}
+                <input name="downPayment" type="number" min={0} max={totalAmount} value={downPayment} onChange={(event) => setDownPayment(Number(event.target.value))} />
+              </label>
+              <label>
+                {t('details.remainingPayment')}
+                <input readOnly value={formatCurrency(remainingPayment, locale)} />
+              </label>
+              <input name="installmentType" type="hidden" value={installmentType} />
+              <ControlledSelectField
+                label={t('details.installmentType')}
+                options={[
+                  { value: 'quarterly', label: t('create.quarterly') },
+                  { value: 'semi_annual', label: t('create.semiAnnual') },
+                  { value: 'annual', label: t('create.annual') },
+                  { value: 'custom', label: t('create.customInstallments') },
+                ]}
+                value={installmentType}
+                onValueChange={(value) => setInstallmentType(value as InstallmentType)}
+              />
+              {installmentType !== 'custom' ? (
+                <>
+                  <label>
+                    {t('create.installmentYears')}
+                    <input name="installmentYears" type="number" min={1} value={installmentYears} onChange={(event) => setInstallmentYears(Number(event.target.value))} />
+                  </label>
+                  <label>
+                    {t('details.installmentAmount')}
+                    <input readOnly value={formatCurrency(calculatedInstallment, locale)} />
+                  </label>
+                </>
+              ) : (
+                <p className="media-empty-note wide-field">{t('details.customInstallmentMessage')}</p>
+              )}
+            </>
+          )}
         </fieldset>
 
         <fieldset className="unit-form wizard-panel" data-active={activeStep === 'Owner'} aria-hidden={activeStep !== 'Owner'}>
@@ -1409,7 +1863,10 @@ function UnitDetailsPage({
   onArchive,
   onStatusChange,
   onGeneratePdf,
+  onSharePdf,
+  onCopyShareLink,
   pdfGenerating,
+  pdfReady,
   onSaveNote,
   onDeleteNote,
 }: {
@@ -1418,7 +1875,10 @@ function UnitDetailsPage({
   onArchive: () => void
   onStatusChange: (status: UnitStatus) => void
   onGeneratePdf: () => void
+  onSharePdf: () => void
+  onCopyShareLink: () => void
   pdfGenerating: boolean
+  pdfReady: boolean
   onSaveNote: (content: string) => void
   onDeleteNote: () => void
 }) {
@@ -1451,10 +1911,13 @@ function UnitDetailsPage({
         </div>
         <div className="action-row wrap">
           <button className="primary-button" type="button" onClick={onGeneratePdf} disabled={pdfGenerating}>
-            <FileText size={18} /> {pdfGenerating ? 'Preparing brief...' : t('details.generateBrief')}
+            <FileText size={18} /> {pdfGenerating ? 'Preparing PDF...' : t('details.generateBrief')}
           </button>
-          <button className="secondary-button" type="button" onClick={onGeneratePdf} disabled={pdfGenerating}>
-            <Download size={18} /> {pdfGenerating ? 'Preparing print...' : t('details.printBrief')}
+          <button className="secondary-button" type="button" onClick={onSharePdf} disabled={!pdfReady || pdfGenerating}>
+            <Share2 size={18} /> {t('details.sharePdf')}
+          </button>
+          <button className="secondary-button" type="button" onClick={onCopyShareLink}>
+            <Share2 size={18} /> {t('details.shareLink')}
           </button>
           {canArchiveUnit(user, unit) && <button className="danger-button" type="button" onClick={onArchive}><Archive size={18} /> {t('details.archive')}</button>}
         </div>
@@ -1506,6 +1969,7 @@ function UnitDetailsDeepSections({
   onSaveNote: (content: string) => void
   onDeleteNote: () => void
 }) {
+  const installmentSchedule = buildInstallmentSchedule(unit, locale)
   return (
     <>
       <InfoSection
@@ -1543,15 +2007,23 @@ function UnitDetailsDeepSections({
           [t('details.installmentYears'), unit.installmentYears ? formatCount(locale, unit.installmentYears) : t('common.notSet')],
         ]}
       />
-      <InfoSection
-        style={motionStyle(4, 130)}
-        title={t('details.installmentsTable')}
-        rows={[
-          [t('details.installmentType'), unit.installmentType ?? t('common.notSet')],
-          [t('details.installmentYears'), unit.installmentYears ? formatCount(locale, unit.installmentYears) : t('common.notSet')],
-          [t('details.installmentAmount'), formatCurrency(unit.installmentAmount, locale)],
-        ]}
-      />
+      <section className="content-card motion-stage" style={motionStyle(4, 130)}>
+        <h2>{t('details.installmentsTable')}</h2>
+        {unit.paymentMethod !== 'installment' && <EmptyState title={t('common.notSet')} body={t('payment.cash')} />}
+        {unit.paymentMethod === 'installment' && unit.installmentType === 'custom' && <p className="media-empty-note">{t('details.customInstallmentMessage')}</p>}
+        {installmentSchedule.length > 0 && (
+          <div className="installment-schedule" role="table" aria-label={t('details.installmentsTable')}>
+            {installmentSchedule.slice(0, 12).map((row) => (
+              <div className="installment-row" role="row" key={row.paymentNumber}>
+                <span>{formatCount(locale, row.paymentNumber)}</span>
+                <span>{row.periodLabel}</span>
+                <strong>{formatCurrency(row.amount, locale)}</strong>
+              </div>
+            ))}
+            {installmentSchedule.length > 12 && <small>{t('details.scheduleTruncated', { count: formatCount(locale, installmentSchedule.length) })}</small>}
+          </div>
+        )}
+      </section>
       <InfoSection style={motionStyle(5, 160)} title={t('details.delivery')} rows={[[t('details.expectedDelivery'), formatDeliveryExpectancy(unit, locale)]]} />
       <section className="content-card motion-stage" style={motionStyle(6, 190)}>
         <h2>{t('details.unitThumbnail')}</h2>
@@ -1567,7 +2039,7 @@ function UnitDetailsDeepSections({
       </section>
       <section className="content-card motion-stage" style={motionStyle(7, 220)}>
         <h2>{t('details.notes')}</h2>
-        <p dir="auto">{unit.salesNotes}</p>
+        <p dir="auto">{canViewSalesSensitiveData(user, unit) ? unit.salesNotes : t('details.salesSensitiveHidden')}</p>
         {unit.adminManagerNotes.map((note, index) => (
           <div className="note-card motion-stage" key={note.id} style={motionStyle(index, 210)}>
             <strong>{note.createdByName} / {getRoleLabel(locale, note.role)}</strong>
@@ -3035,6 +3507,7 @@ function getViewTitle(view: View, user: LeadraUser, locale: LocaleCode): string 
   if (view === 'notifications') return translateForLocale(locale, 'viewTitle.alerts')
   if (view === 'profile') return translateForLocale(locale, 'viewTitle.profile')
   if (view === 'analytics') return translateForLocale(locale, 'viewTitle.analytics')
+  if (view === 'palette') return 'Palette sample'
   return translateForLocale(locale, 'viewTitle.admin')
 }
 
@@ -3050,13 +3523,22 @@ function isViewAllowedForUser(view: View, user: LeadraUser): boolean {
 
 function readHashView(): HashView {
   const value = window.location.hash.replace('#', '')
-  if (value === 'units' || value === 'create' || value === 'notifications' || value === 'profile' || value === 'analytics' || value === 'admin') {
+  if (value.startsWith('details/')) return 'details'
+  if (value === 'units' || value === 'create' || value === 'notifications' || value === 'profile' || value === 'analytics' || value === 'admin' || value === 'palette') {
     return value
   }
   return 'dashboard'
 }
 
+function readHashUnitId(): number | null {
+  const value = window.location.hash.replace('#', '')
+  if (!value.startsWith('details/')) return null
+  const id = Number(value.replace('details/', ''))
+  return Number.isFinite(id) ? id : null
+}
+
 function writeHashView(view: HashView) {
+  if (view === 'details') return
   const nextHash = view === 'dashboard' ? '' : `#${view}`
   window.history.replaceState(null, '', `${window.location.pathname}${nextHash}`)
 }

@@ -152,15 +152,37 @@ export interface UnitFilters {
   bathrooms?: number | 'all'
   paymentMethod?: PaymentMethod | 'all'
   ownerPhone?: string
+  buaFrom?: number
+  buaTo?: number
   priceFrom?: number
   priceTo?: number
+  cashPriceFrom?: number
+  cashPriceTo?: number
+  downPaymentFrom?: number
+  downPaymentTo?: number
+  remainingPaymentFrom?: number
+  remainingPaymentTo?: number
+  installmentType?: InstallmentType | 'all'
   installmentAmountFrom?: number
   installmentAmountTo?: number
+  deliveryYear?: number | 'all'
+  deliveryMonth?: number | 'all'
+}
+
+export interface DestinationSummary {
+  destinationId: string
+  destinationName: string
+  totalUnits: number
+  availableUnits: number
+  holdUnits: number
+  soldUnits: number
 }
 
 export interface ProjectSummary {
   projectId: string
   projectName: string
+  destinationId?: string
+  destinationName?: string
   totalUnits: number
   availableUnits: number
   holdUnits: number
