@@ -3248,22 +3248,22 @@ dd,
   }
 
   .dashboard-page {
-    gap: var(--space-3);
-    padding-bottom: calc(6.7rem + env(safe-area-inset-bottom));
+    gap: 0.65rem;
+    padding-bottom: calc(6rem + env(safe-area-inset-bottom));
   }
 
   .dashboard-page .hero-panel {
     min-height: auto;
-    padding: 1rem;
+    padding: 0.85rem;
     align-content: start;
-    gap: 0.7rem;
+    gap: 0.55rem;
     border-radius: 1.25rem;
   }
 
   .dashboard-page .hero-panel p:not(.eyebrow) {
     max-width: 32ch;
-    font-size: 0.96rem;
-    line-height: 1.45;
+    font-size: 0.9rem;
+    line-height: 1.35;
   }
 
   .dashboard-page .hero-panel .action-row {
@@ -3277,7 +3277,7 @@ dd,
   .dashboard-page .hero-panel .secondary-button,
   .dashboard-page .hero-panel .secondary-link {
     width: 100%;
-    min-height: 48px;
+    min-height: 44px;
     padding-inline: 0.65rem;
     white-space: normal;
   }
@@ -3323,8 +3323,8 @@ dd,
   }
 
   .dashboard-page .metric-card {
-    min-height: 84px;
-    padding: 0.75rem;
+    min-height: 72px;
+    padding: 0.65rem;
     display: grid;
     align-content: space-between;
     gap: 0.35rem;
@@ -3346,17 +3346,17 @@ dd,
   }
 
   .dashboard-page .content-card {
-    padding: 1rem;
+    padding: 0.85rem;
   }
 
   .dashboard-page .content-card > h2,
   .dashboard-page .content-card > .section-heading {
-    margin-bottom: var(--space-3);
+    margin-bottom: var(--space-2);
   }
 
   .dashboard-page .notification-row {
     margin-top: var(--space-2);
-    padding: 0.75rem;
+    padding: 0.7rem;
   }
 
   .dashboard-page .notification-row:first-child,
@@ -3650,16 +3650,16 @@ dd,
 
   .bottom-nav {
     position: fixed;
-    inset-inline-start: 0.75rem;
-    inset-inline-end: 0.75rem;
-    bottom: calc(0.75rem + env(safe-area-inset-bottom));
+    inset-inline-start: 0.65rem;
+    inset-inline-end: 0.65rem;
+    bottom: calc(0.55rem + env(safe-area-inset-bottom));
     z-index: 20;
     display: grid;
     grid-template-columns: repeat(4, minmax(0, 1fr));
     gap: 0.35rem;
-    padding: 0.35rem;
+    padding: 0.3rem;
     border: 1px solid rgba(255, 250, 240, 0.2);
-    border-radius: 1.45rem;
+    border-radius: 1.3rem;
     background:
       linear-gradient(180deg, rgba(34, 52, 45, 0.96), rgba(20, 33, 29, 0.96));
     backdrop-filter: blur(18px);
@@ -3668,9 +3668,9 @@ dd,
 
   .bottom-nav .nav-button {
     color: rgba(255, 250, 240, 0.72);
-    min-height: 60px;
+    min-height: 54px;
     padding: 0.5rem 0.25rem;
-    border-radius: 1.1rem;
+    border-radius: 0.95rem;
   }
 
   .bottom-nav .nav-button.active {
