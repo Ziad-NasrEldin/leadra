@@ -1,0 +1,562 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>MaVoid WhatsApp Outreach Automation</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Josefin+Sans:wght@200;300;400;600&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --deep-ink: #06191F;
+      --dark-section: #071317;
+      --operational-blue: #1A5BFA;
+      --sky-blue: #5DB1D4;
+      --emerald: #34D399;
+      --teal-signal: #00FFC6;
+      --mint: #10B981;
+      --paper: #F7FCF9;
+      --soft-paper: #F1F5F9;
+      --white: #FFFFFF;
+      --line: rgba(6, 25, 31, 0.12);
+      --glass: rgba(255, 255, 255, 0.72);
+    }
+
+    * { box-sizing: border-box; }
+
+    html,
+    body {
+      margin: 0;
+      background: var(--soft-paper);
+      color: var(--deep-ink);
+      font-family: "Josefin Sans", "Segoe UI", Arial, sans-serif;
+      font-weight: 300;
+      line-height: 1.35;
+    }
+
+    @page {
+      size: A4;
+      margin: 0;
+    }
+
+    .page {
+      width: 210mm;
+      height: 297mm;
+      position: relative;
+      overflow: hidden;
+      page-break-after: always;
+      background: var(--paper);
+      padding: 18mm 17mm 16mm;
+    }
+
+    .page.dark {
+      color: var(--white);
+      background: var(--deep-ink);
+    }
+
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 14mm;
+    }
+
+    .page.dark .topbar { margin-bottom: 18mm; }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .brand img {
+      width: 34mm;
+      height: auto;
+      object-fit: contain;
+    }
+
+    .brand-mark {
+      width: 10px;
+      height: 34px;
+      border-radius: 999px;
+      background: var(--teal-signal);
+    }
+
+    .eyebrow {
+      margin: 0;
+      color: var(--mint);
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 1.6px;
+      text-transform: uppercase;
+    }
+
+    .doc-label {
+      border: 1px solid rgba(6, 25, 31, 0.12);
+      border-radius: 999px;
+      padding: 7px 11px 5px;
+      color: rgba(6, 25, 31, 0.72);
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      background: rgba(255, 255, 255, 0.64);
+    }
+
+    .dark .doc-label {
+      color: rgba(255, 255, 255, 0.76);
+      border-color: rgba(255, 255, 255, 0.18);
+      background: rgba(255, 255, 255, 0.06);
+    }
+
+    h1,
+    h2,
+    h3,
+    p {
+      margin-top: 0;
+    }
+
+    h1 {
+      max-width: 151mm;
+      margin-bottom: 7mm;
+      font-size: 47px;
+      line-height: 0.98;
+      font-weight: 200;
+      letter-spacing: 0;
+    }
+
+    h2 {
+      margin-bottom: 6mm;
+      font-size: 25px;
+      line-height: 1.04;
+      font-weight: 200;
+      letter-spacing: 0;
+    }
+
+    h3 {
+      margin-bottom: 3mm;
+      font-size: 14px;
+      font-weight: 600;
+      letter-spacing: 0;
+    }
+
+    p {
+      font-size: 12.2px;
+      color: rgba(6, 25, 31, 0.76);
+    }
+
+    .dark p,
+    .dark li,
+    .dark td {
+      color: rgba(255, 255, 255, 0.76);
+    }
+
+    .lead {
+      max-width: 150mm;
+      margin-bottom: 9mm;
+      font-size: 17px;
+      line-height: 1.42;
+      color: rgba(255, 255, 255, 0.80);
+    }
+
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 5mm;
+    }
+
+    .grid-3 {
+      display: grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap: 4mm;
+    }
+
+    .panel {
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      padding: 5.2mm;
+      background: var(--glass);
+      box-shadow: none;
+    }
+
+    .dark .panel {
+      border-color: rgba(255, 255, 255, 0.13);
+      background: rgba(255, 255, 255, 0.065);
+      box-shadow: none;
+    }
+
+    .stat {
+      display: grid;
+      gap: 1mm;
+      min-height: 26mm;
+    }
+
+    .stat strong {
+      display: block;
+      color: var(--operational-blue);
+      font-size: 22px;
+      font-weight: 200;
+      line-height: 1;
+    }
+
+    .dark .stat strong { color: var(--teal-signal); }
+
+    .stat span {
+      color: rgba(6, 25, 31, 0.72);
+      font-size: 11px;
+      font-weight: 300;
+    }
+
+    .dark .stat span { color: rgba(255, 255, 255, 0.70); }
+
+    .flow {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 3mm;
+      margin-top: 4mm;
+    }
+
+    .step {
+      min-height: 28mm;
+      border: 1px solid rgba(255, 255, 255, 0.14);
+      border-radius: 15px;
+      padding: 4.5mm;
+      background: rgba(255, 255, 255, 0.06);
+    }
+
+    .step b {
+      display: block;
+      margin-bottom: 3mm;
+      color: var(--teal-signal);
+      font-size: 15px;
+      font-weight: 600;
+    }
+
+    .step span {
+      color: rgba(255, 255, 255, 0.74);
+      font-size: 11.4px;
+    }
+
+    ul {
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    li {
+      position: relative;
+      margin: 0 0 2.5mm;
+      padding-left: 4.6mm;
+      color: rgba(6, 25, 31, 0.78);
+      font-size: 11.6px;
+    }
+
+    li::before {
+      content: "";
+      position: absolute;
+      left: 0;
+      top: 5px;
+      width: 5px;
+      height: 5px;
+      border-radius: 999px;
+      background: var(--operational-blue);
+    }
+
+    .dark li::before { background: var(--teal-signal); }
+
+    .data-table,
+    .status-table {
+      width: 100%;
+      border-collapse: collapse;
+      overflow: hidden;
+      border-radius: 15px;
+      background: rgba(255, 255, 255, 0.72);
+      box-shadow: none;
+    }
+
+    th,
+    td {
+      border-bottom: 1px solid rgba(6, 25, 31, 0.08);
+      padding: 6px 9px 5px;
+      text-align: left;
+      vertical-align: top;
+      font-size: 10.2px;
+    }
+
+    th {
+      color: var(--deep-ink);
+      font-size: 9px;
+      font-weight: 600;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      background: rgba(16, 185, 129, 0.10);
+    }
+
+    td:first-child {
+      color: var(--deep-ink);
+      font-weight: 600;
+    }
+
+    .section {
+      margin-top: 6mm;
+    }
+
+    .compact {
+      display: grid;
+      gap: 4mm;
+    }
+
+    .note {
+      border-left: 3px solid var(--teal-signal);
+      padding: 3.5mm 4mm;
+      border-radius: 0 12px 12px 0;
+      background: rgba(0, 255, 198, 0.10);
+    }
+
+    .note p {
+      margin: 0;
+      font-size: 11.6px;
+    }
+
+    .footer {
+      position: absolute;
+      left: 17mm;
+      right: 17mm;
+      bottom: 9mm;
+      display: flex;
+      justify-content: space-between;
+      color: rgba(6, 25, 31, 0.48);
+      font-size: 9px;
+      font-weight: 600;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+    }
+
+    .dark .footer { color: rgba(255, 255, 255, 0.42); }
+
+    .accent-line {
+      width: 28mm;
+      height: 2px;
+      margin: 5mm 0 6mm;
+      border-radius: 999px;
+      background: var(--teal-signal);
+    }
+
+    .status-table td {
+      font-size: 10.1px;
+      padding-top: 6px;
+      padding-bottom: 5px;
+    }
+  </style>
+</head>
+<body>
+  <section class="page dark">
+    <div class="topbar">
+      <div class="brand">
+        <img src="file:///E:/GitHub/mavoid-landing/public/MaVoid-Logo.png" alt="MaVoid" />
+        <div class="brand-mark"></div>
+      </div>
+      <div class="doc-label">Automation Scope</div>
+    </div>
+
+    <p class="eyebrow">WhatsApp Outreach Automation</p>
+    <h1>Excel-driven outreach through an active WhatsApp Web session.</h1>
+    <p class="lead">A desktop automation system that processes customer rows from Excel, sends one controlled WhatsApp message at a configured interval, and writes the result back to the same operational report.</p>
+
+    <div class="grid-3">
+      <div class="panel stat">
+        <strong>No API</strong>
+        <span>Uses a normal WhatsApp number already logged in on the laptop. No Meta Business API or WhatsApp API dependency.</span>
+      </div>
+      <div class="panel stat">
+        <strong>5 min</strong>
+        <span>Default spacing between messages to reduce risk and keep sending behavior human-paced.</span>
+      </div>
+      <div class="panel stat">
+        <strong>Excel</strong>
+        <span>Rows remain the source of truth for status, attempts, sent message, notes, and customer IDs.</span>
+      </div>
+    </div>
+
+    <div class="section">
+      <h2>Operating Flow</h2>
+      <div class="flow">
+        <div class="step"><b>01</b><span>Open Excel and select the next row marked Pending or Retry.</span></div>
+        <div class="step"><b>02</b><span>Validate and normalize the phone number, then create a missing customer ID.</span></div>
+        <div class="step"><b>03</b><span>Open the WhatsApp chat, confirm availability, and prepare the message.</span></div>
+        <div class="step"><b>04</b><span>Send, update the row status, wait, then move to the next eligible row.</span></div>
+      </div>
+    </div>
+
+    <div class="footer">
+      <span>MaVoid Operating Systems</span>
+      <span>01</span>
+    </div>
+  </section>
+
+  <section class="page">
+    <div class="topbar">
+      <div class="brand">
+        <img src="file:///E:/GitHub/mavoid-landing/public/MaVoid-Logo.png" alt="MaVoid" />
+        <div class="brand-mark"></div>
+      </div>
+      <div class="doc-label">Workflow + Controls</div>
+    </div>
+
+    <div class="grid-2">
+      <div>
+        <p class="eyebrow">Message System</p>
+        <h2>Two sending modes for different campaign needs.</h2>
+        <div class="compact">
+          <div class="panel">
+            <h3>AI Variation Mode</h3>
+            <ul>
+              <li>Keeps the same business intent while changing wording per recipient.</li>
+              <li>Can include name, unit, property, or location when available.</li>
+              <li>Uses professional language with no fake promises, invented details, or aggressive copy.</li>
+            </ul>
+          </div>
+          <div class="panel">
+            <h3>Fixed Message Mode</h3>
+            <ul>
+              <li>Admin writes the exact message once.</li>
+              <li>The same approved wording is sent to every selected customer.</li>
+              <li>Best for controlled announcements, follow-ups, and approved scripts.</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+
+      <div>
+        <p class="eyebrow">Admin Controls</p>
+        <h2>Operational control without manual sending.</h2>
+        <div class="panel">
+          <ul>
+            <li>Select the Excel file and start, pause, resume, or stop automation.</li>
+            <li>Edit message context, choose message mode, and set delay between messages.</li>
+            <li>View pending, sent, failed, invalid, and skipped counts.</li>
+            <li>Retry failed rows, skip selected rows, and export the updated Excel report.</li>
+          </ul>
+        </div>
+        <div class="note section">
+          <p>The automation should use browser automation against WhatsApp Web selectors with explicit state tracking. Blind mouse-click automation is avoided because it is fragile and difficult to recover when the UI changes.</p>
+        </div>
+      </div>
+    </div>
+
+    <div class="section">
+      <p class="eyebrow">Excel Source Of Truth</p>
+      <h2>Required row fields and final statuses.</h2>
+      <div class="grid-2">
+        <table class="data-table">
+          <thead><tr><th>Column</th><th>Purpose</th></tr></thead>
+          <tbody>
+            <tr><td>Name</td><td>Message personalization.</td></tr>
+            <tr><td>Phone Number</td><td>Recipient lookup and validation.</td></tr>
+            <tr><td>Unit / Property</td><td>Optional message context.</td></tr>
+            <tr><td>Location</td><td>Optional context when available.</td></tr>
+            <tr><td>Contact ID</td><td>Generated as CUST-000001, CUST-000002, and so on.</td></tr>
+            <tr><td>Message Sent</td><td>Final wording actually sent.</td></tr>
+            <tr><td>Last Attempt / Notes</td><td>Timestamp, errors, and admin comments.</td></tr>
+          </tbody>
+        </table>
+
+        <table class="status-table">
+          <thead><tr><th>Status</th><th>Meaning</th></tr></thead>
+          <tbody>
+            <tr><td>Pending</td><td>Not processed yet.</td></tr>
+            <tr><td>Processing</td><td>Currently being handled.</td></tr>
+            <tr><td>Sent</td><td>Message sent and recorded.</td></tr>
+            <tr><td>Failed</td><td>Automation or delivery attempt error.</td></tr>
+            <tr><td>Invalid Number</td><td>Phone format cannot be corrected.</td></tr>
+            <tr><td>Not on WhatsApp</td><td>No available WhatsApp account for the number.</td></tr>
+            <tr><td>Skipped / Retry</td><td>Admin-controlled exclusion or reattempt.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="footer">
+      <span>MaVoid Operating Systems</span>
+      <span>02</span>
+    </div>
+  </section>
+
+  <section class="page">
+    <div class="topbar">
+      <div class="brand">
+        <img src="file:///E:/GitHub/mavoid-landing/public/MaVoid-Logo.png" alt="MaVoid" />
+        <div class="brand-mark"></div>
+      </div>
+      <div class="doc-label">Setup + Safety</div>
+    </div>
+
+    <div class="grid-2">
+      <div>
+        <p class="eyebrow">Laptop Environment</p>
+        <h2>Runs continuously on a dedicated Windows laptop.</h2>
+        <div class="panel">
+          <ul>
+            <li>WhatsApp Web or Desktop stays logged in with the active sending number.</li>
+            <li>Stable internet, accessible Excel file, and the automation app remain running.</li>
+            <li>Laptop sleep is disabled or handled so the process can run 24/7.</li>
+            <li>If the laptop restarts, processing resumes without duplicate sends.</li>
+          </ul>
+        </div>
+      </div>
+
+      <div>
+        <p class="eyebrow">Contact Handling</p>
+        <h2>Phone validation, availability checks, and duplicate prevention.</h2>
+        <div class="panel">
+          <ul>
+            <li>Normalize phone numbers before attempting WhatsApp chat creation.</li>
+            <li>Generate missing internal IDs and preserve existing IDs.</li>
+            <li>Mark numbers as Invalid Number or Not on WhatsApp when required.</li>
+            <li>Do not send again to rows already marked Sent unless an admin manually retries.</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <div class="section grid-2">
+      <div>
+        <p class="eyebrow">Error Handling</p>
+        <h2>Recoverable states are logged back to Excel.</h2>
+        <div class="panel">
+          <ul>
+            <li>WhatsApp logged out, internet disconnected, WhatsApp loading delays, or send failures.</li>
+            <li>Invalid phone numbers, missing WhatsApp accounts, duplicate rows, and already-sent customers.</li>
+            <li>Excel file locked, unavailable, or temporarily blocked by another application.</li>
+            <li>Each failure stores status, timestamp, and notes for review or retry.</li>
+          </ul>
+        </div>
+      </div>
+
+      <div>
+        <p class="eyebrow">Risk Controls</p>
+        <h2>Safety rules reduce account-ban exposure.</h2>
+        <div class="panel">
+          <ul>
+            <li>Send at a slow interval, defaulting to one message every five minutes.</li>
+            <li>Avoid spammy wording, links in the first message, and high daily volume.</li>
+            <li>Use warm numbers, human wording, opt-out tracking, and stop on negative replies.</li>
+            <li>Do not message random scraped numbers or contacts without a clear business reason.</li>
+          </ul>
+        </div>
+      </div>
+    </div>
+
+    <div class="note section">
+      <p>WhatsApp cannot force-register a number that is not on WhatsApp. The system can only mark the number unavailable or optionally save a local contact record. If industrial-scale outreach is required, the correct tool is the official WhatsApp Business API, not a normal WhatsApp number.</p>
+    </div>
+
+    <div class="footer">
+      <span>MaVoid Operating Systems</span>
+      <span>03</span>
+    </div>
+  </section>
+</body>
+</html>

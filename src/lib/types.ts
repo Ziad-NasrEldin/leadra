@@ -5,6 +5,7 @@ export type PaymentMethod = 'cash' | 'installment'
 export type InstallmentType = 'quarterly' | 'semi_annual' | 'annual' | 'custom'
 export type MediaType = 'image' | 'video'
 export type LookupKind = 'developer' | 'project' | 'destination' | 'view' | 'unit_type' | 'finish'
+export type PdfLayout = 'classic' | 'compact'
 export type AnalyticsEventType =
   | 'unit_created'
   | 'unit_updated'
@@ -39,12 +40,26 @@ export interface LeadraUser {
   status: AccountStatus
   createdAt?: string
   lastLoginAt?: string | null
+  deletedAt?: string | null
 }
 
 export interface LookupValue {
   id: string
   kind: LookupKind
   label: string
+  archived?: boolean
+}
+
+export interface BranchDirectoryItem {
+  id: string
+  name: string
+  archived?: boolean
+}
+
+export interface TeamDirectoryItem {
+  id: string
+  name: string
+  branchId: string | null
   archived?: boolean
 }
 
@@ -84,6 +99,8 @@ export interface LeadraUnit {
   floor: string
   bua: number
   roofGardenArea: number | null
+  gardenArea: number | null
+  terraceArea: number | null
   viewId: string
   viewName: string
   bedrooms: number
@@ -364,6 +381,8 @@ export interface AppSettings {
   commissionPercentage: number
   footerText: string
   contactDetails: string
+  logoPath: string
+  pdfLayout: PdfLayout
   mediaLimitMb: number
   paymentMethods: PaymentMethod[]
 }
@@ -371,6 +390,8 @@ export interface AppSettings {
 export interface AppDataState {
   users: LeadraUser[]
   units: LeadraUnit[]
+  branches: BranchDirectoryItem[]
+  teams: TeamDirectoryItem[]
   notifications: NotificationItem[]
   auditLogs: AuditLogItem[]
   analyticsEvents: AnalyticsEvent[]
@@ -381,6 +402,7 @@ export interface AppDataState {
 export interface CreateUserInput {
   fullName: string
   email: string
+  password: string
   role: UserRole
   jobTitle: string
   phoneNumber: string
@@ -400,6 +422,8 @@ export interface CreateUnitInput {
   floor: string
   bua: number
   roofGardenArea?: number | null
+  gardenArea?: number | null
+  terraceArea?: number | null
   viewId: string
   viewName: string
   bedrooms: number

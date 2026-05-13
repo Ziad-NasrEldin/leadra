@@ -30,7 +30,6 @@ import { buildAnalyticsCsv, buildAnalyticsDashboard, canAccessAnalytics, default
 import {
   canAddAdminManagerNote,
   canArchiveUnit,
-  canSearchOwnerPhone,
   canViewSalesSensitiveData,
   canViewOwnerData,
   getOwnerPhoneCountryMeta,
@@ -39,7 +38,10 @@ import {
   formatCurrency,
   formatDeliveryExpectancy,
   buildInstallmentSchedule,
+  getApplicableUnitAreaFields,
   getThumbnailMedia,
+  PRD_UNIT_TYPES,
+  PRD_FLOOR_OPTIONS,
   summarizeDestinations,
   summarizeProjects,
   validateOwnerPhoneForCountry,
@@ -69,7 +71,7 @@ import {
   renderNotificationTitle,
   type LocalizedFlashMessage,
 } from './lib/messageRendering'
-import { updateManagedUserPassword, updateManagedUserProfile } from './lib/adminAuth'
+import { authPasswordCandidates, createManagedUserProfile, updateManagedUserPassword, updateManagedUserProfile } from './lib/adminAuth'
 import { LeadraRepository } from './lib/repository'
 import { canUseDemoMode, isPerformanceDemoMode, isProductionMissingSupabaseConfig, isSupabaseConfigured, supabase } from './lib/supabase'
 import { loadSupabaseAnalyticsDashboard, loadSupabaseAppState, loadSupabaseProfile, markSupabaseLogin } from './lib/supabaseState'
@@ -78,6 +80,8 @@ import {
   archiveUnitWorkflow,
   createUnitWorkflow,
   createUserWorkflow,
+  deleteManagedUserWorkflow,
+  deleteSalesRepresentativeWorkflow,
   deleteUnitAdminNoteWorkflow,
   saveUnitAdminNoteWorkflow,
   updateSettingsWorkflow,
@@ -92,13 +96,16 @@ import type {
   AppDataState,
   AppSettings,
   AuditLogItem,
+  BranchDirectoryItem,
   LeadraMediaFile,
   LeadraUnit,
   LeadraUser,
+  LookupKind,
   LookupValue,
   MessageParams,
   NotificationItem,
   PaymentMethod,
+  TeamDirectoryItem,
   InstallmentType,
   UnitFilters,
   UnitStatus,
@@ -143,7 +150,8 @@ function runPageTransition(update: () => void) {
 type UiMessage = { message: string; messageKey?: string | null; messageParams?: MessageParams | null }
 
 const createUnitSteps = ['Property', 'Specs', 'Payment', 'Owner', 'Review'] as const
-const adminSections = ['Users', 'Settings', 'Metrics', 'Audit'] as const
+const adminSections = ['Users', 'Master Data', 'Settings', 'Metrics', 'Audit'] as const
+const lookupKindOptions: LookupKind[] = ['developer', 'destination', 'project', 'view', 'finish', 'unit_type']
 const unitListPageSize = 60
 const notificationPageSize = 60
 const userManagementPageSize = 48
@@ -193,6 +201,8 @@ function App() {
   const [authLoading, setAuthLoading] = useState(isSupabaseConfigured)
   const [loginError, setLoginError] = useState<UiMessage | null>(null)
   const [generatingPdfUnitId, setGeneratingPdfUnitId] = useState<number | null>(null)
+  const [sharingPdfUnitId, setSharingPdfUnitId] = useState<number | null>(null)
+  const [updatingStatusUnitId, setUpdatingStatusUnitId] = useState<number | null>(null)
   const [generatedPdfs, setGeneratedPdfs] = useState<Record<number, { blob: Blob; fileName: string }>>({})
   const completingAuthUserRef = useRef<string | null>(null)
 
@@ -240,13 +250,19 @@ function App() {
     if (!supabase) return
     setLoginError(null)
     setAuthLoading(true)
-    const { data, error } = await supabase.auth.signInWithPassword({ email, password })
-    if (error) {
-      setLoginError({ message: error.message, messageKey: null, messageParams: null })
-      setAuthLoading(false)
-      return
+    let lastError: Error | null = null
+
+    for (const authPassword of authPasswordCandidates(password)) {
+      const { data, error } = await supabase.auth.signInWithPassword({ email, password: authPassword })
+      if (data.user) {
+        await completeSupabaseLogin(data.user)
+        return
+      }
+      if (error) lastError = error
     }
-    if (data.user) await completeSupabaseLogin(data.user)
+
+    setLoginError({ message: lastError?.message ?? 'Invalid login credentials', messageKey: null, messageParams: null })
+    setAuthLoading(false)
   }
 
   useEffect(() => {
@@ -396,9 +412,11 @@ function App() {
       destinationId,
       destinationName: destination?.label ?? 'Unknown destination',
       unitType: String(formData.get('unitType')),
-      floor: String(formData.get('floor')),
+      floor: String(formData.get('floor') ?? ''),
       bua: Number(formData.get('bua')),
       roofGardenArea: Number(formData.get('roofGardenArea')) || null,
+      gardenArea: Number(formData.get('gardenArea')) || null,
+      terraceArea: Number(formData.get('terraceArea')) || null,
       viewId,
       viewName: viewLookup?.label ?? staticViewOptions[viewId] ?? 'Landscape',
       bedrooms: Number(formData.get('bedrooms')),
@@ -442,14 +460,39 @@ function App() {
     })
   }
 
-  function updateUnitStatus(unit: LeadraUnit, status: UnitStatus) {
+  async function updateUnitStatus(unit: LeadraUnit, status: UnitStatus) {
+    if (updatingStatusUnitId) return
     const result = updateUnitStatusWorkflow(appState, user, unit.id, status)
-    setAppState(result.state)
     if (!result.ok) {
+      setAppState(result.state)
       setFlash({ text: result.error, messageKey: result.errorKey ?? null, messageParams: result.errorParams ?? null })
       return
     }
-    setFlash(createFlashForStatus(status))
+    const previousState = appState
+    setUpdatingStatusUnitId(unit.id)
+    setAppState(result.state)
+    setRemoteSearchUnits((items) =>
+      items?.map((item) =>
+        item.id === unit.id ? { ...item, status, updatedAt: new Date().toISOString() } : item,
+      ) ?? null,
+    )
+
+    try {
+      if (supabase && isSupabaseConfigured) {
+        await new LeadraRepository(supabase).updateUnitStatus(unit.id, status)
+      }
+      setFlash(createFlashForStatus(status))
+    } catch {
+      setAppState(previousState)
+      setRemoteSearchUnits((items) =>
+        items?.map((item) =>
+          item.id === unit.id ? { ...item, status: unit.status, updatedAt: unit.updatedAt } : item,
+        ) ?? null,
+      )
+      setFlash({ text: 'Status could not be saved. Please try again.', messageKey: null, messageParams: null })
+    } finally {
+      setUpdatingStatusUnitId(null)
+    }
   }
 
   function archiveUnit(unit: LeadraUnit) {
@@ -485,13 +528,19 @@ function App() {
     )
   }
 
+  async function generatePdfFile(unit: LeadraUnit) {
+    const { generateUnitPdfFile } = await import('./lib/pdf')
+    const generated = await generateUnitPdfFile(user, unit, appState.settings, locale)
+    setGeneratedPdfs((items) => ({ ...items, [unit.id]: generated }))
+    return generated
+  }
+
   async function generatePdf(unit: LeadraUnit) {
     if (generatingPdfUnitId) return
     setGeneratingPdfUnitId(unit.id)
     try {
-      const { generateUnitPdfFile, downloadGeneratedPdf } = await import('./lib/pdf')
-      const generated = await generateUnitPdfFile(user, unit, appState.settings, locale)
-      setGeneratedPdfs((items) => ({ ...items, [unit.id]: generated }))
+      const { downloadGeneratedPdf } = await import('./lib/pdf')
+      const generated = await generatePdfFile(unit)
       downloadGeneratedPdf(generated)
       const notificationMessage = createNotificationMessage('export_generated', { unitCode: unit.unitCode })
       const auditMessage = createAuditMessage('export_generated')
@@ -542,20 +591,24 @@ function App() {
   }
 
   async function sharePdf(unit: LeadraUnit) {
-    const generated = generatedPdfs[unit.id]
-    if (!generated) {
-      setFlash({ text: 'Generate the PDF first, then share it.', messageKey: null, messageParams: null })
-      return
+    if (sharingPdfUnitId || generatingPdfUnitId) return
+    setSharingPdfUnitId(unit.id)
+    try {
+      const generated = generatedPdfs[unit.id] ?? await generatePdfFile(unit)
+      const { shareGeneratedPdf, downloadGeneratedPdf } = await import('./lib/pdf')
+      const shared = await shareGeneratedPdf(generated)
+      setAppState((state) => addAnalyticsEventWorkflow(state, user, 'pdf_shared_or_downloaded', unit))
+      if (shared) {
+        setFlash({ text: 'PDF share sheet opened.', messageKey: null, messageParams: null })
+        return
+      }
+      downloadGeneratedPdf(generated)
+      setFlash({ text: 'Native sharing is unavailable in this browser. The PDF was downloaded so you can send it manually.', messageKey: null, messageParams: null })
+    } catch {
+      setFlash({ text: 'PDF could not be shared. Please try again.', messageKey: null, messageParams: null })
+    } finally {
+      setSharingPdfUnitId(null)
     }
-    const { shareGeneratedPdf, downloadGeneratedPdf } = await import('./lib/pdf')
-    const shared = await shareGeneratedPdf(generated)
-    setAppState((state) => addAnalyticsEventWorkflow(state, user, 'pdf_shared_or_downloaded', unit))
-    if (shared) {
-      setFlash({ text: 'PDF share sheet opened.', messageKey: null, messageParams: null })
-      return
-    }
-    downloadGeneratedPdf(generated)
-    setFlash({ text: 'Native sharing is unavailable in this browser. The PDF was downloaded so you can send it manually.', messageKey: null, messageParams: null })
   }
 
   async function copyUnitShareLink(unit: LeadraUnit) {
@@ -644,8 +697,6 @@ function App() {
           </div>
         </header>
 
-        {flash && <div className="flash motion-flash">{renderFlash(locale, flash)}</div>}
-
         {activeView === 'dashboard' && (
           <div className="page-transition-frame" key={activeView}>
             <Dashboard
@@ -724,7 +775,9 @@ function App() {
               onSharePdf={() => sharePdf(selectedUnit)}
               onCopyShareLink={() => copyUnitShareLink(selectedUnit)}
               pdfGenerating={generatingPdfUnitId === selectedUnit.id}
+              pdfSharing={sharingPdfUnitId === selectedUnit.id}
               pdfReady={Boolean(generatedPdfs[selectedUnit.id])}
+              statusUpdating={updatingStatusUnitId === selectedUnit.id}
               onSaveNote={(content) => saveSharedNote(selectedUnit, content)}
               onDeleteNote={() => deleteSharedNote(selectedUnit)}
             />
@@ -759,24 +812,218 @@ function App() {
               units={appState.units}
               settings={appState.settings}
               auditLogs={appState.auditLogs}
+              lookupValues={activeLookupValues}
               lookupCount={activeLookupValues.length}
-              onCreateUser={(formData) => {
-                const result = createUserWorkflow(appState, user, {
-                  fullName: String(formData.get('fullName')),
-                  email: String(formData.get('email')),
+              defaultBranchId={user.branchId}
+              branches={appState.branches}
+              teams={appState.teams}
+              onCreateLookupValue={async (kind, label) => {
+                const cleanLabel = label.trim()
+                if (!cleanLabel) throw new Error('Label is required.')
+
+                if (supabase && isSupabaseConfigured) {
+                  const { data, error } = await supabase
+                    .from('lookup_values')
+                    .insert({ kind, label: cleanLabel })
+                    .select('id, kind, label, archived')
+                    .single()
+                  if (error) throw new Error(error.message)
+                  const value = toLookupValue(data)
+                  setActiveLookupValues((values) => [...values, value].sort((first, second) => compareText(locale, first.label, second.label)))
+                  setFlash({ text: 'Master data value created.', messageKey: null, messageParams: null })
+                  return
+                }
+
+                const value = { id: `lookup-${kind}-${Date.now()}`, kind, label: cleanLabel } satisfies LookupValue
+                setActiveLookupValues((values) => [...values, value].sort((first, second) => compareText(locale, first.label, second.label)))
+                setFlash({ text: 'Master data value created.', messageKey: null, messageParams: null })
+              }}
+              onUpdateLookupValue={async (lookupId, label) => {
+                const cleanLabel = label.trim()
+                if (!cleanLabel) throw new Error('Label is required.')
+
+                if (supabase && isSupabaseConfigured) {
+                  const { data, error } = await supabase
+                    .from('lookup_values')
+                    .update({ label: cleanLabel })
+                    .eq('id', lookupId)
+                    .select('id, kind, label, archived')
+                    .single()
+                  if (error) throw new Error(error.message)
+                  const value = toLookupValue(data)
+                  setActiveLookupValues((values) => values.map((item) => (item.id === lookupId ? value : item)).sort((first, second) => compareText(locale, first.label, second.label)))
+                  setFlash({ text: 'Master data value updated.', messageKey: null, messageParams: null })
+                  return
+                }
+
+                setActiveLookupValues((values) => values.map((item) => (item.id === lookupId ? { ...item, label: cleanLabel } : item)).sort((first, second) => compareText(locale, first.label, second.label)))
+                setFlash({ text: 'Master data value updated.', messageKey: null, messageParams: null })
+              }}
+              onArchiveLookupValue={async (lookupId) => {
+                if (supabase && isSupabaseConfigured) {
+                  const { error } = await supabase.from('lookup_values').update({ archived: true }).eq('id', lookupId)
+                  if (error) throw new Error(error.message)
+                }
+                setActiveLookupValues((values) => values.filter((item) => item.id !== lookupId))
+                setFlash({ text: 'Master data value archived.', messageKey: null, messageParams: null })
+              }}
+              onCreateBranch={async (name) => {
+                const cleanName = name.trim()
+                if (!cleanName) throw new Error('Branch name is required.')
+
+                if (supabase && isSupabaseConfigured) {
+                  const { data, error } = await supabase
+                    .from('branches')
+                    .insert({ name: cleanName })
+                    .select('id, name, archived')
+                    .single()
+                  if (error) throw new Error(error.message)
+                  const branch = toBranchDirectoryItem(data)
+                  setAppState((state) => ({ ...state, branches: [...state.branches, branch].sort((first, second) => compareText(locale, first.name, second.name)) }))
+                  setFlash({ text: 'Branch created.', messageKey: null, messageParams: null })
+                  return
+                }
+
+                const branch = { id: `branch-${Date.now()}`, name: cleanName }
+                setAppState((state) => ({ ...state, branches: [...state.branches, branch].sort((first, second) => compareText(locale, first.name, second.name)) }))
+                setFlash({ text: 'Branch created.', messageKey: null, messageParams: null })
+              }}
+              onUpdateBranch={async (branchId, name) => {
+                const cleanName = name.trim()
+                if (!cleanName) throw new Error('Branch name is required.')
+
+                if (supabase && isSupabaseConfigured) {
+                  const { data, error } = await supabase
+                    .from('branches')
+                    .update({ name: cleanName })
+                    .eq('id', branchId)
+                    .select('id, name, archived')
+                    .single()
+                  if (error) throw new Error(error.message)
+                  const branch = toBranchDirectoryItem(data)
+                  setAppState((state) => ({ ...state, branches: state.branches.map((item) => (item.id === branchId ? branch : item)).sort((first, second) => compareText(locale, first.name, second.name)) }))
+                  setFlash({ text: 'Branch updated.', messageKey: null, messageParams: null })
+                  return
+                }
+
+                setAppState((state) => ({ ...state, branches: state.branches.map((item) => (item.id === branchId ? { ...item, name: cleanName } : item)).sort((first, second) => compareText(locale, first.name, second.name)) }))
+                setFlash({ text: 'Branch updated.', messageKey: null, messageParams: null })
+              }}
+              onArchiveBranch={async (branchId) => {
+                if (supabase && isSupabaseConfigured) {
+                  const { error } = await supabase.from('branches').update({ archived: true }).eq('id', branchId)
+                  if (error) throw new Error(error.message)
+                }
+                setAppState((state) => ({ ...state, branches: state.branches.filter((item) => item.id !== branchId) }))
+                setFlash({ text: 'Branch archived.', messageKey: null, messageParams: null })
+              }}
+              onCreateTeam={async (name) => {
+                const cleanName = name.trim()
+                if (!cleanName) throw new Error('Team name is required.')
+
+                if (supabase && isSupabaseConfigured) {
+                  const { data, error } = await supabase
+                    .from('teams')
+                    .insert({ name: cleanName, branch_id: null })
+                    .select('id, name, branch_id, archived')
+                    .single()
+                  if (error) throw new Error(error.message)
+                  const team = {
+                    id: String(data.id),
+                    name: String(data.name),
+                    branchId: typeof data.branch_id === 'string' ? data.branch_id : null,
+                    archived: Boolean(data.archived),
+                  }
+                  setAppState((state) => ({ ...state, teams: [...state.teams, team].sort((first, second) => compareText(locale, first.name, second.name)) }))
+                  setFlash({ text: 'Team created.', messageKey: null, messageParams: null })
+                  return
+                }
+
+                const team = { id: `team-${Date.now()}`, name: cleanName, branchId: null }
+                setAppState((state) => ({ ...state, teams: [...state.teams, team].sort((first, second) => compareText(locale, first.name, second.name)) }))
+                setFlash({ text: 'Team created.', messageKey: null, messageParams: null })
+              }}
+              onUpdateTeam={async (teamId, name) => {
+                const cleanName = name.trim()
+                if (!cleanName) throw new Error('Team name is required.')
+
+                if (supabase && isSupabaseConfigured) {
+                  const { data, error } = await supabase
+                    .from('teams')
+                    .update({ name: cleanName })
+                    .eq('id', teamId)
+                    .select('id, name, branch_id, archived')
+                    .single()
+                  if (error) throw new Error(error.message)
+                  const team = {
+                    id: String(data.id),
+                    name: String(data.name),
+                    branchId: typeof data.branch_id === 'string' ? data.branch_id : null,
+                    archived: Boolean(data.archived),
+                  }
+                  setAppState((state) => ({
+                    ...state,
+                    teams: state.teams.map((item) => (item.id === teamId ? team : item)).sort((first, second) => compareText(locale, first.name, second.name)),
+                  }))
+                  setFlash({ text: 'Team updated.', messageKey: null, messageParams: null })
+                  return
+                }
+
+                setAppState((state) => ({
+                  ...state,
+                  teams: state.teams.map((item) => (item.id === teamId ? { ...item, name: cleanName } : item)).sort((first, second) => compareText(locale, first.name, second.name)),
+                }))
+                setFlash({ text: 'Team updated.', messageKey: null, messageParams: null })
+              }}
+              onArchiveTeam={async (teamId) => {
+                if (supabase && isSupabaseConfigured) {
+                  const { error } = await supabase.from('teams').update({ archived: true }).eq('id', teamId)
+                  if (error) throw new Error(error.message)
+                }
+                setAppState((state) => ({ ...state, teams: state.teams.filter((item) => item.id !== teamId) }))
+                setFlash({ text: 'Team removed.', messageKey: null, messageParams: null })
+              }}
+              onCreateUser={async (formData) => {
+                const input = {
+                  fullName: String(formData.get('fullName') ?? ''),
+                  email: String(formData.get('email') ?? ''),
+                  password: String(formData.get('password') ?? ''),
                   role: String(formData.get('role')) as LeadraUser['role'],
-                  jobTitle: String(formData.get('jobTitle')),
-                  phoneNumber: String(formData.get('phoneNumber')),
-                  teamId: String(formData.get('teamId')),
-                  branchId: String(formData.get('branchId')),
+                  jobTitle: String(formData.get('jobTitle') ?? ''),
+                  phoneNumber: String(formData.get('phoneNumber') ?? ''),
+                  teamId: String(formData.get('teamId') ?? ''),
+                  branchId: String(formData.get('branchId') ?? ''),
                   status: 'active',
-                })
+                } satisfies Parameters<typeof createUserWorkflow>[2]
+                const result = createUserWorkflow(appState, user, input)
+                if (!result.ok) {
+                  setFlash({ text: result.error, messageKey: result.errorKey ?? null, messageParams: result.errorParams ?? null })
+                  return
+                }
+
+                if (supabase && isSupabaseConfigured) {
+                  try {
+                    const createdUser = await createManagedUserProfile(supabase, input)
+                    setAppState((state) => ({
+                      ...state,
+                      users: [...state.users.filter((item) => item.id !== createdUser.id), createdUser],
+                      auditLogs: result.state.auditLogs,
+                      analyticsEvents: result.state.analyticsEvents,
+                    }))
+                    setFlash(createFlashMessage('flash.userCreated', 'User created and audit history updated.'))
+                    return
+                  } catch (error) {
+                    setFlash({
+                      text: error instanceof Error ? error.message : 'User creation failed.',
+                      messageKey: null,
+                      messageParams: null,
+                    })
+                    throw error
+                  }
+                }
+
                 setAppState(result.state)
-                setFlash(
-                  result.ok
-                    ? createFlashMessage('flash.userCreated', 'User created and audit history updated.')
-                    : { text: result.error, messageKey: result.errorKey ?? null, messageParams: result.errorParams ?? null },
-                )
+                setFlash(createFlashMessage('flash.userCreated', 'User created and audit history updated.'))
               }}
               onUpdateUser={async (userId, updates) => {
                 const auditMessage = createAuditMessage('user_profile_updated')
@@ -834,9 +1081,78 @@ function App() {
                   messageParams: null,
                 })
               }}
-              onSettingsUpdate={(commissionPercentage) => {
-                const result = updateSettingsWorkflow(appState, user, { commissionPercentage })
+              onDeleteSalesRepresentative={async (salesUserId, replacementSalesUserId) => {
+                const previousState = appState
+                const result = deleteSalesRepresentativeWorkflow(appState, user, salesUserId, replacementSalesUserId)
+                if (!result.ok) {
+                  setFlash({ text: result.error, messageKey: result.errorKey ?? null, messageParams: result.errorParams ?? null })
+                  return
+                }
+
                 setAppState(result.state)
+                try {
+                  if (supabase && isSupabaseConfigured) {
+                    const replacement = result.state.users.find((item) => item.id === replacementSalesUserId)
+                    if (!replacement) throw new Error('Replacement sales representative was not found.')
+                    await new LeadraRepository(supabase).deleteSalesRepresentativeAfterReassignment(salesUserId, replacement, user)
+                  }
+                  setFlash(createFlashMessage('flash.salesRepDeactivated', 'Sales representative deactivated after reassignment.'))
+                } catch (error) {
+                  setAppState(previousState)
+                  setFlash({
+                    text: error instanceof Error ? error.message : 'Sales representative could not be deactivated.',
+                    messageKey: null,
+                    messageParams: null,
+                  })
+                  throw error
+                }
+              }}
+              onDeleteManagedUser={async (managedUserId) => {
+                const previousState = appState
+                const result = deleteManagedUserWorkflow(appState, user, managedUserId)
+                if (!result.ok) {
+                  setFlash({ text: result.error, messageKey: result.errorKey ?? null, messageParams: result.errorParams ?? null })
+                  return
+                }
+
+                setAppState(result.state)
+                try {
+                  if (supabase && isSupabaseConfigured) {
+                    await new LeadraRepository(supabase).deleteManagedUser(managedUserId)
+                  }
+                  setFlash(createFlashMessage('flash.userDeleted', 'User deactivated and audit history updated.'))
+                } catch (error) {
+                  setAppState(previousState)
+                  setFlash({
+                    text: error instanceof Error ? error.message : 'User could not be deactivated.',
+                    messageKey: null,
+                    messageParams: null,
+                  })
+                  throw error
+                }
+              }}
+              onSettingsUpdate={async (settingsPatch) => {
+                const result = updateSettingsWorkflow(appState, user, settingsPatch)
+                setAppState(result.state)
+                if (result.ok && supabase && isSupabaseConfigured) {
+                  const { error } = await supabase
+                    .from('app_settings')
+                    .update({
+                      company_name: result.state.settings.companyName,
+                      commission_percentage: result.state.settings.commissionPercentage,
+                      footer_text: result.state.settings.footerText,
+                      contact_details: result.state.settings.contactDetails,
+                      logo_path: result.state.settings.logoPath || null,
+                      pdf_layout: result.state.settings.pdfLayout,
+                      media_limit_mb: result.state.settings.mediaLimitMb,
+                    })
+                    .eq('id', true)
+                  if (error) {
+                    setAppState(appState)
+                    setFlash({ text: error.message, messageKey: null, messageParams: null })
+                    throw new Error(error.message)
+                  }
+                }
                 setFlash(
                   result.ok
                     ? createFlashMessage('flash.settingsUpdated', 'Settings updated and audited.')
@@ -875,6 +1191,12 @@ function App() {
           style={motionStyle(3)}
         />
       </nav>
+
+      {flash && (
+        <div className="toast-region" role="status" aria-live="polite" aria-atomic="true">
+          <div className="flash motion-flash">{renderFlash(locale, flash)}</div>
+        </div>
+      )}
     </div>
   )
 }
@@ -892,7 +1214,6 @@ function LoginScreen({
 }) {
   const { locale, t } = useLocale()
   const [step, setStep] = useState<'intro' | 'login'>('intro')
-  const [passwordVisible, setPasswordVisible] = useState(false)
   const [isCompactViewport, setIsCompactViewport] = useState(() => (
     typeof window !== 'undefined' ? window.innerWidth <= 860 : false
   ))
@@ -1000,28 +1321,7 @@ function LoginScreen({
                   {t('login.email')}
                   <input name="email" type="email" autoComplete="email" required placeholder={t('login.emailPlaceholder')} dir="auto" />
                 </label>
-                <label>
-                  {t('login.password')}
-                  <div className="password-input-wrap">
-                    <input
-                      name="password"
-                      type={passwordVisible ? 'text' : 'password'}
-                      autoComplete="current-password"
-                      required
-                      placeholder={t('login.passwordPlaceholder')}
-                      dir="auto"
-                    />
-                    <button
-                      className="password-toggle"
-                      type="button"
-                      aria-label={passwordVisible ? t('login.hidePassword') : t('login.showPassword')}
-                      aria-pressed={passwordVisible}
-                      onClick={() => setPasswordVisible((current) => !current)}
-                    >
-                      {passwordVisible ? <EyeOff size={18} /> : <Eye size={18} />}
-                    </button>
-                  </div>
-                </label>
+                <PasswordField label={t('login.password')} name="password" autoComplete="current-password" placeholder={t('login.passwordPlaceholder')} required />
                 {loginError && <p className="form-error">{renderError(locale, { message: loginError.message, messageKey: loginError.messageKey, messageParams: loginError.messageParams })}</p>}
                 <button className="primary-button" type="submit" disabled={authLoading}>
                   {authLoading ? t('login.signingIn') : t('login.signIn')}
@@ -1161,13 +1461,25 @@ function Dashboard({
   onOpenUnit: (unitId: number) => void
 }) {
   const { locale, t } = useLocale()
-  const latestUnits = units.slice(0, 3)
-  const available = units.filter((unit) => unit.status === 'available').length
-  const hold = units.filter((unit) => unit.status === 'hold').length
-  const sold = units.filter((unit) => unit.status === 'sold').length
+  const [now] = useState(() => Date.now())
+  const isSalesDashboard = user.role === 'sales'
+  const salesUploads = isSalesDashboard
+    ? units.filter((unit) => unit.createdBy === user.id).sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime())
+    : units
+  const latestUnits = isSalesDashboard ? salesUploads.slice(0, 3) : units.slice(0, 3)
+  const metricUnits = isSalesDashboard ? salesUploads : units
+  const available = metricUnits.filter((unit) => unit.status === 'available').length
+  const hold = metricUnits.filter((unit) => unit.status === 'hold').length
+  const sold = metricUnits.filter((unit) => unit.status === 'sold').length
+  const latestSalesUploadAt = salesUploads[0]?.createdAt ?? null
+  const salesUploadInactive = isSalesDashboard && (!latestSalesUploadAt || now - new Date(latestSalesUploadAt).getTime() > 72 * 60 * 60 * 1000)
 
   if (user.role === 'manager') {
     return <ManagerDashboard user={user} appState={appState} units={units} notifications={notifications} onNavigate={onNavigate} onOpenUnit={onOpenUnit} />
+  }
+
+  if (user.role === 'admin' || user.role === 'sub_admin') {
+    return <AdminDashboard user={user} appState={appState} units={units} notifications={notifications} onNavigate={onNavigate} onOpenUnit={onOpenUnit} />
   }
 
   return (
@@ -1194,21 +1506,37 @@ function Dashboard({
       </div>
 
       <div className="metric-grid motion-stage" style={motionStyle(1, 40)}>
-        <Metric label={t('dashboard.visibleUnits')} value={formatCount(locale, units.length)} style={motionStyle(0, 120)} />
+        <Metric label={isSalesDashboard ? t('dashboard.myUploads') : t('dashboard.visibleUnits')} value={formatCount(locale, metricUnits.length)} style={motionStyle(0, 120)} />
         <Metric label={getStatusLabel(locale, 'available')} value={formatCount(locale, available)} style={motionStyle(1, 150)} />
         <Metric label={getStatusLabel(locale, 'hold')} value={formatCount(locale, hold)} style={motionStyle(2, 180)} />
         <Metric label={getStatusLabel(locale, 'sold')} value={formatCount(locale, sold)} style={motionStyle(3, 210)} />
       </div>
 
-      <section className="content-card motion-stage" style={motionStyle(2, 90)}>
-        <h2>{t('dashboard.latestActivity')}</h2>
+      {salesUploadInactive && (
+        <section className="content-card motion-stage" style={motionStyle(2, 70)} aria-label={t('dashboard.salesUploadWarningTitle')}>
+          <div className="notification-row">
+            <Bell size={16} />
+            <div>
+              <strong>{t('dashboard.salesUploadWarningTitle')}</strong>
+              <p>
+                {latestSalesUploadAt
+                  ? t('dashboard.salesUploadWarningBody', { date: formatDate(locale, latestSalesUploadAt) })
+                  : t('dashboard.salesNoUploadWarningBody')}
+              </p>
+            </div>
+          </div>
+        </section>
+      )}
+
+      <section className="content-card motion-stage" style={motionStyle(salesUploadInactive ? 3 : 2, 90)}>
+        <h2>{isSalesDashboard ? t('dashboard.latestMyUploads') : t('dashboard.latestActivity')}</h2>
         {latestUnits.length === 0 && <EmptyState title={t('dashboard.noUnitsTitle')} body={t('dashboard.noUnitsBody')} />}
         {latestUnits.map((unit, index) => (
           <UnitListRow key={unit.id} user={user} unit={unit} index={index} onOpen={() => onOpenUnit(unit.id)} />
         ))}
       </section>
 
-      <section className="content-card motion-stage" style={motionStyle(3, 130)}>
+      <section className="content-card motion-stage" style={motionStyle(salesUploadInactive ? 4 : 3, 130)}>
         <h2>{t('dashboard.notificationCenter')}</h2>
         {notifications.length === 0 && <EmptyState title={t('dashboard.noNotificationsTitle')} body={t('dashboard.noNotificationsBody')} />}
         {notifications.slice(0, 3).map((notification, index) => (
@@ -1223,6 +1551,186 @@ function Dashboard({
       </section>
     </section>
   )
+}
+
+type DashboardRollup = {
+  id: string
+  label: string
+  totalUnits: number
+  availableUnits: number
+  holdUnits: number
+  soldUnits: number
+  meta?: string
+}
+
+function AdminDashboard({
+  user,
+  appState,
+  units,
+  notifications,
+  onNavigate,
+  onOpenUnit,
+}: {
+  user: LeadraUser
+  appState: AppDataState
+  units: LeadraUnit[]
+  notifications: NotificationItem[]
+  onNavigate: (view: View) => void
+  onOpenUnit: (unitId: number) => void
+}) {
+  const { locale, t } = useLocale()
+  const activeUnits = units.filter((unit) => !unit.archived)
+  const latestUnits = [...activeUnits].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).slice(0, 4)
+  const available = activeUnits.filter((unit) => unit.status === 'available').length
+  const hold = activeUnits.filter((unit) => unit.status === 'hold').length
+  const sold = activeUnits.filter((unit) => unit.status === 'sold').length
+  const duplicateAttempts = appState.analyticsEvents.filter((event) => event.eventType === 'duplicate_phone_blocked').length
+  const pdfExports = appState.analyticsEvents.filter((event) => event.eventType === 'pdf_generated' || event.eventType === 'pdf_shared_or_downloaded').length
+  const teamRollups = buildTeamDashboardRollups(activeUnits, appState, locale)
+  const developerRollups = buildUnitDashboardRollups(activeUnits, 'developerId', 'developerName', locale)
+  const destinationRollups = buildUnitDashboardRollups(activeUnits, 'destinationId', 'destinationName', locale)
+  const projectRollups = buildUnitDashboardRollups(activeUnits, 'projectId', 'projectName', locale)
+
+  return (
+    <section className="page-stack page-entrance dashboard-page admin-dashboard">
+      <div className="hero-panel motion-stage motion-hero" style={motionStyle(0)}>
+        <p className="eyebrow">{t('dashboard.eyebrow', { role: getRoleLabel(locale, user.role) })}</p>
+        <h2>{dashboardTitle(user.role, locale)}</h2>
+        <p>{dashboardDescription(user.role, locale)}</p>
+        <div className="action-row">
+          <button className="primary-button" type="button" onClick={() => onNavigate('analytics')}>
+            <BarChart3 size={18} /> {t('dashboard.openAnalytics')}
+          </button>
+          <a
+            className="secondary-link"
+            href="#units"
+            onClick={(event) => {
+              event.preventDefault()
+              onNavigate('units')
+            }}
+          >
+            {t('dashboard.viewAllUnits')}
+          </a>
+        </div>
+      </div>
+
+      <div className="metric-grid motion-stage" style={motionStyle(1, 40)}>
+        <Metric label={t('dashboard.visibleUnits')} value={formatCount(locale, activeUnits.length)} style={motionStyle(0, 120)} />
+        <Metric label={getStatusLabel(locale, 'available')} value={formatCount(locale, available)} style={motionStyle(1, 150)} />
+        <Metric label={getStatusLabel(locale, 'hold')} value={formatCount(locale, hold)} style={motionStyle(2, 180)} />
+        <Metric label={getStatusLabel(locale, 'sold')} value={formatCount(locale, sold)} style={motionStyle(3, 210)} />
+        <Metric label={t('analytics.duplicateAttempts')} value={formatCount(locale, duplicateAttempts)} style={motionStyle(4, 240)} />
+        <Metric label={t('analytics.pdfExports')} value={formatCount(locale, pdfExports)} style={motionStyle(5, 270)} />
+      </div>
+
+      <div className="page-grid">
+        <AdminRollupPanel title={t('dashboard.adminTeams')} items={teamRollups} locale={locale} />
+        <AdminRollupPanel title={t('dashboard.adminDevelopers')} items={developerRollups} locale={locale} />
+      </div>
+
+      <div className="page-grid">
+        <AdminRollupPanel title={t('dashboard.adminDestinations')} items={destinationRollups} locale={locale} />
+        <AdminRollupPanel title={t('dashboard.adminProjects')} items={projectRollups} locale={locale} />
+      </div>
+
+      <div className="page-grid">
+        <section className="content-card motion-stage" style={motionStyle(6, 140)}>
+          <h2>{t('dashboard.latestActivity')}</h2>
+          {latestUnits.length === 0 && <EmptyState title={t('dashboard.noUnitsTitle')} body={t('dashboard.noUnitsBody')} />}
+          {latestUnits.map((unit, index) => (
+            <UnitListRow key={unit.id} user={user} unit={unit} index={index} onOpen={() => onOpenUnit(unit.id)} />
+          ))}
+        </section>
+        <section className="content-card motion-stage" style={motionStyle(7, 170)}>
+          <h2>{t('dashboard.notificationCenter')}</h2>
+          {notifications.length === 0 && <EmptyState title={t('dashboard.noNotificationsTitle')} body={t('dashboard.noNotificationsBody')} />}
+          {notifications.slice(0, 3).map((notification, index) => (
+            <div className="notification-row motion-stage" key={notification.id} style={motionStyle(index, 180)}>
+              <Bell size={16} />
+              <div>
+                <strong>{renderNotificationTitle(locale, notification)}</strong>
+                <p>{renderNotificationBody(locale, notification)}</p>
+              </div>
+            </div>
+          ))}
+        </section>
+      </div>
+    </section>
+  )
+}
+
+function AdminRollupPanel({ title, items, locale }: { title: string; items: DashboardRollup[]; locale: LocaleCode }) {
+  const { t } = useLocale()
+  return (
+    <section className="content-card motion-stage" style={motionStyle(2, 90)}>
+      <div className="section-heading">
+        <div>
+          <p className="eyebrow">{t('dashboard.sortedByVolume')}</p>
+          <h2>{title}</h2>
+        </div>
+      </div>
+      {items.length === 0 && <EmptyState title={t('dashboard.noUnitsTitle')} body={t('dashboard.noUnitsBody')} />}
+      <div className="analytics-table">
+        {items.slice(0, 5).map((item, index) => (
+          <div className="analytics-row project-health-row motion-stage" key={item.id} style={motionStyle(index, 120)}>
+            <div>
+              <strong dir="auto">{item.label}</strong>
+              {item.meta && <p dir="auto">{item.meta}</p>}
+            </div>
+            <span className="analytics-chip">{t('units.totalUnits', { count: formatCount(locale, item.totalUnits) })}</span>
+            <span className="analytics-chip success">{t('analytics.availableChip', { count: formatCount(locale, item.availableUnits) })}</span>
+            <span className="analytics-chip warning">{t('analytics.holdChip', { ratio: formatCount(locale, item.holdUnits) })}</span>
+            <span className="analytics-chip">{getStatusLabel(locale, 'sold')}: {formatCount(locale, item.soldUnits)}</span>
+          </div>
+        ))}
+      </div>
+    </section>
+  )
+}
+
+function buildTeamDashboardRollups(units: LeadraUnit[], appState: AppDataState, locale: LocaleCode): DashboardRollup[] {
+  return appState.teams
+    .map((team) => {
+      const teamUnits = units.filter((unit) => unit.teamId === team.id)
+      const activeMembers = appState.users.filter((member) => member.teamId === team.id && member.status === 'active').length
+      return summarizeDashboardRollup(team.id, team.name, teamUnits, locale === 'ar' ? `${activeMembers} أعضاء نشطون` : `${activeMembers} active members`)
+    })
+    .filter((item) => item.totalUnits > 0 || item.meta)
+    .sort((a, b) => sortDashboardRollups(a, b, locale))
+}
+
+function buildUnitDashboardRollups(
+  units: LeadraUnit[],
+  idKey: 'developerId' | 'destinationId' | 'projectId',
+  labelKey: 'developerName' | 'destinationName' | 'projectName',
+  locale: LocaleCode,
+): DashboardRollup[] {
+  const grouped = new Map<string, LeadraUnit[]>()
+  for (const unit of units) {
+    const current = grouped.get(unit[idKey])
+    if (current) current.push(unit)
+    else grouped.set(unit[idKey], [unit])
+  }
+
+  return Array.from(grouped.entries())
+    .map(([id, groupedUnits]) => summarizeDashboardRollup(id, groupedUnits[0][labelKey], groupedUnits))
+    .sort((a, b) => sortDashboardRollups(a, b, locale))
+}
+
+function summarizeDashboardRollup(id: string, label: string, units: LeadraUnit[], meta?: string): DashboardRollup {
+  return {
+    id,
+    label,
+    totalUnits: units.length,
+    availableUnits: units.filter((unit) => unit.status === 'available').length,
+    holdUnits: units.filter((unit) => unit.status === 'hold').length,
+    soldUnits: units.filter((unit) => unit.status === 'sold').length,
+    meta,
+  }
+}
+
+function sortDashboardRollups(a: DashboardRollup, b: DashboardRollup, locale: LocaleCode) {
+  return b.totalUnits - a.totalUnits || compareText(locale, a.label, b.label)
 }
 
 function ManagerDashboard({
@@ -1362,6 +1870,7 @@ function UnitsPage({
   const destinationOptions = lookupValues.filter((item) => item.kind === 'destination')
   const projectOptions = lookupValues.filter((item) => item.kind === 'project')
   const unitTypeOptions = Array.from(new Set(units.map((unit) => unit.unitType))).sort((a, b) => compareText(locale, a, b))
+  const canUseOwnerPhoneSearch = user.role === 'admin' || user.role === 'sub_admin'
   const activeFilterCount = countActiveUnitFilters(filters)
 
   return (
@@ -1438,7 +1947,7 @@ function UnitsPage({
       <div id="units-advanced-filters" className="filter-bar advanced-filter-bar motion-stage" style={motionStyle(4, 60)}>
         <label>
           {t('units.unitCode')}
-          <input value={filters.unitCode ?? ''} onChange={(event) => onFilterChange('unitCode', event.target.value)} placeholder="NE105BR3Ba2" dir="auto" />
+          <input value={filters.unitCode ?? ''} onChange={(event) => onFilterChange('unitCode', event.target.value)} placeholder="NC3BR" dir="auto" />
         </label>
         <ControlledSelectField
           label={t('units.status')}
@@ -1506,15 +2015,17 @@ function UnitsPage({
         />
         <RangeFilter label={t('details.installmentAmount')} from={filters.installmentAmountFrom} to={filters.installmentAmountTo} onFrom={(value) => onFilterChange('installmentAmountFrom', value)} onTo={(value) => onFilterChange('installmentAmountTo', value)} />
         <NumberFilter label={t('details.expectedDelivery')} value={filters.deliveryYear === 'all' ? undefined : filters.deliveryYear} onChange={(value) => onFilterChange('deliveryYear', value ?? 'all')} />
-        <label>
-          {t('units.ownerPhone')}
-          <input
-            value={filters.ownerPhone ?? ''}
-            onChange={(event) => onFilterChange('ownerPhone', event.target.value)}
-            placeholder={units.some((unit) => canSearchOwnerPhone(user, unit)) ? t('units.ownerPhonePlaceholder') : t('units.ownerPhoneHidden')}
-            dir="auto"
-          />
-        </label>
+        {canUseOwnerPhoneSearch && (
+          <label>
+            {t('units.ownerPhone')}
+            <input
+              value={filters.ownerPhone ?? ''}
+              onChange={(event) => onFilterChange('ownerPhone', event.target.value)}
+              placeholder={t('units.ownerPhonePlaceholder')}
+              dir="auto"
+            />
+          </label>
+        )}
         <button className="secondary-button" type="button" onClick={onResetFilters}>{t('analytics.reset')}</button>
       </div>
       )}
@@ -1575,6 +2086,51 @@ function RangeFilter({
   )
 }
 
+function PasswordField({
+  label,
+  name,
+  autoComplete,
+  placeholder,
+  required = false,
+  minLength,
+}: {
+  label: string
+  name: string
+  autoComplete: string
+  placeholder?: string
+  required?: boolean
+  minLength?: number
+}) {
+  const { t } = useLocale()
+  const [visible, setVisible] = useState(false)
+
+  return (
+    <label>
+      <RequiredLabel label={label} required={required} />
+      <div className="password-input-wrap">
+        <input
+          name={name}
+          type={visible ? 'text' : 'password'}
+          autoComplete={autoComplete}
+          placeholder={placeholder}
+          required={required}
+          minLength={minLength}
+          dir="auto"
+        />
+        <button
+          className="password-toggle"
+          type="button"
+          aria-label={visible ? t('login.hidePassword') : t('login.showPassword')}
+          aria-pressed={visible}
+          onClick={() => setVisible((current) => !current)}
+        >
+          {visible ? <EyeOff size={18} /> : <Eye size={18} />}
+        </button>
+      </div>
+    </label>
+  )
+}
+
 const UnitListRow = memo(function UnitListRow({ user, unit, onOpen, index = 0 }: { user: LeadraUser; unit: LeadraUnit; onOpen: () => void; index?: number }) {
   const { locale, t } = useLocale()
   const thumbnail = getThumbnailMedia(unit.media)
@@ -1585,7 +2141,7 @@ const UnitListRow = memo(function UnitListRow({ user, unit, onOpen, index = 0 }:
       <div>
         <strong>{unit.unitCode}</strong>
         <p dir="auto">{unit.projectName} / {unit.unitType} / {t('units.areaBua', { bua: formatCount(locale, unit.bua) })}</p>
-        <small dir="auto">{canViewOwnerData(user, unit) ? unit.originalOwnerPhone : t('units.ownerHiddenByPermission')}</small>
+        {canViewOwnerData(user, unit) && <small dir="auto">{unit.originalOwnerPhone}</small>}
       </div>
       <span className={`status-pill motion-status-pill ${unit.status}`}>{getStatusLabel(locale, unit.status)}</span>
     </button>
@@ -1612,6 +2168,8 @@ function CreateUnitPage({
   const [installmentYears, setInstallmentYears] = useState(5)
   const [ownerCountryCode, setOwnerCountryCode] = useState('+20')
   const [ownerPhone, setOwnerPhone] = useState('01012345678')
+  const [selectedUnitType, setSelectedUnitType] = useState('Apartment')
+  const [selectedFloor, setSelectedFloor] = useState('2nd')
   const activeStepIndex = createUnitSteps.indexOf(activeStep)
   const mediaValidation = validateMediaUpload(selectedMedia)
   const totalMediaMb = selectedMedia.reduce((total, file) => total + file.sizeBytes, 0) / (1024 * 1024)
@@ -1622,11 +2180,7 @@ function CreateUnitPage({
       ? remainingPayment / (installmentYears * paymentsPerYear)
       : null
 
-  const unitTypeOptions = [
-    { value: 'Apartment', label: t('create.apartment') },
-    { value: 'Villa', label: t('create.villa') },
-    { value: 'Townhouse', label: t('create.townhouse') },
-  ]
+  const unitTypeOptions = PRD_UNIT_TYPES.map((unitType) => ({ value: unitType, label: unitType }))
   const viewOptions = [
     { value: 'view-sea', label: t('create.viewSea') },
     { value: 'view-lagoon', label: t('create.viewLagoon') },
@@ -1634,20 +2188,8 @@ function CreateUnitPage({
     { value: 'view-landscape', label: t('create.viewLandscape') },
     { value: 'view-street', label: t('create.viewStreet') },
   ]
-  const floorOptions = [
-    ['Ground', t('create.ground')],
-    ['1st', t('create.first')],
-    ['2nd', t('create.second')],
-    ['3rd', t('create.third')],
-    ['4th', t('create.fourth')],
-    ['5th', t('create.fifth')],
-    ['6th', t('create.sixth')],
-    ['7th', t('create.seventh')],
-    ['8th', t('create.eighth')],
-    ['9th', t('create.ninth')],
-    ['10th', t('create.tenth')],
-    ['Roof', t('create.roof')],
-  ] as const
+  const floorOptions = PRD_FLOOR_OPTIONS.map((floor) => ({ value: floor, label: floor === 'Ground' ? t('create.ground') : floor }))
+  const areaFields = getApplicableUnitAreaFields(selectedUnitType, selectedFloor)
   const deliveryYearOptions = Array.from({ length: 10 }, (_, index) => {
     const year = String(2026 + index)
     return { value: year, label: year }
@@ -1703,37 +2245,48 @@ function CreateUnitPage({
 
         <fieldset className="unit-form wizard-panel" data-active={activeStep === 'Property'} aria-hidden={activeStep !== 'Property'}>
           <legend>{t('create.legend.property')}</legend>
-          <SelectField name="developerId" label={t('create.developer')} values={lookupValues.filter((item) => item.kind === 'developer')} />
-          <SelectField name="projectId" label={t('create.project')} values={lookupValues.filter((item) => item.kind === 'project')} />
-          <NumberField name="bua" label={t('create.bua')} defaultValue={145} />
-          <SelectField name="destinationId" label={t('create.destination')} values={lookupValues.filter((item) => item.kind === 'destination')} />
+          <SelectField name="destinationId" label={t('create.destination')} values={lookupValues.filter((item) => item.kind === 'destination')} required />
+          <SelectField name="developerId" label={t('create.developer')} values={lookupValues.filter((item) => item.kind === 'developer')} required />
+          <SelectField name="projectId" label={t('create.project')} values={lookupValues.filter((item) => item.kind === 'project')} required />
           <NamedSelectField
             defaultValue="Apartment"
             label={t('create.unitType')}
             name="unitType"
             options={unitTypeOptions}
+            required
+            value={selectedUnitType}
+            onValueChange={(value) => {
+              setSelectedUnitType(value)
+              if (!getApplicableUnitAreaFields(value, selectedFloor).showFloor) setSelectedFloor('Ground')
+            }}
           />
-          <NamedSelectField
-            defaultValue="2nd"
-            label={t('create.floor')}
-            name="floor"
-            options={floorOptions.map(([value, label]) => ({ value, label }))}
-          />
+          <NumberField name="bua" label={t('create.bua')} defaultValue={145} min={1} required />
+          {areaFields.showLandArea && <NumberField name="landArea" label={t('create.landArea')} defaultValue={0} min={0} required />}
+          {areaFields.showFloor && (
+            <NamedSelectField
+              label={t('create.floor')}
+              name="floor"
+              options={floorOptions}
+              required
+              value={selectedFloor}
+              onValueChange={setSelectedFloor}
+            />
+          )}
+          {areaFields.showGardenArea && <NumberField name="gardenArea" label={t('create.gardenArea')} defaultValue={0} min={0} />}
+          {areaFields.showTerraceArea && <NumberField name="terraceArea" label={t('create.terraceArea')} defaultValue={0} min={0} required />}
         </fieldset>
 
         <fieldset className="unit-form wizard-panel" data-active={activeStep === 'Specs'} aria-hidden={activeStep !== 'Specs'}>
           <legend>{t('create.legend.specs')}</legend>
-          <NumberField name="roofGardenArea" label={t('create.roofGardenArea')} defaultValue={0} />
           <NamedSelectField
             defaultValue="view-landscape"
             label={t('create.view')}
             name="viewId"
             options={viewOptions}
           />
-          <NumberField name="bedrooms" label={t('create.bedrooms')} defaultValue={3} min={1} max={10} />
-          <NumberField name="bathrooms" label={t('create.bathrooms')} defaultValue={2} min={1} max={10} />
+          <NumberField name="bedrooms" label={t('create.bedrooms')} defaultValue={3} min={1} max={10} required />
+          <NumberField name="bathrooms" label={t('create.bathrooms')} defaultValue={2} min={1} max={10} required />
           <label className="toggle-line"><input name="elevator" type="checkbox" defaultChecked /> {t('create.elevator')}</label>
-          <NumberField name="landArea" label={t('create.landArea')} defaultValue={0} />
           <NamedSelectField
             defaultValue="false"
             label={t('create.furnished')}
@@ -1747,6 +2300,7 @@ function CreateUnitPage({
             defaultValue="Fully Finished"
             label={t('create.finish')}
             name="finish"
+            required
             options={[
               { value: 'Fully Finished', label: t('create.fullyFinished') },
               { value: 'Semi Finished', label: t('create.semiFinished') },
@@ -1765,17 +2319,18 @@ function CreateUnitPage({
               { value: 'installment', label: t('create.installment') },
             ]}
             value={paymentMethod}
+            required
             onValueChange={(value) => setPaymentMethod(value as PaymentMethod)}
           />
           <label>
-            {t('create.totalAmount')}
-            <input name="totalAmount" type="number" min={0} value={totalAmount} onChange={(event) => setTotalAmount(Number(event.target.value))} />
+            <RequiredLabel label={t('create.totalAmount')} required />
+            <input name="totalAmount" type="number" min={0} required value={totalAmount} onChange={(event) => setTotalAmount(Number(event.target.value))} />
           </label>
           {paymentMethod === 'installment' && (
             <>
               <label>
-                {t('create.downPayment')}
-                <input name="downPayment" type="number" min={0} max={totalAmount} value={downPayment} onChange={(event) => setDownPayment(Number(event.target.value))} />
+                <RequiredLabel label={t('create.downPayment')} required />
+                <input name="downPayment" type="number" min={0} max={totalAmount} required value={downPayment} onChange={(event) => setDownPayment(Number(event.target.value))} />
               </label>
               <label>
                 {t('details.remainingPayment')}
@@ -1791,13 +2346,14 @@ function CreateUnitPage({
                   { value: 'custom', label: t('create.customInstallments') },
                 ]}
                 value={installmentType}
+                required
                 onValueChange={(value) => setInstallmentType(value as InstallmentType)}
               />
               {installmentType !== 'custom' ? (
                 <>
                   <label>
-                    {t('create.installmentYears')}
-                    <input name="installmentYears" type="number" min={1} value={installmentYears} onChange={(event) => setInstallmentYears(Number(event.target.value))} />
+                    <RequiredLabel label={t('create.installmentYears')} required />
+                    <input name="installmentYears" type="number" min={1} required value={installmentYears} onChange={(event) => setInstallmentYears(Number(event.target.value))} />
                   </label>
                   <label>
                     {t('details.installmentAmount')}
@@ -1814,7 +2370,7 @@ function CreateUnitPage({
         <fieldset className="unit-form wizard-panel" data-active={activeStep === 'Owner'} aria-hidden={activeStep !== 'Owner'}>
           <legend>{t('create.legend.owner')}</legend>
           <label>
-            {t('create.ownerName')}
+            <RequiredLabel label={t('create.ownerName')} required />
             <input name="ownerName" defaultValue="New Owner" required dir="auto" />
           </label>
           <OwnerPhoneField
@@ -1826,7 +2382,7 @@ function CreateUnitPage({
             onCountryCodeChange={setOwnerCountryCode}
             onOwnerPhoneChange={setOwnerPhone}
           />
-          <NamedSelectField defaultValue="2028" label={t('create.deliveryDate')} name="deliveryYear" options={deliveryYearOptions} />
+          <NamedSelectField defaultValue="2028" label={t('create.deliveryDate')} name="deliveryYear" options={deliveryYearOptions} required />
           <label className="wide-field">
             {t('create.salesNotes')}
             <textarea name="salesNotes" defaultValue="Owner is responsive on WhatsApp." dir="auto" />
@@ -1929,7 +2485,9 @@ function UnitDetailsPage({
   onSharePdf,
   onCopyShareLink,
   pdfGenerating,
+  pdfSharing,
   pdfReady,
+  statusUpdating,
   onSaveNote,
   onDeleteNote,
 }: {
@@ -1941,7 +2499,9 @@ function UnitDetailsPage({
   onSharePdf: () => void
   onCopyShareLink: () => void
   pdfGenerating: boolean
+  pdfSharing: boolean
   pdfReady: boolean
+  statusUpdating: boolean
   onSaveNote: (content: string) => void
   onDeleteNote: () => void
 }) {
@@ -1968,16 +2528,16 @@ function UnitDetailsPage({
       </div>
       <div className="details-actions motion-stage" style={motionStyle(1, 40)}>
         <div className="action-row wrap">
-          <button className="secondary-button" type="button" onClick={() => onStatusChange('hold')}>{t('details.markHold')}</button>
-          <button className="secondary-button" type="button" onClick={() => onStatusChange('sold')}>{t('details.markSold')}</button>
-          {unit.status !== 'available' && <button className="secondary-button" type="button" onClick={() => onStatusChange('available')}>{t('details.clearStatus')}</button>}
+          <button className="secondary-button" type="button" disabled={statusUpdating || unit.status === 'hold'} onClick={() => onStatusChange('hold')}>{statusUpdating ? 'Saving...' : t('details.markHold')}</button>
+          <button className="secondary-button" type="button" disabled={statusUpdating || unit.status === 'sold'} onClick={() => onStatusChange('sold')}>{statusUpdating ? 'Saving...' : t('details.markSold')}</button>
+          {unit.status !== 'available' && <button className="secondary-button" type="button" disabled={statusUpdating} onClick={() => onStatusChange('available')}>{statusUpdating ? 'Saving...' : t('details.clearStatus')}</button>}
         </div>
         <div className="action-row wrap">
-          <button className="primary-button" type="button" onClick={onGeneratePdf} disabled={pdfGenerating}>
+          <button className="primary-button" type="button" onClick={onGeneratePdf} disabled={pdfGenerating || pdfSharing}>
             <FileText size={18} /> {pdfGenerating ? 'Preparing PDF...' : t('details.generateBrief')}
           </button>
-          <button className="secondary-button" type="button" onClick={onSharePdf} disabled={!pdfReady || pdfGenerating}>
-            <Share2 size={18} /> {t('details.sharePdf')}
+          <button className="secondary-button" type="button" onClick={onSharePdf} disabled={pdfGenerating || pdfSharing}>
+            <Share2 size={18} /> {pdfSharing ? 'Preparing share...' : pdfReady ? t('details.sharePdf') : 'Generate & share PDF'}
           </button>
           <button className="secondary-button" type="button" onClick={onCopyShareLink}>
             <Share2 size={18} /> {t('details.shareLink')}
@@ -2033,29 +2593,34 @@ function UnitDetailsDeepSections({
   onDeleteNote: () => void
 }) {
   const installmentSchedule = buildInstallmentSchedule(unit, locale)
+  const areaFields = getApplicableUnitAreaFields(unit.unitType, unit.floor)
+  const mainInfoRows: [string, string | number | null][] = [
+    [t('details.unitCode'), unit.unitCode],
+    [t('details.status'), getStatusLabel(locale, unit.status)],
+    [t('details.destination'), unit.destinationName],
+    [t('details.developer'), unit.developerName],
+    [t('details.project'), unit.projectName],
+    [t('details.unitType'), unit.unitType],
+    [t('create.bua'), `${formatCount(locale, unit.bua)} m²`],
+  ]
+  if (areaFields.showLandArea) mainInfoRows.push([t('details.landArea'), unit.landArea ? `${formatCount(locale, unit.landArea)} m²` : t('common.notSet')])
+  if (areaFields.showFloor) mainInfoRows.push([t('details.floor'), unit.floor])
+  if (areaFields.showGardenArea) mainInfoRows.push([t('details.gardenArea'), unit.gardenArea ? `${formatCount(locale, unit.gardenArea)} m²` : t('common.notSet')])
+  if (areaFields.showTerraceArea) mainInfoRows.push([t('details.terraceArea'), unit.terraceArea ? `${formatCount(locale, unit.terraceArea)} m²` : t('common.notSet')])
+  mainInfoRows.push(
+    [t('details.view'), unit.viewName],
+    [t('details.bedrooms'), formatCount(locale, unit.bedrooms)],
+    [t('details.bathrooms'), formatCount(locale, unit.bathrooms)],
+    [t('details.elevator'), unit.elevator ? t('common.with') : t('common.without')],
+    [t('details.furnishingStatus'), unit.furnished ? t('create.furnishedOption') : t('common.notSet')],
+    [t('details.finishType'), unit.finish],
+  )
   return (
     <>
       <InfoSection
         style={motionStyle(2, 70)}
         title={t('details.mainInfo')}
-        rows={[
-          [t('details.unitCode'), unit.unitCode],
-          [t('details.status'), getStatusLabel(locale, unit.status)],
-          [t('details.developer'), unit.developerName],
-          [t('details.project'), unit.projectName],
-          [t('details.destination'), unit.destinationName],
-          [t('details.unitType'), unit.unitType],
-          [t('details.floor'), unit.floor],
-          [t('create.bua'), `${formatCount(locale, unit.bua)} m²`],
-          [t('details.landArea'), unit.landArea ? `${formatCount(locale, unit.landArea)} m²` : t('common.notSet')],
-          [t('details.roofGardenArea'), unit.roofGardenArea ? `${formatCount(locale, unit.roofGardenArea)} m²` : t('common.notSet')],
-          [t('details.view'), unit.viewName],
-          [t('details.bedrooms'), formatCount(locale, unit.bedrooms)],
-          [t('details.bathrooms'), formatCount(locale, unit.bathrooms)],
-          [t('details.elevator'), unit.elevator ? t('common.with') : t('common.without')],
-          [t('details.furnishingStatus'), unit.furnished ? t('create.furnishedOption') : t('create.unfurnishedOption')],
-          [t('details.finishType'), unit.finish],
-        ]}
+        rows={mainInfoRows}
       />
       <InfoSection
         style={motionStyle(3, 100)}
@@ -2140,15 +2705,17 @@ function UnitDetailsDeepSections({
           ))}
         </div>
       </section>
-      <InfoSection
-        style={motionStyle(9, 320)}
-        title={t('details.ownerData')}
-        rows={[
-          [t('details.ownerName'), ownerAllowed ? unit.originalOwnerName ?? t('common.notSet') : t('common.hiddenByPermission')],
-          [t('details.ownerPhone'), ownerAllowed ? unit.originalOwnerPhone ?? t('common.notSet') : t('common.hiddenByPermission')],
-          [t('details.normalizedPhone'), ownerAllowed ? unit.normalizedOwnerPhone ?? t('common.notSet') : t('common.backendOnlyHidden')],
-        ]}
-      />
+      {ownerAllowed && (
+        <InfoSection
+          style={motionStyle(9, 320)}
+          title={t('details.ownerData')}
+          rows={[
+            [t('details.ownerName'), unit.originalOwnerName ?? t('common.notSet')],
+            [t('details.ownerPhone'), unit.originalOwnerPhone ?? t('common.notSet')],
+            [t('details.normalizedPhone'), unit.normalizedOwnerPhone ?? t('common.notSet')],
+          ]}
+        />
+      )}
     </>
   )
 }
@@ -2276,7 +2843,7 @@ function AnalyticsPage({ appState, user }: { appState: AppDataState; user: Leadr
       <div className="details-hero analytics-hero motion-stage motion-hero" style={motionStyle(0)}>
         <div className="analytics-hero-copy">
           <p className="eyebrow">{dashboard.scopeLabel}</p>
-          <h2>{user.role === 'manager' ? t('analytics.teamHeading') : t('analytics.companyHeading')}</h2>
+          <h2>{t('analytics.companyHeading')}</h2>
           <p>{t('analytics.subheading')}</p>
         </div>
         <div className="analytics-hero-side">
@@ -2698,21 +3265,51 @@ function AdminPage({
   units,
   settings,
   auditLogs,
+  lookupValues,
   lookupCount,
+  defaultBranchId,
+  branches,
+  teams,
+  onCreateLookupValue,
+  onUpdateLookupValue,
+  onArchiveLookupValue,
+  onCreateBranch,
+  onUpdateBranch,
+  onArchiveBranch,
+  onCreateTeam,
+  onUpdateTeam,
+  onArchiveTeam,
   onCreateUser,
   onUpdateUser,
   onUpdateUserPassword,
+  onDeleteSalesRepresentative,
+  onDeleteManagedUser,
   onSettingsUpdate,
 }: {
   users: LeadraUser[]
   units: LeadraUnit[]
   settings: AppSettings
   auditLogs: AuditLogItem[]
+  lookupValues: LookupValue[]
   lookupCount: number
-  onCreateUser: (formData: FormData) => void
+  defaultBranchId: string
+  branches: BranchDirectoryItem[]
+  teams: TeamDirectoryItem[]
+  onCreateLookupValue: (kind: LookupKind, label: string) => Promise<void>
+  onUpdateLookupValue: (lookupId: string, label: string) => Promise<void>
+  onArchiveLookupValue: (lookupId: string) => Promise<void>
+  onCreateBranch: (name: string) => Promise<void>
+  onUpdateBranch: (branchId: string, name: string) => Promise<void>
+  onArchiveBranch: (branchId: string) => Promise<void>
+  onCreateTeam: (name: string) => Promise<void>
+  onUpdateTeam: (teamId: string, name: string) => Promise<void>
+  onArchiveTeam: (teamId: string) => Promise<void>
+  onCreateUser: (formData: FormData) => Promise<void>
   onUpdateUser: (userId: string, updates: Partial<LeadraUser>) => Promise<void>
   onUpdateUserPassword: (userId: string, password: string) => Promise<void>
-  onSettingsUpdate: (commissionPercentage: number) => void
+  onDeleteSalesRepresentative: (salesUserId: string, replacementSalesUserId: string) => Promise<void>
+  onDeleteManagedUser: (managedUserId: string) => Promise<void>
+  onSettingsUpdate: (settings: Partial<AppSettings>) => Promise<void>
 }) {
   const { locale, t } = useLocale()
   const [activeSection, setActiveSection] = useState<(typeof adminSections)[number]>('Users')
@@ -2723,18 +3320,50 @@ function AdminPage({
   const [sortUsersBy, setSortUsersBy] = useState<'role' | 'name' | 'recent'>('role')
   const [editingUserId, setEditingUserId] = useState<string | null>(null)
   const [createUserOpen, setCreateUserOpen] = useState(false)
+  const [createUserError, setCreateUserError] = useState('')
   const [visibleUserCount, setVisibleUserCount] = useState(userManagementPageSize)
   const [visibleAuditCount, setVisibleAuditCount] = useState(auditLogPageSize)
   const deferredUserQuery = useDeferredValue(userQuery)
   const userListStateKey = `${deferredUserQuery}-${roleFilter}-${statusFilter}-${teamFilter}-${sortUsersBy}`
-  const teamOptions = useMemo(
-    () => Array.from(new Set(users.map((item) => item.teamId))).sort((first, second) => compareText(locale, first, second)),
+  const teamOptions = useMemo(() => {
+    const activeTeams = teams
+      .filter((team) => !team.archived)
+      .map((team) => ({ value: team.id, label: team.name }))
+      .sort((first, second) => compareText(locale, first.label, second.label))
+    if (activeTeams.length > 0) return activeTeams
+
+    return Array.from(new Set(users.map((item) => item.teamId).filter(Boolean)))
+      .sort((first, second) => compareText(locale, first, second))
+      .map((teamId) => ({ value: teamId, label: teamId }))
+  }, [teams, users, locale])
+  const createUserTeamOptions = [{ value: '', label: t('admin.noTeam') }, ...teamOptions]
+  const branchOptions = useMemo(() => {
+    const activeBranches = branches
+      .filter((branch) => !branch.archived)
+      .map((branch) => ({ value: branch.id, label: branch.name }))
+      .sort((first, second) => compareText(locale, first.label, second.label))
+    if (activeBranches.length > 0) return activeBranches
+
+    return Array.from(new Set(users.map((item) => item.branchId).filter(Boolean)))
+      .sort((first, second) => compareText(locale, first, second))
+      .map((branchId) => ({ value: branchId, label: branchId }))
+  }, [branches, users, locale])
+  const userTeamOptions = createUserTeamOptions
+  const userBranchOptions = [{ value: '', label: t('admin.noBranch') }, ...branchOptions]
+  const teamFilterOptions = teamOptions
+  const defaultCreateTeamId = ''
+  const activeSalesUsers = useMemo(
+    () =>
+      users
+        .filter((item) => item.role === 'sales' && item.status === 'active' && !item.deletedAt)
+        .sort((first, second) => compareText(locale, first.fullName, second.fullName)),
     [users, locale],
   )
   const filteredUsers = useMemo(
     () =>
       users
         .filter((item) => {
+          if ((item.deletedAt || item.status === 'inactive') && statusFilter !== 'inactive') return false
           const query = deferredUserQuery.trim().toLowerCase()
           const matchesQuery =
             query.length === 0 ||
@@ -2799,7 +3428,14 @@ function AdminPage({
                 <span>{t('admin.managerCount', { count: formatCount(locale, userCountsByRole.manager) })}</span>
                 <span>{t('admin.salesCount', { count: formatCount(locale, userCountsByRole.sales) })}</span>
               </div>
-              <button className="primary-button" type="button" onClick={() => setCreateUserOpen((open) => !open)}>
+              <button
+                className="primary-button"
+                type="button"
+                onClick={() => {
+                  setCreateUserError('')
+                  setCreateUserOpen((open) => !open)
+                }}
+              >
                 {createUserOpen ? t('admin.closeForm') : t('admin.newUser')}
               </button>
             </div>
@@ -2808,11 +3444,30 @@ function AdminPage({
             <form
               className="settings-form create-user-panel motion-stage"
               style={motionStyle(0, 110)}
-              onSubmit={(event) => {
+              onSubmit={async (event) => {
                 event.preventDefault()
-                onCreateUser(new FormData(event.currentTarget))
-                event.currentTarget.reset()
-                setCreateUserOpen(false)
+                const form = event.currentTarget
+                const formData = new FormData(form)
+                const password = String(formData.get('password') ?? '')
+                const confirmPassword = String(formData.get('confirmPassword') ?? '')
+
+                setCreateUserError('')
+                if (password.length < 8) {
+                  setCreateUserError(t('admin.passwordTooShort'))
+                  return
+                }
+                if (password !== confirmPassword) {
+                  setCreateUserError(t('admin.passwordMismatch'))
+                  return
+                }
+
+                try {
+                  await onCreateUser(formData)
+                  form.reset()
+                  setCreateUserOpen(false)
+                } catch {
+                  // The parent renders the error flash; keep the form open so the admin can retry.
+                }
               }}
             >
               <label>
@@ -2823,6 +3478,8 @@ function AdminPage({
                 {t('admin.email')}
                 <input name="email" type="email" required placeholder={t('admin.emailPlaceholder')} dir="auto" />
               </label>
+              <PasswordField label={t('admin.newPassword')} name="password" required minLength={8} autoComplete="new-password" />
+              <PasswordField label={t('admin.confirmPassword')} name="confirmPassword" required minLength={8} autoComplete="new-password" />
               <NamedSelectField
                 defaultValue="sales"
                 label={t('admin.role')}
@@ -2842,14 +3499,24 @@ function AdminPage({
                 {t('admin.phoneNumber')}
                 <input name="phoneNumber" required defaultValue="+201000000000" dir="auto" />
               </label>
-              <label>
-                {t('admin.team')}
-                <input name="teamId" required defaultValue="team-prime" dir="auto" />
-              </label>
+              {createUserTeamOptions.length > 0 ? (
+                <NamedSelectField
+                  defaultValue={defaultCreateTeamId}
+                  label={t('admin.team')}
+                  name="teamId"
+                  options={createUserTeamOptions}
+                />
+              ) : (
+                <label>
+                  {t('admin.team')}
+                  <input name="teamId" defaultValue="" placeholder={t('admin.noTeamsYet')} dir="auto" />
+                </label>
+              )}
               <label>
                 {t('admin.branch')}
-                <input name="branchId" required defaultValue="branch-cairo" dir="auto" />
+                <input name="branchId" dir="auto" placeholder={defaultBranchId || undefined} />
               </label>
+              {createUserError && <p className="form-error">{createUserError}</p>}
               <button className="secondary-button" type="submit">{t('admin.createUser')}</button>
             </form>
           )}
@@ -2875,7 +3542,7 @@ function AdminPage({
               label={t('admin.team')}
               options={[
                 { value: 'all', label: t('admin.allTeams') },
-                ...teamOptions.map((teamId) => ({ value: teamId, label: teamId })),
+                ...teamFilterOptions,
               ]}
               value={teamFilter}
               onValueChange={setTeamFilter}
@@ -2921,6 +3588,11 @@ function AdminPage({
                   setEditingUserId(null)
                 }}
                 onPasswordUpdate={(password) => onUpdateUserPassword(item.id, password)}
+                teamOptions={userTeamOptions}
+                branchOptions={userBranchOptions}
+                salesReplacementOptions={activeSalesUsers.filter((salesUser) => salesUser.id !== item.id)}
+                onDeleteSalesRepresentative={(replacementSalesUserId) => onDeleteSalesRepresentative(item.id, replacementSalesUserId)}
+                onDeleteManagedUser={() => onDeleteManagedUser(item.id)}
               />
             ))}
             {filteredUsers.length === 0 && <EmptyState title={t('admin.noUsersTitle')} body={t('admin.noUsersBody')} />}
@@ -2933,6 +3605,27 @@ function AdminPage({
         </section>
       )}
 
+      {activeSection === 'Master Data' && (
+        <MasterDataPanel
+          lookupValues={lookupValues}
+          branches={branches}
+          teams={teams}
+          userCounts={users.reduce<Record<string, number>>((counts, item) => ({
+            ...counts,
+            [item.teamId]: (counts[item.teamId] ?? 0) + 1,
+          }), {})}
+          onCreateLookupValue={onCreateLookupValue}
+          onUpdateLookupValue={onUpdateLookupValue}
+          onArchiveLookupValue={onArchiveLookupValue}
+          onCreateBranch={onCreateBranch}
+          onUpdateBranch={onUpdateBranch}
+          onArchiveBranch={onArchiveBranch}
+          onCreateTeam={onCreateTeam}
+          onUpdateTeam={onUpdateTeam}
+          onArchiveTeam={onArchiveTeam}
+        />
+      )}
+
       {activeSection === 'Settings' && (
         <section className="content-card admin-panel motion-stage motion-subtle" style={motionStyle(1)}>
           <h2><Settings size={19} /> {t('admin.unitManagement')}</h2>
@@ -2942,12 +3635,47 @@ function AdminPage({
             onSubmit={(event) => {
               event.preventDefault()
               const formData = new FormData(event.currentTarget)
-              onSettingsUpdate(Number(formData.get('commissionPercentage')))
+              void onSettingsUpdate({
+                companyName: String(formData.get('companyName') ?? '').trim() || 'Leadra',
+                commissionPercentage: Number(formData.get('commissionPercentage')),
+                footerText: String(formData.get('footerText') ?? '').trim(),
+                contactDetails: String(formData.get('contactDetails') ?? '').trim(),
+                logoPath: String(formData.get('logoPath') ?? '').trim(),
+                pdfLayout: String(formData.get('pdfLayout')) === 'compact' ? 'compact' : 'classic',
+                mediaLimitMb: Number(formData.get('mediaLimitMb')),
+              })
             }}
           >
             <label>
+              {t('admin.companyName')}
+              <input name="companyName" required defaultValue={settings.companyName} dir="auto" />
+            </label>
+            <label>
               {t('admin.commissionPercentage')}
-              <input name="commissionPercentage" type="number" step="0.1" defaultValue={settings.commissionPercentage} />
+              <input name="commissionPercentage" type="number" min="0" step="0.1" defaultValue={settings.commissionPercentage} />
+            </label>
+            <label>
+              {t('admin.mediaLimit')}
+              <input name="mediaLimitMb" type="number" min="1" step="1" defaultValue={settings.mediaLimitMb} />
+            </label>
+            <label>
+              {t('admin.logoPath')}
+              <input name="logoPath" defaultValue={settings.logoPath} placeholder="/brand/leadra-logo.png" dir="auto" />
+            </label>
+            <label>
+              {t('admin.pdfLayout')}
+              <select name="pdfLayout" defaultValue={settings.pdfLayout}>
+                <option value="classic">{t('admin.pdfLayoutClassic')}</option>
+                <option value="compact">{t('admin.pdfLayoutCompact')}</option>
+              </select>
+            </label>
+            <label>
+              {t('admin.footerText')}
+              <input name="footerText" defaultValue={settings.footerText} dir="auto" />
+            </label>
+            <label>
+              {t('admin.contactDetails')}
+              <input name="contactDetails" defaultValue={settings.contactDetails} dir="auto" />
             </label>
             <button className="secondary-button" type="submit">{t('admin.saveSettings')}</button>
           </form>
@@ -2987,6 +3715,456 @@ function AdminPage({
   )
 }
 
+function MasterDataPanel({
+  lookupValues,
+  branches,
+  teams,
+  userCounts,
+  onCreateLookupValue,
+  onUpdateLookupValue,
+  onArchiveLookupValue,
+  onCreateBranch,
+  onUpdateBranch,
+  onArchiveBranch,
+  onCreateTeam,
+  onUpdateTeam,
+  onArchiveTeam,
+}: {
+  lookupValues: LookupValue[]
+  branches: BranchDirectoryItem[]
+  teams: TeamDirectoryItem[]
+  userCounts: Record<string, number>
+  onCreateLookupValue: (kind: LookupKind, label: string) => Promise<void>
+  onUpdateLookupValue: (lookupId: string, label: string) => Promise<void>
+  onArchiveLookupValue: (lookupId: string) => Promise<void>
+  onCreateBranch: (name: string) => Promise<void>
+  onUpdateBranch: (branchId: string, name: string) => Promise<void>
+  onArchiveBranch: (branchId: string) => Promise<void>
+  onCreateTeam: (name: string) => Promise<void>
+  onUpdateTeam: (teamId: string, name: string) => Promise<void>
+  onArchiveTeam: (teamId: string) => Promise<void>
+}) {
+  const { locale, t } = useLocale()
+  const [lookupKind, setLookupKind] = useState<LookupKind>('developer')
+  const lookupGroups = lookupKindOptions.map((kind) => ({
+    kind,
+    label: getLookupKindLabel(kind, locale),
+    values: lookupValues
+      .filter((value) => value.kind === kind && !value.archived)
+      .sort((first, second) => compareText(locale, first.label, second.label)),
+  }))
+
+  return (
+    <section className="content-card admin-panel motion-stage motion-subtle" style={motionStyle(1)}>
+      <div className="admin-user-header">
+        <div>
+          <p className="eyebrow">{t('admin.masterDataEyebrow')}</p>
+          <h2><Building2 size={19} /> {t('admin.masterData')}</h2>
+          <p>{t('admin.masterDataCopy')}</p>
+        </div>
+      </div>
+
+      <DirectoryCreateForm
+        label={t('admin.lookupLabel')}
+        name="lookupLabel"
+        placeholder={t('admin.lookupLabelPlaceholder')}
+        buttonLabel={t('admin.addLookupValue')}
+        extraControl={(
+          <ControlledSelectField
+            label={t('admin.lookupKind')}
+            options={lookupKindOptions.map((kind) => ({ value: kind, label: getLookupKindLabel(kind, locale) }))}
+            value={lookupKind}
+            onValueChange={(value) => setLookupKind(value as LookupKind)}
+          />
+        )}
+        onCreate={(label) => onCreateLookupValue(lookupKind, label)}
+      />
+
+      {lookupGroups.map((group) => (
+        <DirectoryList
+          key={group.kind}
+          title={group.label}
+          emptyTitle={t('admin.noLookupValuesTitle')}
+          emptyBody={t('admin.noLookupValuesBody')}
+          items={group.values.map((value) => ({ id: value.id, name: value.label, meta: value.id, locked: false }))}
+          onUpdate={onUpdateLookupValue}
+          onArchive={onArchiveLookupValue}
+        />
+      ))}
+
+      <DirectoryCreateForm
+        label={t('admin.branchName')}
+        name="branchName"
+        placeholder={t('admin.branchNamePlaceholder')}
+        buttonLabel={t('admin.addBranch')}
+        onCreate={onCreateBranch}
+      />
+      <DirectoryList
+        title={t('admin.branchManagement')}
+        emptyTitle={t('admin.noBranchesTitle')}
+        emptyBody={t('admin.noBranchesBody')}
+        items={branches.map((branch) => ({ id: branch.id, name: branch.name, meta: branch.id, locked: teams.some((team) => team.branchId === branch.id) }))}
+        onUpdate={onUpdateBranch}
+        onArchive={onArchiveBranch}
+      />
+
+      <TeamManagementPanel
+        teams={teams}
+        userCounts={userCounts}
+        onCreateTeam={onCreateTeam}
+        onUpdateTeam={onUpdateTeam}
+        onArchiveTeam={onArchiveTeam}
+      />
+    </section>
+  )
+}
+
+function DirectoryCreateForm({
+  label,
+  name,
+  placeholder,
+  buttonLabel,
+  extraControl,
+  onCreate,
+}: {
+  label: string
+  name: string
+  placeholder: string
+  buttonLabel: string
+  extraControl?: ReactNode
+  onCreate: (value: string) => Promise<void>
+}) {
+  const { t } = useLocale()
+  const [error, setError] = useState('')
+  const [pending, setPending] = useState(false)
+
+  return (
+    <form
+      className="settings-form create-user-panel"
+      onSubmit={async (event) => {
+        event.preventDefault()
+        const form = event.currentTarget
+        const value = String(new FormData(form).get(name) ?? '').trim()
+        setError('')
+        if (!value) {
+          setError(t('admin.valueRequired'))
+          return
+        }
+        try {
+          setPending(true)
+          await onCreate(value)
+          form.reset()
+        } catch (createError) {
+          setError(createError instanceof Error ? createError.message : t('admin.valueSaveFailed'))
+        } finally {
+          setPending(false)
+        }
+      }}
+    >
+      {extraControl}
+      <label>
+        {label}
+        <input name={name} required placeholder={placeholder} dir="auto" />
+      </label>
+      {error && <p className="form-error">{error}</p>}
+      <button className="secondary-button" type="submit" disabled={pending}>{pending ? t('common.saving') : buttonLabel}</button>
+    </form>
+  )
+}
+
+function DirectoryList({
+  title,
+  emptyTitle,
+  emptyBody,
+  items,
+  onUpdate,
+  onArchive,
+}: {
+  title: string
+  emptyTitle: string
+  emptyBody: string
+  items: Array<{ id: string; name: string; meta: string; locked: boolean }>
+  onUpdate: (id: string, name: string) => Promise<void>
+  onArchive: (id: string) => Promise<void>
+}) {
+  const { t } = useLocale()
+  const [editingId, setEditingId] = useState<string | null>(null)
+
+  return (
+    <div className="user-management-list" aria-label={title}>
+      <h3>{title}</h3>
+      {items.map((item, index) => (
+        <DirectoryCard
+          key={item.id}
+          item={item}
+          index={index}
+          isEditing={editingId === item.id}
+          onEdit={() => setEditingId(item.id)}
+          onCancel={() => setEditingId(null)}
+          onSave={async (name) => {
+            await onUpdate(item.id, name)
+            setEditingId(null)
+          }}
+          onArchive={() => onArchive(item.id)}
+        />
+      ))}
+      {items.length === 0 && <EmptyState title={emptyTitle} body={emptyBody} />}
+      {items.some((item) => item.locked) && <small>{t('admin.archiveLockedHint')}</small>}
+    </div>
+  )
+}
+
+function DirectoryCard({
+  item,
+  index,
+  isEditing,
+  onEdit,
+  onCancel,
+  onSave,
+  onArchive,
+}: {
+  item: { id: string; name: string; meta: string; locked: boolean }
+  index: number
+  isEditing: boolean
+  onEdit: () => void
+  onCancel: () => void
+  onSave: (name: string) => Promise<void>
+  onArchive: () => Promise<void>
+}) {
+  const { t } = useLocale()
+  const [error, setError] = useState('')
+  const [pending, setPending] = useState(false)
+
+  return (
+    <article className="user-management-card motion-stage active" style={motionStyle(index)}>
+      <div className="user-management-main">
+        <div>
+          <strong>{item.name}</strong>
+          <span>{item.meta}</span>
+        </div>
+      </div>
+      {!isEditing && (
+        <div className="user-card-actions">
+          <button className="secondary-button" type="button" onClick={onEdit} disabled={pending}>{t('common.edit')}</button>
+          <button className="danger-button" type="button" onClick={async () => {
+            setPending(true)
+            try {
+              await onArchive()
+            } finally {
+              setPending(false)
+            }
+          }} disabled={pending || item.locked}>{pending ? t('common.saving') : t('common.archive')}</button>
+        </div>
+      )}
+      {isEditing && (
+        <form
+          className="user-edit-form motion-stage"
+          style={motionStyle(0, 80)}
+          onSubmit={async (event) => {
+            event.preventDefault()
+            const name = String(new FormData(event.currentTarget).get('name') ?? '').trim()
+            setError('')
+            if (!name) {
+              setError(t('admin.valueRequired'))
+              return
+            }
+            try {
+              setPending(true)
+              await onSave(name)
+            } catch (saveError) {
+              setError(saveError instanceof Error ? saveError.message : t('admin.valueSaveFailed'))
+            } finally {
+              setPending(false)
+            }
+          }}
+        >
+          <label>
+            {t('admin.valueName')}
+            <input name="name" required defaultValue={item.name} dir="auto" />
+          </label>
+          {error && <p className="form-error">{error}</p>}
+          <div className="user-edit-actions">
+            <button className="secondary-button" type="button" onClick={onCancel} disabled={pending}>{t('common.cancel')}</button>
+            <button className="secondary-button" type="submit" disabled={pending}>{pending ? t('common.saving') : t('common.save')}</button>
+          </div>
+        </form>
+      )}
+    </article>
+  )
+}
+
+function TeamManagementPanel({
+  teams,
+  userCounts,
+  onCreateTeam,
+  onUpdateTeam,
+  onArchiveTeam,
+}: {
+  teams: TeamDirectoryItem[]
+  userCounts: Record<string, number>
+  onCreateTeam: (name: string) => Promise<void>
+  onUpdateTeam: (teamId: string, name: string) => Promise<void>
+  onArchiveTeam: (teamId: string) => Promise<void>
+}) {
+  const { t } = useLocale()
+  const [editingTeamId, setEditingTeamId] = useState<string | null>(null)
+  const [pendingTeamId, setPendingTeamId] = useState<string | null>(null)
+  const [createError, setCreateError] = useState('')
+
+  return (
+    <section className="content-card admin-panel motion-stage motion-subtle" style={motionStyle(1)}>
+      <div className="admin-user-header">
+        <div>
+          <p className="eyebrow">{t('admin.teamOperations')}</p>
+          <h2><Users size={19} /> {t('admin.teamManagement')}</h2>
+          <p>{t('admin.teamManagementCopy')}</p>
+        </div>
+      </div>
+      <form
+        className="settings-form create-user-panel"
+        onSubmit={async (event) => {
+          event.preventDefault()
+          const form = event.currentTarget
+          const name = String(new FormData(form).get('teamName') ?? '').trim()
+          setCreateError('')
+          if (!name) {
+            setCreateError(t('admin.teamNameRequired'))
+            return
+          }
+          try {
+            setPendingTeamId('new')
+            await onCreateTeam(name)
+            form.reset()
+          } catch (error) {
+            setCreateError(error instanceof Error ? error.message : t('admin.teamSaveFailed'))
+          } finally {
+            setPendingTeamId(null)
+          }
+        }}
+      >
+        <label>
+          {t('admin.teamName')}
+          <input name="teamName" required placeholder={t('admin.teamNamePlaceholder')} dir="auto" />
+        </label>
+        {createError && <p className="form-error">{createError}</p>}
+        <button className="secondary-button" type="submit" disabled={pendingTeamId === 'new'}>
+          {pendingTeamId === 'new' ? t('common.saving') : t('admin.addTeam')}
+        </button>
+      </form>
+
+      <div className="user-management-list" aria-label={t('admin.teamManagement')}>
+        {teams.map((team, index) => (
+          <TeamManagementCard
+            key={team.id}
+            index={index}
+            team={team}
+            userCount={userCounts[team.id] ?? 0}
+            isEditing={editingTeamId === team.id}
+            pending={pendingTeamId === team.id}
+            onEdit={() => setEditingTeamId(team.id)}
+            onCancel={() => setEditingTeamId(null)}
+            onSave={async (name) => {
+              setPendingTeamId(team.id)
+              try {
+                await onUpdateTeam(team.id, name)
+                setEditingTeamId(null)
+              } finally {
+                setPendingTeamId(null)
+              }
+            }}
+            onArchive={async () => {
+              setPendingTeamId(team.id)
+              try {
+                await onArchiveTeam(team.id)
+              } finally {
+                setPendingTeamId(null)
+              }
+            }}
+          />
+        ))}
+        {teams.length === 0 && <EmptyState title={t('admin.noTeamsTitle')} body={t('admin.noTeamsBody')} />}
+      </div>
+    </section>
+  )
+}
+
+function TeamManagementCard({
+  team,
+  userCount,
+  index,
+  isEditing,
+  pending,
+  onEdit,
+  onCancel,
+  onSave,
+  onArchive,
+}: {
+  team: TeamDirectoryItem
+  userCount: number
+  index: number
+  isEditing: boolean
+  pending: boolean
+  onEdit: () => void
+  onCancel: () => void
+  onSave: (name: string) => Promise<void>
+  onArchive: () => Promise<void>
+}) {
+  const { locale, t } = useLocale()
+  const [error, setError] = useState('')
+
+  return (
+    <article className="user-management-card motion-stage active" style={motionStyle(index)}>
+      <div className="user-management-main">
+        <div>
+          <strong>{team.name}</strong>
+          <span>{team.id}</span>
+        </div>
+        <div className="user-management-meta">
+          <span>{t('admin.teamMemberCount', { count: formatCount(locale, userCount) })}</span>
+        </div>
+      </div>
+      {!isEditing && (
+        <div className="user-card-actions">
+          <button className="secondary-button" type="button" onClick={onEdit} disabled={pending}>{t('admin.editTeam')}</button>
+          <button className="danger-button" type="button" onClick={onArchive} disabled={pending || userCount > 0}>
+            {pending ? t('common.saving') : t('admin.removeTeam')}
+          </button>
+        </div>
+      )}
+      {isEditing && (
+        <form
+          className="user-edit-form motion-stage"
+          style={motionStyle(0, 80)}
+          onSubmit={async (event) => {
+            event.preventDefault()
+            const name = String(new FormData(event.currentTarget).get('teamName') ?? '').trim()
+            setError('')
+            if (!name) {
+              setError(t('admin.teamNameRequired'))
+              return
+            }
+            try {
+              await onSave(name)
+            } catch (saveError) {
+              setError(saveError instanceof Error ? saveError.message : t('admin.teamSaveFailed'))
+            }
+          }}
+        >
+          <label>
+            {t('admin.teamName')}
+            <input name="teamName" required defaultValue={team.name} dir="auto" />
+          </label>
+          {error && <p className="form-error">{error}</p>}
+          <div className="user-edit-actions">
+            <button className="secondary-button" type="button" onClick={onCancel} disabled={pending}>{t('common.cancel')}</button>
+            <button className="secondary-button" type="submit" disabled={pending}>{pending ? t('common.saving') : t('admin.saveTeam')}</button>
+          </div>
+        </form>
+      )}
+    </article>
+  )
+}
+
 function UserManagementCard({
   user,
   index = 0,
@@ -2995,6 +4173,11 @@ function UserManagementCard({
   onCancel,
   onSave,
   onPasswordUpdate,
+  teamOptions,
+  branchOptions,
+  salesReplacementOptions,
+  onDeleteSalesRepresentative,
+  onDeleteManagedUser,
 }: {
   user: LeadraUser
   index?: number
@@ -3003,6 +4186,11 @@ function UserManagementCard({
   onCancel: () => void
   onSave: (updates: Partial<LeadraUser>) => Promise<void>
   onPasswordUpdate: (password: string) => Promise<void>
+  teamOptions: BrandedSelectOption[]
+  branchOptions: BrandedSelectOption[]
+  salesReplacementOptions: LeadraUser[]
+  onDeleteSalesRepresentative: (replacementSalesUserId: string) => Promise<void>
+  onDeleteManagedUser: () => Promise<void>
 }) {
   const { locale, t } = useLocale()
   const [passwordEditorOpen, setPasswordEditorOpen] = useState(false)
@@ -3010,6 +4198,11 @@ function UserManagementCard({
   const [passwordSaving, setPasswordSaving] = useState(false)
   const [saveError, setSaveError] = useState('')
   const [savePending, setSavePending] = useState(false)
+  const [deleteEditorOpen, setDeleteEditorOpen] = useState(false)
+  const [deleteError, setDeleteError] = useState('')
+  const [deletePending, setDeletePending] = useState(false)
+  const [replacementSalesUserId, setReplacementSalesUserId] = useState(salesReplacementOptions[0]?.id ?? '')
+  const canDeleteManagedUser = user.role !== 'admin' && user.status === 'active' && !user.deletedAt
 
   return (
     <article className={`user-management-card motion-stage ${user.status}`} style={motionStyle(index)}>
@@ -3047,6 +4240,20 @@ function UserManagementCard({
           >
             {passwordEditorOpen ? t('admin.closePassword') : t('admin.setPassword')}
           </button>
+          {canDeleteManagedUser && (
+            <button
+              className="danger-button"
+              type="button"
+              aria-label={t('admin.deleteUserFor', { name: user.fullName })}
+              onClick={() => {
+                setDeleteError('')
+                setReplacementSalesUserId(salesReplacementOptions[0]?.id ?? '')
+                setDeleteEditorOpen((open) => !open)
+              }}
+            >
+              {deleteEditorOpen ? t('common.cancel') : t('admin.deleteUser')}
+            </button>
+          )}
         </div>
       )}
 
@@ -3067,7 +4274,7 @@ function UserManagementCard({
                 jobTitle: String(formData.get('jobTitle')),
                 phoneNumber: String(formData.get('phoneNumber')),
                 teamId: String(formData.get('teamId')),
-                branchId: String(formData.get('branchId')),
+                branchId: String(formData.get('branchId') ?? ''),
                 status: String(formData.get('status')) as LeadraUser['status'],
               })
             } catch (error) {
@@ -3113,19 +4320,80 @@ function UserManagementCard({
             {t('profile.phone')}
             <input name="phoneNumber" defaultValue={user.phoneNumber} required dir="auto" />
           </label>
-          <label>
-            {t('admin.team')}
-            <input name="teamId" defaultValue={user.teamId} required dir="auto" />
-          </label>
-          <label>
-            {t('admin.branch')}
-            <input name="branchId" defaultValue={user.branchId} required dir="auto" />
-          </label>
+          <NamedSelectField
+            defaultValue={user.teamId}
+            label={t('admin.team')}
+            name="teamId"
+            options={teamOptions}
+          />
+          <NamedSelectField
+            defaultValue={user.branchId}
+            label={t('admin.branch')}
+            name="branchId"
+            options={branchOptions}
+          />
           {saveError && <p className="form-error">{saveError}</p>}
           <div className="user-edit-actions">
             <button className="secondary-button" type="button" onClick={onCancel} disabled={savePending}>{t('common.cancel')}</button>
             <button className="primary-button" type="submit" disabled={savePending}>
               {savePending ? t('common.saving') : t('admin.saveUser')}
+            </button>
+          </div>
+        </form>
+      )}
+
+      {deleteEditorOpen && !isEditing && canDeleteManagedUser && (
+        <form
+          className="user-password-form motion-stage"
+          style={motionStyle(0, 90)}
+          onSubmit={async (event) => {
+            event.preventDefault()
+            setDeleteError('')
+            if (user.role === 'sales' && !replacementSalesUserId) {
+              setDeleteError(t('admin.selectReplacementSalesRep'))
+              return
+            }
+
+            setDeletePending(true)
+            try {
+              if (user.role === 'sales') {
+                await onDeleteSalesRepresentative(replacementSalesUserId)
+              } else {
+                await onDeleteManagedUser()
+              }
+              setDeleteEditorOpen(false)
+            } catch (error) {
+              setDeleteError(error instanceof Error ? error.message : t('admin.deleteUserFailed'))
+            } finally {
+              setDeletePending(false)
+            }
+          }}
+        >
+          <div className="password-form-copy">
+            <strong>
+              {user.role === 'sales'
+                ? t('admin.reassignBeforeDelete', { name: user.fullName })
+                : t('admin.deleteUserConfirmTitle', { name: user.fullName })}
+            </strong>
+            <small>{user.role === 'sales' ? t('admin.reassignBeforeDeleteCopy') : t('admin.deleteUserConfirmCopy')}</small>
+          </div>
+          {user.role === 'sales' && (
+            <ControlledSelectField
+              label={t('admin.replacementSalesRep')}
+              options={salesReplacementOptions.map((item) => ({ value: item.id, label: item.fullName }))}
+              value={replacementSalesUserId}
+              disabled={deletePending || salesReplacementOptions.length === 0}
+              onValueChange={setReplacementSalesUserId}
+            />
+          )}
+          {user.role === 'sales' && salesReplacementOptions.length === 0 && <p className="form-error">{t('admin.noReplacementSalesRep')}</p>}
+          {deleteError && <p className="form-error">{deleteError}</p>}
+          <div className="user-edit-actions">
+            <button className="secondary-button" type="button" onClick={() => setDeleteEditorOpen(false)} disabled={deletePending}>
+              {t('common.cancel')}
+            </button>
+            <button className="danger-button" type="submit" disabled={deletePending || (user.role === 'sales' && salesReplacementOptions.length === 0)}>
+              {deletePending ? t('common.saving') : user.role === 'sales' ? t('admin.confirmDeleteSalesRep') : t('admin.confirmDeleteUser')}
             </button>
           </div>
         </form>
@@ -3138,11 +4406,12 @@ function UserManagementCard({
           onSubmit={async (event) => {
             event.preventDefault()
             setPasswordError('')
-            const formData = new FormData(event.currentTarget)
+            const form = event.currentTarget
+            const formData = new FormData(form)
             const password = String(formData.get('password') ?? '')
             const confirmPassword = String(formData.get('confirmPassword') ?? '')
 
-            if (password.length < 10) {
+            if (password.length < 8) {
               setPasswordError(t('admin.passwordTooShort'))
               return
             }
@@ -3155,7 +4424,7 @@ function UserManagementCard({
             setPasswordSaving(true)
             try {
               await onPasswordUpdate(password)
-              event.currentTarget.reset()
+              form.reset()
               setPasswordEditorOpen(false)
             } catch (error) {
               setPasswordError(error instanceof Error ? error.message : t('admin.passwordUpdateFailed'))
@@ -3168,14 +4437,8 @@ function UserManagementCard({
             <strong>{t('admin.setPasswordFor', { name: user.fullName })}</strong>
             <small>{t('admin.passwordCopy')}</small>
           </div>
-          <label>
-            {t('admin.newPassword')}
-            <input name="password" type="password" required minLength={10} autoComplete="new-password" />
-          </label>
-          <label>
-            {t('admin.confirmPassword')}
-            <input name="confirmPassword" type="password" required minLength={10} autoComplete="new-password" />
-          </label>
+          <PasswordField label={t('admin.newPassword')} name="password" required minLength={8} autoComplete="new-password" />
+          <PasswordField label={t('admin.confirmPassword')} name="confirmPassword" required minLength={8} autoComplete="new-password" />
           {passwordError && <p className="form-error">{passwordError}</p>}
           <div className="user-edit-actions">
             <button className="secondary-button" type="button" onClick={() => setPasswordEditorOpen(false)} disabled={passwordSaving}>
@@ -3402,11 +4665,20 @@ function BrandedSelect({
   )
 }
 
-function SelectField({ name, label, values }: { name: string; label: string; values: { id: string; label: string }[] }) {
+function RequiredLabel({ label, required = false }: { label: string; required?: boolean }) {
+  return (
+    <>
+      {label}
+      {required && <span className="required-marker" aria-hidden="true"> *</span>}
+    </>
+  )
+}
+
+function SelectField({ name, label, values, required = false }: { name: string; label: string; values: { id: string; label: string }[]; required?: boolean }) {
   const labelId = useId()
   return (
     <label>
-      <span id={labelId}>{label}</span>
+      <span id={labelId}><RequiredLabel label={label} required={required} /></span>
       <BrandedSelect
         defaultValue={values[0]?.id}
         labelId={labelId}
@@ -3423,6 +4695,7 @@ function ControlledSelectField({
   value,
   disabled = false,
   className,
+  required = false,
   onValueChange,
 }: {
   label: string
@@ -3430,12 +4703,13 @@ function ControlledSelectField({
   value: string
   disabled?: boolean
   className?: string
+  required?: boolean
   onValueChange: (value: string) => void
 }) {
   const labelId = useId()
   return (
     <label className={className}>
-      <span id={labelId}>{label}</span>
+      <span id={labelId}><RequiredLabel label={label} required={required} /></span>
       <BrandedSelect
         disabled={disabled}
         labelId={labelId}
@@ -3451,18 +4725,24 @@ function NamedSelectField({
   name,
   label,
   options,
+  value,
   defaultValue,
+  required = false,
+  onValueChange,
 }: {
   name: string
   label: string
   options: BrandedSelectOption[]
+  value?: string
   defaultValue?: string
+  required?: boolean
+  onValueChange?: (value: string) => void
 }) {
   const labelId = useId()
   return (
     <label>
-      <span id={labelId}>{label}</span>
-      <BrandedSelect defaultValue={defaultValue} labelId={labelId} name={name} options={options} />
+      <span id={labelId}><RequiredLabel label={label} required={required} /></span>
+      <BrandedSelect defaultValue={defaultValue} labelId={labelId} name={name} options={options} value={value} onValueChange={onValueChange} />
     </label>
   )
 }
@@ -3491,7 +4771,7 @@ function OwnerPhoneField({
 
   return (
     <div className="owner-phone-field">
-      <span className="owner-phone-label" id={phoneLabelId}>{t('create.ownerPhone')}</span>
+      <span className="owner-phone-label" id={phoneLabelId}><RequiredLabel label={t('create.ownerPhone')} required /></span>
       <div className="owner-phone-shell" role="group" aria-labelledby={phoneLabelId}>
         <div className="owner-phone-country">
           <span className="sr-only" id={countryLabelId}>{t('create.countryCode')}</span>
@@ -3521,11 +4801,11 @@ function OwnerPhoneField({
   )
 }
 
-function NumberField({ name, label, defaultValue, min, max }: { name: string; label: string; defaultValue: number; min?: number; max?: number }) {
+function NumberField({ name, label, defaultValue, min, max, required = false }: { name: string; label: string; defaultValue: number; min?: number; max?: number; required?: boolean }) {
   return (
     <label>
-      {label}
-      <input name={name} type="number" defaultValue={defaultValue} min={min} max={max} />
+      <RequiredLabel label={label} required={required} />
+      <input name={name} type="number" defaultValue={defaultValue} min={min} max={max} required={required} />
     </label>
   )
 }
@@ -3670,9 +4950,36 @@ function translateCreateStep(step: (typeof createUnitSteps)[number], locale: Loc
 
 function translateAdminSection(section: (typeof adminSections)[number], locale: LocaleCode) {
   if (section === 'Users') return translateForLocale(locale, 'admin.users')
+  if (section === 'Master Data') return translateForLocale(locale, 'admin.masterData')
   if (section === 'Settings') return translateForLocale(locale, 'admin.settings')
   if (section === 'Metrics') return translateForLocale(locale, 'admin.metrics')
   return translateForLocale(locale, 'admin.audit')
+}
+
+function getLookupKindLabel(kind: LookupKind, locale: LocaleCode) {
+  if (kind === 'developer') return translateForLocale(locale, 'admin.lookupDeveloper')
+  if (kind === 'destination') return translateForLocale(locale, 'admin.lookupDestination')
+  if (kind === 'project') return translateForLocale(locale, 'admin.lookupProject')
+  if (kind === 'view') return translateForLocale(locale, 'admin.lookupView')
+  if (kind === 'finish') return translateForLocale(locale, 'admin.lookupFinish')
+  return translateForLocale(locale, 'admin.lookupUnitType')
+}
+
+function toLookupValue(row: Record<string, unknown>): LookupValue {
+  return {
+    id: String(row.id),
+    kind: row.kind as LookupKind,
+    label: String(row.label ?? ''),
+    archived: Boolean(row.archived),
+  }
+}
+
+function toBranchDirectoryItem(row: Record<string, unknown>): BranchDirectoryItem {
+  return {
+    id: String(row.id),
+    name: String(row.name ?? row.id),
+    archived: Boolean(row.archived),
+  }
 }
 
 function sortLabel(sortUsersBy: 'role' | 'name' | 'recent', locale: LocaleCode) {

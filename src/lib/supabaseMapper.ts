@@ -9,6 +9,7 @@ import type {
   UnitStatus,
   UserRole,
 } from './types'
+import { normalizeUnitOutdoorFields } from './domain'
 
 type JoinedLabel = { label?: string } | null
 type JoinedCreator = { full_name?: string } | null
@@ -26,6 +27,8 @@ export interface SupabaseUnitRow {
   floor: string
   bua: number
   roof_garden_area: number | null
+  garden_area?: number | null
+  terrace_area?: number | null
   view_id: string
   view?: JoinedLabel
   bedrooms: number
@@ -54,8 +57,8 @@ export interface SupabaseUnitRow {
   archived: boolean
   created_by: string
   creator?: JoinedCreator
-  team_id: string
-  branch_id: string
+  team_id: string | null
+  branch_id: string | null
   created_at: string
   updated_at: string
   unit_media?: SupabaseMediaRow[]
@@ -75,6 +78,8 @@ export interface SafeUnitRpcRow {
   floor: string
   bua: number
   roof_garden_area: number | null
+  garden_area?: number | null
+  terrace_area?: number | null
   view_id: string
   view_label: string | null
   bedrooms: number
@@ -103,8 +108,8 @@ export interface SafeUnitRpcRow {
   archived: boolean
   created_by: string
   creator_full_name: string | null
-  team_id: string
-  branch_id: string
+  team_id: string | null
+  branch_id: string | null
   created_at: string
   updated_at: string
   unit_media?: SupabaseMediaRow[]
@@ -138,19 +143,22 @@ export interface SafeUnitRpcNoteRow {
 }
 
 export function toUnitInsertPayload(input: CreateUnitInput, actor: LeadraUser) {
+  const outdoorFields = normalizeUnitOutdoorFields(input)
   return {
     developer_id: input.developerId,
     project_id: input.projectId,
     destination_id: input.destinationId,
     unit_type: input.unitType,
-    floor: input.floor,
+    floor: outdoorFields.floor,
     bua: input.bua,
-    roof_garden_area: input.roofGardenArea ?? null,
+    roof_garden_area: outdoorFields.roofGardenArea,
+    garden_area: outdoorFields.gardenArea,
+    terrace_area: outdoorFields.terraceArea,
     view_id: input.viewId,
     bedrooms: input.bedrooms,
     bathrooms: input.bathrooms,
     elevator: input.elevator,
-    land_area: input.landArea ?? null,
+    land_area: outdoorFields.landArea,
     furnished: input.furnished,
     finish: input.finish,
     payment_method: input.paymentMethod,
@@ -165,12 +173,20 @@ export function toUnitInsertPayload(input: CreateUnitInput, actor: LeadraUser) {
     original_owner_phone: input.originalOwnerPhone,
     sales_notes: input.salesNotes,
     created_by: actor.id,
-    team_id: actor.teamId,
-    branch_id: actor.branchId,
+    team_id: actor.teamId || null,
+    branch_id: actor.branchId || null,
   }
 }
 
 export function toUnitViewModel(row: SupabaseUnitRow): LeadraUnit {
+  const outdoorFields = normalizeUnitOutdoorFields({
+    unitType: row.unit_type,
+    floor: row.floor,
+    landArea: row.land_area,
+    gardenArea: row.garden_area,
+    terraceArea: row.terrace_area,
+    roofGardenArea: row.roof_garden_area,
+  })
   return {
     id: row.id,
     unitCode: row.unit_code,
@@ -181,15 +197,17 @@ export function toUnitViewModel(row: SupabaseUnitRow): LeadraUnit {
     destinationId: row.destination_id,
     destinationName: row.destination?.label ?? 'Unknown destination',
     unitType: row.unit_type,
-    floor: row.floor,
+    floor: outdoorFields.floor,
     bua: row.bua,
-    roofGardenArea: row.roof_garden_area,
+    roofGardenArea: outdoorFields.roofGardenArea,
+    gardenArea: outdoorFields.gardenArea,
+    terraceArea: outdoorFields.terraceArea,
     viewId: row.view_id,
     viewName: row.view?.label ?? 'Open view',
     bedrooms: row.bedrooms,
     bathrooms: row.bathrooms,
     elevator: row.elevator,
-    landArea: row.land_area,
+    landArea: outdoorFields.landArea,
     furnished: row.furnished,
     finish: row.finish,
     paymentMethod: row.payment_method,
@@ -214,8 +232,8 @@ export function toUnitViewModel(row: SupabaseUnitRow): LeadraUnit {
     archived: row.archived,
     createdBy: row.created_by,
     createdByName: row.creator?.full_name ?? 'Leadra user',
-    teamId: row.team_id,
-    branchId: row.branch_id,
+    teamId: row.team_id ?? '',
+    branchId: row.branch_id ?? '',
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     media: (row.unit_media ?? []).map(toMediaViewModel),
@@ -224,6 +242,14 @@ export function toUnitViewModel(row: SupabaseUnitRow): LeadraUnit {
 }
 
 export function toSafeUnitViewModel(row: SafeUnitRpcRow): LeadraUnit {
+  const outdoorFields = normalizeUnitOutdoorFields({
+    unitType: row.unit_type,
+    floor: row.floor,
+    landArea: row.land_area,
+    gardenArea: row.garden_area,
+    terraceArea: row.terrace_area,
+    roofGardenArea: row.roof_garden_area,
+  })
   return {
     id: row.id,
     unitCode: row.unit_code,
@@ -234,15 +260,17 @@ export function toSafeUnitViewModel(row: SafeUnitRpcRow): LeadraUnit {
     destinationId: row.destination_id,
     destinationName: row.destination_label ?? 'Unknown destination',
     unitType: row.unit_type,
-    floor: row.floor,
+    floor: outdoorFields.floor,
     bua: row.bua,
-    roofGardenArea: row.roof_garden_area,
+    roofGardenArea: outdoorFields.roofGardenArea,
+    gardenArea: outdoorFields.gardenArea,
+    terraceArea: outdoorFields.terraceArea,
     viewId: row.view_id,
     viewName: row.view_label ?? 'Open view',
     bedrooms: row.bedrooms,
     bathrooms: row.bathrooms,
     elevator: row.elevator,
-    landArea: row.land_area,
+    landArea: outdoorFields.landArea,
     furnished: row.furnished,
     finish: row.finish,
     paymentMethod: row.payment_method,
@@ -267,8 +295,8 @@ export function toSafeUnitViewModel(row: SafeUnitRpcRow): LeadraUnit {
     archived: row.archived,
     createdBy: row.created_by,
     createdByName: row.creator_full_name ?? 'Leadra user',
-    teamId: row.team_id,
-    branchId: row.branch_id,
+    teamId: row.team_id ?? '',
+    branchId: row.branch_id ?? '',
     createdAt: row.created_at,
     updatedAt: row.updated_at,
     media: (row.unit_media ?? []).map(toMediaViewModel),

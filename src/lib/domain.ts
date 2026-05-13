@@ -15,6 +15,41 @@ import { compareText, getIntlLocale, type LocaleCode } from './i18n'
 export const MAX_MEDIA_FILES = 10
 export const MAX_MEDIA_TOTAL_BYTES = 40 * 1024 * 1024
 export const DEFAULT_COMMISSION_PERCENTAGE = 1.5
+export const PRD_UNIT_TYPES = [
+  'One Story Villa',
+  'Stand Alone',
+  'Twin House',
+  'Town House',
+  'Apartment',
+  'Chalet',
+  'Duplex',
+  'Senior Chalet',
+  'Junior Chalet',
+  'Loft',
+  'Cabin',
+  'Penthouse',
+] as const
+
+export type PrdUnitType = (typeof PRD_UNIT_TYPES)[number]
+export type PrdUnitAreaMode = 'land' | 'floor' | 'bua_only' | 'terrace'
+
+export interface PrdUnitTypeSpec {
+  unitType: PrdUnitType
+  areaMode: PrdUnitAreaMode
+}
+
+export const PRD_UNIT_TYPE_SPECS: PrdUnitTypeSpec[] = PRD_UNIT_TYPES.map((unitType) => ({
+  unitType,
+  areaMode:
+    unitType === 'Cabin'
+      ? 'bua_only'
+      : unitType === 'Penthouse'
+        ? 'terrace'
+        : ['One Story Villa', 'Stand Alone', 'Twin House', 'Town House'].includes(unitType)
+          ? 'land'
+          : 'floor',
+}))
+export const PRD_FLOOR_OPTIONS = ['Ground', ...Array.from({ length: 40 }, (_, index) => formatOrdinalFloor(index + 1))] as const
 
 const paymentsPerYear = {
   quarterly: 4,
@@ -22,6 +57,41 @@ const paymentsPerYear = {
   annual: 1,
   custom: null,
 } as const
+
+export function getPrdUnitTypeSpec(unitType: string): PrdUnitTypeSpec {
+  return PRD_UNIT_TYPE_SPECS.find((spec) => spec.unitType === unitType) ?? PRD_UNIT_TYPE_SPECS.find((spec) => spec.unitType === 'Apartment')!
+}
+
+export function getApplicableUnitAreaFields(unitType: string, floor = '') {
+  const spec = getPrdUnitTypeSpec(unitType)
+  return {
+    showFloor: spec.areaMode === 'floor',
+    showLandArea: spec.areaMode === 'land',
+    showGardenArea: spec.areaMode === 'floor' && floor === 'Ground',
+    showTerraceArea: spec.areaMode === 'terrace',
+  }
+}
+
+export function normalizeUnitOutdoorFields(input: {
+  unitType: string
+  floor?: string | null
+  landArea?: number | null
+  gardenArea?: number | null
+  terraceArea?: number | null
+  roofGardenArea?: number | null
+}) {
+  const fields = getApplicableUnitAreaFields(input.unitType, input.floor ?? '')
+  const gardenArea = fields.showGardenArea ? input.gardenArea ?? input.roofGardenArea ?? null : null
+  const terraceArea = fields.showTerraceArea ? input.terraceArea ?? input.roofGardenArea ?? null : null
+
+  return {
+    floor: fields.showFloor ? input.floor || 'Ground' : '',
+    landArea: fields.showLandArea ? input.landArea ?? null : null,
+    gardenArea,
+    terraceArea,
+    roofGardenArea: gardenArea ?? terraceArea,
+  }
+}
 
 type OwnerPhoneCountrySpec = {
   code: string
@@ -166,15 +236,9 @@ export function unitHasSameProjectPhoneDuplicate(candidate: LeadraUnit, existing
 }
 
 export function canViewUnit(user: LeadraUser, unit: LeadraUnit): boolean {
-  if (user.role === 'admin' || user.role === 'sub_admin') {
-    return true
-  }
-
-  if (user.role === 'manager') {
-    return unit.teamId === user.teamId
-  }
-
-  return !unit.archived
+  void user
+  void unit
+  return true
 }
 
 export function filterUnitsForUser(user: LeadraUser, units: LeadraUnit[]): LeadraUnit[] {
@@ -186,19 +250,16 @@ export function canViewOwnerData(user: LeadraUser, unit: LeadraUnit): boolean {
     return true
   }
 
-  if (user.role === 'manager') {
-    return unit.teamId === user.teamId
-  }
-
-  return unit.createdBy === user.id
+  return user.role === 'sales' && unit.createdBy === user.id
 }
 
 export function canSearchOwnerPhone(user: LeadraUser, unit: LeadraUnit): boolean {
-  return canViewOwnerData(user, unit)
+  void unit
+  return user.role === 'admin' || user.role === 'sub_admin'
 }
 
 export function canViewSalesSensitiveData(user: LeadraUser, unit: LeadraUnit): boolean {
-  return user.role !== 'sales' || unit.createdBy === user.id
+  return canViewOwnerData(user, unit)
 }
 
 export function canEditOwnerFields(user: LeadraUser, unit: LeadraUnit): boolean {
@@ -210,11 +271,8 @@ export function canEditOwnerFields(user: LeadraUser, unit: LeadraUnit): boolean 
 }
 
 export function canArchiveUnit(user: LeadraUser, unit: LeadraUnit): boolean {
-  if (user.role === 'admin' || user.role === 'sub_admin') {
-    return true
-  }
-
-  return user.role === 'manager' && unit.teamId === user.teamId
+  void unit
+  return user.role === 'admin' || user.role === 'sub_admin'
 }
 
 export function canAddAdminManagerNote(user: LeadraUser): boolean {
@@ -281,15 +339,32 @@ export function buildInstallmentSchedule(unit: LeadraUnit, locale: LocaleCode = 
   })
 }
 
-export function generateUnitCode(destinationName: string, unitId: number, bedrooms: number, bathrooms: number): string {
-  const letters = destinationName
-    .replace(/[^a-zA-Z]/g, '')
-    .trim()
-    .slice(0, 2)
-    .toUpperCase()
-    .padEnd(2, 'X')
+export function formatOrdinalFloor(floor: number): string {
+  const suffix = floor % 100 >= 11 && floor % 100 <= 13
+    ? 'th'
+    : floor % 10 === 1
+      ? 'st'
+      : floor % 10 === 2
+        ? 'nd'
+        : floor % 10 === 3
+          ? 'rd'
+          : 'th'
+  return `${floor}${suffix}`
+}
 
-  return `${letters}${unitId}BR${bedrooms}Ba${bathrooms}`
+export function deriveProjectAbbreviation(projectName: string): string {
+  const words = projectName
+    .trim()
+    .split(/[^A-Za-z0-9]+/)
+    .filter(Boolean)
+
+  if (words.length >= 2) return `${words[0][0]}${words[1][0]}`.toUpperCase()
+  if (words.length === 1) return words[0].slice(0, 2).toUpperCase().padEnd(2, 'X')
+  return 'PR'
+}
+
+export function generateUnitCode(projectName: string, bedrooms: number): string {
+  return `${deriveProjectAbbreviation(projectName)}${bedrooms}BR`
 }
 
 export function validateMediaUpload(files: LeadraMediaFile[]): MediaValidation {

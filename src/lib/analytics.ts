@@ -1,4 +1,3 @@
-import { filterUnitsForUser } from './domain'
 import { compareText, translate, type LocaleCode } from './i18n'
 import type {
   AnalyticsDashboard,
@@ -50,10 +49,7 @@ export function buildAnalyticsDashboard(
   const overview = buildOverview(units, users, events, now)
 
   return {
-    scopeLabel:
-      user.role === 'manager'
-        ? translate(locale, 'analytics.scope.team', { teamId: user.teamId })
-        : translate(locale, 'analytics.scope.company'),
+    scopeLabel: translate(locale, 'analytics.scope.company'),
     overview,
     salesPerformance: buildSalesPerformance(users, units, events),
     inventoryHealth: buildInventoryHealth(units, locale, now),
@@ -179,29 +175,22 @@ export function buildAnalyticsCsv(dashboard: AnalyticsDashboard, filters: Analyt
 }
 
 function filterAnalyticsUnits(user: LeadraUser, units: LeadraUnit[]) {
-  if (user.role === 'manager') return filterUnitsForUser(user, units)
-  if (user.role === 'admin' || user.role === 'sub_admin') return units
+  if (user.role === 'admin' || user.role === 'sub_admin' || user.role === 'manager') return units
   return []
 }
 
 function filterAnalyticsEvents(user: LeadraUser, events: AnalyticsEvent[]) {
-  if (user.role === 'manager') return events.filter((event) => event.teamId === user.teamId)
-  if (user.role === 'admin' || user.role === 'sub_admin') return events
+  if (user.role === 'admin' || user.role === 'sub_admin' || user.role === 'manager') return events
   return []
 }
 
 function filterAnalyticsUsers(user: LeadraUser, users: LeadraUser[]) {
-  if (user.role === 'manager') return users.filter((item) => item.teamId === user.teamId)
-  if (user.role === 'admin' || user.role === 'sub_admin') return users
+  if (user.role === 'admin' || user.role === 'sub_admin' || user.role === 'manager') return users
   return []
 }
 
 function filterAnalyticsTargets(user: LeadraUser, targets: AnalyticsTarget[]) {
-  if (user.role === 'manager') {
-    return targets.filter((target) => target.scopeType === 'team' && target.scopeId === user.teamId)
-  }
-
-  if (user.role === 'admin' || user.role === 'sub_admin') return targets
+  if (user.role === 'admin' || user.role === 'sub_admin' || user.role === 'manager') return targets
   return []
 }
 

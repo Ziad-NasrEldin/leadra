@@ -97,13 +97,8 @@ serve(async (request) => {
     return json({ ok: false, error: 'Invalid account status.' }, 400)
   }
 
-  if (teamId && !asNullableUuid(teamId)) {
-    return json({ ok: false, error: 'Team value must be a valid team ID.' }, 400)
-  }
-
-  if (branchId && !asNullableUuid(branchId)) {
-    return json({ ok: false, error: 'Branch value must be a valid branch ID.' }, 400)
-  }
+  const teamUuid = asNullableUuid(teamId)
+  const branchUuid = asNullableUuid(branchId)
 
   const { data: callerProfile, error: profileError } = await adminClient
     .from('profiles')
@@ -143,8 +138,8 @@ serve(async (request) => {
       role,
       job_title: jobTitle,
       phone_number: phoneNumber,
-      team_id: teamId ? asNullableUuid(teamId) : null,
-      branch_id: branchId ? asNullableUuid(branchId) : null,
+      team_id: teamUuid,
+      branch_id: branchUuid,
       status,
     })
     .eq('id', userId)

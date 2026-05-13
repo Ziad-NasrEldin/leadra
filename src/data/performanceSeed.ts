@@ -92,6 +92,8 @@ function buildUnits(count: number, users: LeadraUser[], values: LookupValue[]): 
       floor: String((index % 18) + 1),
       bua: 90 + (index % 180),
       roofGardenArea: index % 7 === 0 ? 25 + (index % 90) : null,
+      gardenArea: index % 7 === 0 ? 25 + (index % 90) : null,
+      terraceArea: null,
       viewId: views[index % views.length]?.id ?? '',
       viewName: views[index % views.length]?.label ?? 'Open view',
       bedrooms: (index % 4) + 1,

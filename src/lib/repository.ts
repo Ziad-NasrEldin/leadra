@@ -69,6 +69,25 @@ export class LeadraRepository {
     if (error) throw error
   }
 
+  async deleteSalesRepresentativeAfterReassignment(salesUserId: string, replacement: LeadraUser, actor: LeadraUser): Promise<void> {
+    void actor
+    const { error } = await this.client.rpc('deactivate_sales_representative_after_reassignment', {
+      target_sales_user_id: salesUserId,
+      replacement_sales_user_id: replacement.id,
+    })
+
+    if (error) throw error
+  }
+
+  async deleteManagedUser(userId: string): Promise<void> {
+    const { error } = await this.client
+      .from('profiles')
+      .update({ status: 'inactive' })
+      .eq('id', userId)
+
+    if (error) throw error
+  }
+
   async generateUnitPdf(unitId: number): Promise<Blob> {
     void unitId
     throw new Error('The generate-unit-pdf edge function is retired. Use the localized printable brief export in the web client.')

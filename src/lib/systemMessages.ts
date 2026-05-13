@@ -25,6 +25,8 @@ export type LocalizedMessageKey =
   | 'message.audit.unitMarked'
   | 'message.audit.settingsUpdated'
   | 'message.audit.userProfileUpdated'
+  | 'message.audit.userDeleted'
+  | 'message.audit.salesRepDeactivatedAfterReassignment'
   | 'message.audit.exportGenerated'
   | 'message.audit.adminManagerNoteAdded'
   | 'message.audit.adminManagerNoteUpdated'
@@ -35,6 +37,8 @@ export type LocalizedMessageKey =
   | 'flash.exportGenerated'
   | 'flash.userCreated'
   | 'flash.userUpdated'
+  | 'flash.userDeleted'
+  | 'flash.salesRepDeactivated'
   | 'flash.settingsUpdated'
   | 'flash.noteSaved'
   | 'flash.noteDeleted'
@@ -202,6 +206,8 @@ export function createAuditMessage(
     | 'unit_marked'
     | 'settings_updated'
     | 'user_profile_updated'
+    | 'user_deleted'
+    | 'sales_rep_deactivated_after_reassignment'
     | 'export_generated'
     | 'admin_manager_note_added'
     | 'admin_manager_note_updated'
@@ -231,6 +237,14 @@ export function createAuditMessage(
       return { text: 'Settings updated', messageKey: 'message.audit.settingsUpdated', messageParams: null }
     case 'user_profile_updated':
       return { text: 'User profile updated', messageKey: 'message.audit.userProfileUpdated', messageParams: null }
+    case 'user_deleted':
+      return { text: 'User deactivated', messageKey: 'message.audit.userDeleted', messageParams: params }
+    case 'sales_rep_deactivated_after_reassignment':
+      return {
+        text: 'Sales representative deactivated after reassignment',
+        messageKey: 'message.audit.salesRepDeactivatedAfterReassignment',
+        messageParams: params,
+      }
     case 'admin_manager_note_added':
       return {
         text: 'Admin/manager note added',

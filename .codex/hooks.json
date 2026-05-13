@@ -1,0 +1,48 @@
+{
+  "hooks": {
+    "PostToolUse": [
+      {
+        "matcher": "Edit|Write|Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "code-review-graph update --skip-flows",
+            "timeout": 30
+          }
+        ]
+      }
+    ],
+    "SessionStart": [
+      {
+        "matcher": "",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "code-review-graph status",
+            "timeout": 10
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash|bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "lean-ctx hook rewrite"
+          }
+        ]
+      },
+      {
+        "matcher": "Read|read|ReadFile|read_file|View|view|Grep|grep|Search|search|ListFiles|list_files|ListDirectory|list_directory",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "lean-ctx hook redirect"
+          }
+        ]
+      }
+    ]
+  }
+}

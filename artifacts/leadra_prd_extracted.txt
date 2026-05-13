@@ -1,0 +1,950 @@
+Leadra Real Estate Resale System PRD
+Final Combined Version - Yellow Prior Additions + Purple Stakeholder Corrections
+Date: 11 May 2026
+Yellow highlight = previous 13 latest-addition sections. Purple highlight = stakeholder corrections added in this revision, including related Business Rules updates.
+[Heading2] Source Basis
+[ListBullet] Leadra PRD Draft 2.
+[ListBullet] Requirements update dated 2026-05-05.
+[ListBullet] Latest confirmed additions: 12 unit types, Penthouse wording, Destination retained, and the Remaining Value rule kept as written by Leadra.
+[ListBullet] Stakeholder corrections covering Point 4, Point 17, Point 21, Point 23, Point 32, Point 33, and Point 46.
+[Heading2] Conflict Resolution Applied
+[ListBullet] Destination is retained in unit creation, unit details, filters, master data, and PDF output. It is not used in the unit code.
+[ListBullet] Unit Type is fixed to the 12 confirmed unit types listed in this PRD.
+[ListBullet] The top-level label requested by Leadra is Penthouse, and the previous top-level wording must not be used in the app, generated PDFs, filters, or exported content.
+[ListBullet] Admin and Sub Admin have the same system access unless a future signed requirement separates them.
+[ListBullet] All roles can view all units, but sensitive owner phone visibility remains restricted.
+[ListBullet] Remaining Value follows the exact latest rule: block all edits except changes coming from the payment timetable; Admin/Sub Admin can edit fields, but those edits must not change Remaining Value outside the payment timetable.
+[ListBullet] Admin and Sub Admin can edit/reset user passwords through User Management or another approved admin-controlled password process. Self-service password editing remains disabled for all roles.
+[ListBullet] Total Value / pricing after creation can be edited by Admin, Sub Admin, and the Sales Representative who uploaded the unit. Remaining Value must still not be directly changed by those edits.
+[ListBullet] Videos are not allowed anywhere in unit media, galleries, thumbnails, PDF exports, or PDF references.
+[ListBullet] Destination must be selected and displayed before Developer in Create Unit and Unit Details flows.
+[Heading2] Highlight Coverage Checklist
+The following 13 latest-addition sections are highlighted in yellow in the body of this PRD. The Business Rules section is not highlighted by request.
+[TABLE]
+| # | Highlighted latest addition |
+| 1 | Role access, Admin/Sub Admin parity, owner phone visibility, password restriction, uploader visibility |
+| 2 | All Units navigation and searchable dropdown behavior |
+| 3 | Mobile-fit Unit Details page and edit-property action |
+| 4 | Required field star/asterisk indicator |
+| 5 | Admin-created Destination, Developer, Project; Destination retained |
+| 6 | Fixed 12 Unit Types and conditional field display |
+| 7 | Floor range up to 40 and Penthouse wording |
+| 8 | Replacement of mark functionality with Hold, Sold by Us, Sold by Others |
+| 9 | Installment From/To month-year selectors and Remaining Value rule |
+| 10 | Pricing fields including transfer fees and PDF payment-method exclusion |
+| 11 | Media and image PDF inclusion/exclusion controls |
+| 12 | Full PDF export requirements |
+| 13 | Delivery date behavior |
+[/TABLE]
+[Heading2] Purple Stakeholder Corrections Checklist
+[ListBullet] Admin/Sub Admin password edit/reset clarified: no self-service password editing, but Admin/Sub Admin can manage passwords through User Management.
+[ListBullet] Total Value / pricing after creation is editable by Admin, Sub Admin, and the Sales Representative who uploaded the unit.
+[ListBullet] Remaining Value remains locked exactly as specified: changes only through the payment timetable, not direct manual edits.
+[ListBullet] Videos are not allowed in uploads, storage, galleries, thumbnails, generated PDFs, or PDF references.
+[ListBullet] Unit Details display order corrected: Destination before Developer, Delivery before Commission, Finishing Status * required, and Furnished shown only when selected.
+[ListBullet] Create Unit flow corrected so the user selects Destination before Developer.
+[ListBullet] Web sharing limitation expanded: browser/device share menus cannot guarantee direct sharing to every app; PDF download fallback is required.
+[ListBullet] Business Rules updated for the stakeholder corrections, including video ban and pricing/password permissions.
+[Heading1] 1. Product Overview
+Leadra needs an internal real estate resale management system for sales representatives, managers, sub-admins, and admins. The system helps Leadra manage resale units across multiple real estate projects, developers, destinations, and locations in Egypt.
+The first delivery phase is a mobile-first website. Later, the system can be wrapped using Capacitor or another approved wrapper for mobile app publishing, including iPhone sales app distribution if approved.
+The first phase must prioritize mobile usage because most daily work is expected to happen from phones. Desktop must remain usable, but advanced desktop optimization is not the priority for the first delivery.
+[Heading1] 2. Product Goal
+Build a simple internal system where Leadra can:
+[ListBullet] Add resale units.
+[ListBullet] Manage unit details.
+[ListBullet] Protect owner and sales-sensitive information.
+[ListBullet] Track sales team activity.
+[ListBullet] Manage users, roles, teams, branches, and permissions.
+[ListBullet] Manage Developers, Destinations, Projects, Views, Teams, Branches, and PDF configuration.
+[ListBullet] Export branded permission-safe unit PDFs.
+[ListBullet] Share generated PDFs through available device or browser sharing options.
+[ListBullet] Track all important actions in an audit log.
+[ListBullet] Notify users inside the system and by email.
+[ListBullet] Reduce duplicate owner records using normalized phone numbers.
+[ListBullet] Support project/location-first unit browsing with separate pages after selection.
+[ListBullet] Support a Payments Tab with calculated Remaining Value and payment timetable control.
+[ListBullet] Preserve unit ownership history when sales representative accounts are deleted or reassigned.
+[ListBullet] Allow multiple active sessions across devices unless revoked by an approved security or admin action.
+[Heading1] 3. User Roles
+Roles:
+[ListBullet] Admin
+[ListBullet] Sub Admin
+[ListBullet] Manager
+[ListBullet] Sales Representative
+Sales Representative may also be described as Standard User in permission summaries. The role is treated as the sales user role in this PRD.
+[Heading1] 4. Role Access and Permissions
+[Heading3] LATEST ADDITION 1/13 - Role Access and Permissions
+[Heading3] Latest Permission Detail Matrix
+[TABLE]
+| Area | Admin | Sub Admin | Manager | Sales Representative |
+| View all units | Yes | Yes | Yes | Yes |
+| Owner phone visibility | All units | All units | No | Own uploaded units only |
+| Search by owner phone | All units | All units | No | No |
+| Self-edit own password | No | No | No | No |
+| See uploader name globally | Yes | Yes | Yes | Yes |
+| Create Destination / Developer / Project | Yes | Yes | No | No |
+| Admin-controlled password reset/edit for users | Yes | Yes | No | No |
+| Edit Total Value / pricing after creation | Yes | Yes | No | Own uploaded units only |
+[/TABLE]
+[ListBullet] All roles can view all units in the system.
+[ListBullet] Admin and Sub Admin must have the same access level.
+[ListBullet] Owner phone is visible only to Admin, Sub Admin, and the Sales Representative who uploaded the unit.
+[ListBullet] Sales Representatives must not be able to edit their own password through self-service. Admin and Sub Admin can edit/reset user passwords through User Management or another approved administrative process.
+[ListBullet] The no-self-password-edit rule remains in force for all roles; Admin/Sub Admin password editing is an administrative action, not a user profile self-edit.
+[ListBullet] Sales Representatives can see who uploaded a unit globally. The uploader name must be visible on unit cards and/or Unit Details for all units.
+[ListBullet] All roles may export and share permission-safe PDFs, subject to hidden sensitive data rules.
+[ListBullet] After creation, Total Value / pricing may be edited only by Admin, Sub Admin, and the Sales Representative who uploaded the unit. Managers and non-uploading Sales Representatives cannot edit it.
+Final role matrix:
+[TABLE]
+| Feature | Admin | Sub Admin | Manager | Sales Representative |
+| Login | Yes | Yes | Yes | Yes |
+| Create unit | Yes | Yes | Yes | Yes |
+| View units | All units | All units | All units | All units |
+| View uploader name | Yes | Yes | Yes | Yes |
+| View owner name | Yes | Yes | No unless explicitly allowed | Own uploaded units only |
+| View owner phone | Yes | Yes | No | Own uploaded units only |
+| Search owner phone | All units | All units | No | No |
+| Edit non-owner unit details | Yes | Yes | Within allowed edit scope | Own uploaded units / allowed scope only |
+| Edit owner fields after creation | Yes | Yes | No | No |
+| Edit Total Value / pricing after creation | Yes | Yes | No | Own uploaded units only |
+| Manually edit Remaining Value | No - payment timetable only | No - payment timetable only | No | No |
+| Archive unit | Yes | Yes | No | No |
+| Status: Hold / Sold by Us / Sold by Others | Yes | Yes | Yes | Yes |
+| Add admin/manager note | Yes | Yes | Yes | No |
+| Manage users | Yes | Yes | No | No |
+| Create/manage Destination, Developer, Project | Yes | Yes | No | No |
+| View audit log | Yes | Yes | No | No |
+| Export PDF / share PDF | Yes | Yes | Yes | Yes |
+| Download uploaded photos | Yes | Yes | Yes | Yes |
+| Remove uploaded images one by one while editing | Yes | Yes | Within allowed edit scope | Within allowed edit scope |
+| Self-edit own password | No | No | No | No |
+| Admin-controlled password reset/edit for users | Yes | Yes | No | No |
+[/TABLE]
+[Heading1] 5. Visibility Rules
+Branch Visibility
+[ListBullet] Branches do not restrict unit visibility.
+[ListBullet] Branch is used for user organization, filtering, reporting, and dashboard grouping only.
+Manager Visibility
+[ListBullet] Managers can view all units under the latest visibility rule.
+[ListBullet] Manager dashboards may still prioritize team activity, team metrics, and team notifications.
+[ListBullet] Managers cannot view owner phone, search owner phone, edit owner fields after creation, or archive units unless promoted to Sub Admin or Admin.
+Sales Visibility
+[ListBullet] Sales users can view all units.
+[ListBullet] Sales users can see full allowed details for units they uploaded.
+[ListBullet] Sales users can see other sales users units without owner phone.
+[ListBullet] Sales users cannot search by owner phone.
+[ListBullet] Sales users cannot see owner phone for units uploaded by other sales users.
+[ListBullet] Sales users can see who uploaded any unit globally.
+[ListBullet] Sales users cannot edit owner fields after creation.
+[ListBullet] Sales users may edit non-owner unit details only within their allowed edit scope.
+Owner Phone Search Visibility
+[ListBullet] Owner phone search is available only to Admin and Sub Admin.
+[ListBullet] Managers must not be able to search units by owner phone number.
+[ListBullet] Sales Representatives must not be able to search units by owner phone number, even though they can view owner phone for units they uploaded.
+[ListBullet] Backend duplicate checks may still use normalized owner phone internally.
+[Heading1] 6. User Account Data
+Each user account should include:
+[ListBullet] Full name
+[ListBullet] Email
+[ListBullet] Password credential stored securely
+[ListBullet] Role
+[ListBullet] Job title
+[ListBullet] Phone number
+[ListBullet] Assigned team
+[ListBullet] Assigned branch
+[ListBullet] Account status: Active / Inactive
+[ListBullet] Created date
+[ListBullet] Last login date
+Inactive users must stay visible in audit history.
+[Heading1] 7. Main Pages
+Pages available for all users:
+[ListBullet] Login
+[ListBullet] Main Dashboard
+[ListBullet] View All Units
+[ListBullet] Create Unit
+[ListBullet] Unit Details
+[ListBullet] Notifications Center
+[ListBullet] Profile & Settings
+Extra pages for Admin / Sub Admin:
+[ListBullet] Admin Dashboard
+[ListBullet] User Management
+[ListBullet] Unit Management
+[ListBullet] Master Data Management
+[ListBullet] Audit Log
+[Heading1] 8. Authentication Flow
+1. User opens system link.
+2. User lands on login page.
+3. User enters email and password.
+4. System validates login.
+5. System redirects user to dashboard based on role.
+6. Users cannot create their own accounts.
+7. Admin or Sub Admin creates user accounts.
+8. The same user may keep multiple active sessions across devices unless an admin or security policy revokes a session.
+[Heading1] 9. Dashboard Requirements
+Sales Dashboard
+[ListBullet] Latest units uploaded by logged-in sales user.
+[ListBullet] Notifications about comments on own units.
+[ListBullet] 72-hour inactivity warning.
+[ListBullet] Quick Add Unit button.
+[ListBullet] Quick View All Units button.
+[ListBullet] Recently viewed all-company units, without restricted owner phone data.
+Manager Dashboard
+[ListBullet] Latest unit uploads from manager team highlighted first.
+[ListBullet] Team activity.
+[ListBullet] Unit status changes related to team.
+[ListBullet] New installment updates for team units.
+[ListBullet] Employee inactivity alerts.
+[ListBullet] Quick Add Unit button.
+[ListBullet] Quick View All Units button.
+Admin / Sub Admin Dashboard
+[ListBullet] Latest unit uploads from all teams.
+[ListBullet] Units sorted by teams, developers, destinations, and projects.
+[ListBullet] New installment updates.
+[ListBullet] Daily unit upload count.
+[ListBullet] Monthly metrics.
+[ListBullet] Status changes.
+[ListBullet] Duplication attempts.
+[ListBullet] Quick Add Unit button.
+[ListBullet] Quick View All Units button.
+[Heading1] 10. Unit Creation
+Any user can create a unit. Required fields must be validated before creation. Duplicate owner phone checking uses normalized owner phone and project scope rules.
+Archive Rules
+[ListBullet] Admin can archive units.
+[ListBullet] Sub Admin can archive units.
+[ListBullet] Manager cannot archive units.
+[ListBullet] Sales Representative cannot archive units.
+[ListBullet] Archive means hiding the unit from active lists while keeping it stored in the database, audit logs, backups, and historical references.
+[ListBullet] Permanent deletion is not available from the normal system UI.
+[ListBullet] The system should use Archive in the UI instead of Delete to avoid confusion.
+[Heading1] 11. Unit Fields
+Basic Unit Data
+[ListBullet] Create Unit field order must show Destination before Developer, then Project, then remaining unit details.
+[TABLE]
+| Field | Type | Rule |
+| Destination | Searchable dropdown | Required or optional by configuration. Selected before Developer. Retained in system and PDF. Admin/Sub Admin-created values. |
+| Developer | Searchable dropdown | Required. Selected after Destination. Admin/Sub Admin-created values. |
+| Project | Searchable dropdown | Required. Admin/Sub Admin-created values. |
+| BUA | Number input | Required. Numbers only. |
+| Unit Type | Searchable dropdown | Required. Fixed 12-type list in this PRD. |
+| Floor / Position | Searchable dropdown | Shown only where unit type requires it. Ground, 1 through 40, and Penthouse wording where top-level position is required. |
+| Garden Area | Number input | Shown when Ground is selected for relevant unit types. |
+| Terrace Area | Number input | Shown for Penthouse unit type only. |
+| Land Area | Number input | Shown only for land-area unit types. |
+| View | Searchable dropdown | Admin/Sub Admin-created values. |
+| Bedrooms | Dropdown / searchable selector | 1 to 10 unless future master data changes. |
+| Bathrooms | Dropdown / searchable selector | 1 to 10 unless future master data changes. |
+| Elevator | Toggle | Yes / No. Show in PDF only when selected. |
+| Furnished | Toggle | Furnished / Unfurnished. Show in PDF only when Furnished is selected. |
+| Finishing Status * | Searchable dropdown | Required. Fully Finished / Semi Finished / Core and Shell, or Admin/Sub Admin-configured values. |
+[/TABLE]
+[Heading3] LATEST ADDITION 4/13 - Required Field Indicator
+[ListBullet] All required fields must show a star/asterisk.
+[ListBullet] Examples: Developer *, Project *, Unit Type *, BUA *, Total Price *.
+[ListBullet] The star must appear consistently across Create Unit, Edit Unit, Payments, Owner Information, PDF-relevant fields, and any other required inputs.
+[Heading3] LATEST ADDITION 5/13 - Admin-Created Master Data and Destination Retention
+[ListBullet] Admin and Sub Admin can create and manage Destination, Developer, and Project.
+[ListBullet] Destination must remain part of the system.
+[ListBullet] Destination appears in Unit Creation, Unit Details, filters, Admin/Sub Admin master data, and PDF export.
+[ListBullet] Destination is not used in the unit code.
+[Heading3] LATEST ADDITION 6/13 - Fixed 12 Unit Types and Conditional Field Display
+[TABLE]
+| Unit Type | Fields to Show | Hidden / Conditional Rule |
+| One Story Villa | BUA + Land Area | Do not show Floor. |
+| Stand Alone | BUA + Land Area | Do not show Floor. |
+| Twin House | BUA + Land Area | Do not show Floor. |
+| Town House | BUA + Land Area | Do not show Floor. |
+| Apartment | BUA + Floor | If Ground, show Garden Area. |
+| Chalet | BUA + Floor | If Ground, show Garden Area. Penthouse units use the Penthouse unit type and show Terrace Area. |
+| Duplex | BUA + Floor | If Ground, show Garden Area. Penthouse units use the Penthouse unit type and show Terrace Area. |
+| Senior Chalet | BUA + Floor | If Ground, show Garden Area. Penthouse units use the Penthouse unit type and show Terrace Area. |
+| Junior Chalet | BUA + Floor | If Ground, show Garden Area. Penthouse units use the Penthouse unit type and show Terrace Area. |
+| Loft | BUA + Floor | If Ground, show Garden Area. Penthouse units use the Penthouse unit type and show Terrace Area. |
+| Cabin | BUA only | Do not show Floor, Land Area, Garden Area, or Terrace Area. |
+| Penthouse | BUA + Terrace Area only | Do not show Floor or Land Area. |
+[/TABLE]
+[ListBullet] The Unit Type field must use this fixed 12-type list.
+[ListBullet] The system must show and hide fields based on selected Unit Type.
+[ListBullet] Land-area unit types show Land Area and must not show Floor.
+[ListBullet] Apartment-style unit types show Floor.
+[ListBullet] Cabin shows BUA only.
+[ListBullet] Penthouse shows BUA and Terrace Area only.
+[Heading3] LATEST ADDITION 7/13 - Floor Range and Penthouse Wording
+[ListBullet] For unit types that require Floor, the Floor field must support Ground and floors 1 through 40.
+[ListBullet] If the user selects Ground, the system must show Garden Area for relevant unit types.
+[ListBullet] The term Penthouse must be used globally for top-level/penthouse wording in labels, filters, exports, and generated PDFs.
+[ListBullet] For the Penthouse Unit Type, the system must show BUA and Terrace Area only and must not show Floor.
+[Heading1] 12. Unit Code
+System auto-generates unit code.
+Formula: Project Abbreviation + Number of Bedrooms + BR
+Example: MV3BR
+[ListBullet] MV = Project abbreviation.
+[ListBullet] 3 = Number of bedrooms.
+[ListBullet] BR = Bedroom label.
+[ListBullet] Bathroom number is not included in the unit code.
+[ListBullet] Destination is not included in the unit code.
+[ListBullet] Unit ID is not shown in the display unit code unless the backend requires an internal hidden identifier.
+[Heading1] 13. Pricing, Condition, and Payment Fields
+[Heading3] LATEST ADDITION 10/13 - Pricing Fields
+[Heading3] Pricing Fields Required in Unit and PDF Context
+[TABLE]
+| Pricing field | Display rule |
+| Total | Show in unit details and PDF. Editable after creation by Admin, Sub Admin, and the Sales Representative who uploaded the unit. |
+| Down Payment | Show in unit details and PDF. |
+| Remaining Value | Show system-calculated value; no manual edits. |
+| Next Installment | Show exact amount. |
+| Commission | Show in unit details and PDF. |
+| Transfer Fees | Show only when applicable. |
+| Custom Installment Text | Show when custom installment is selected. |
+| Payment Method | Use in app logic, but do not show in PDF. |
+[/TABLE]
+[ListBullet] The system must support Total Value / Total Unit Cost, Down Payment, Remaining Value, Next Installment amount, Commission, Transfer Fees if applicable, and Custom Installment text if applicable.
+[ListBullet] After creation, Total Value / pricing can be edited by Admin, Sub Admin, and the Sales Representative who uploaded the unit. Manager and non-uploading Sales Representatives cannot edit it.
+[ListBullet] Total Value / pricing edits must not directly change Remaining Value. Remaining Value remains controlled only by the payment timetable.
+[ListBullet] The PDF must show all pricing details except the payment method.
+[ListBullet] Transfer Fees appear only when applicable.
+[ListBullet] Furnished appears in the PDF only when Furnished is selected.
+[ListBullet] Elevator appears in the PDF only when Elevator is selected.
+[TABLE]
+| Field | Type | Rule |
+| Payment Method | Searchable dropdown | Cash / Installment. Each unit can have one payment method only. Hidden from PDF. |
+| Total Value / Total Unit Cost | Number input | Editable after creation by Admin, Sub Admin, and the Sales Representative who uploaded the unit. Manager and non-uploading Sales Representatives cannot edit it. Payment activity must not directly rewrite it. |
+| Down Payment | Number input | Shown when Installment is selected. |
+| Remaining Value / Remaining Amount | System-calculated field | Cannot be directly edited. Only payment timetable activity changes it after initial calculation. |
+| Next Installment Amount | Number input / system field | Exact number shown in Unit Details and PDF. |
+| Commission | Number or percentage | Default 1.5% unless configured. Editable by Admin/Sub Admin. |
+| Transfer Fees | Number input | Optional. Show if applicable. |
+| Custom Installment Text | Text input | Shown when Custom installment is selected. Must appear in PDF. |
+| Maintenance Paid | Toggle | On / Off. |
+| Maintenance Costs | Number input | Shown only when Maintenance Paid is On. |
+| Maintenance Due Date | Date input | Shown only when Maintenance Paid is On. |
+[/TABLE]
+Payment Method Rule
+[ListBullet] Each unit can have one payment method only: Cash or Installment.
+[ListBullet] A unit cannot have both Cash and Installment at the same time.
+Cash Payment Behavior
+[ListBullet] User enters Total Value.
+[ListBullet] Total Value acts as the cash price.
+[ListBullet] Installment fields are hidden.
+[ListBullet] Installment table is hidden.
+Installment Payment Behavior
+[ListBullet] User enters Total Value.
+[ListBullet] User enters Down Payment.
+[ListBullet] System calculates initial Remaining Value.
+[ListBullet] User selects installment frequency.
+[ListBullet] User sets installment period using From and To month-year selectors.
+[ListBullet] System calculates installment amount automatically for Quarterly, Semi-Annual, and Annual payment options.
+[ListBullet] Custom installments do not use automatic calculation.
+[Heading1] 14. Payments and Installments
+[Heading3] LATEST ADDITION 9/13 - Installment From/To and Remaining Value Rule
+[ListBullet] The current numeric Installment Years field must be changed to From - To selectors.
+[ListBullet] From and To must allow selecting month and year only.
+[ListBullet] Day selection is not required for installment period selection.
+[ListBullet] Example: From March 2026 to March 2030.
+[ListBullet] Block all edits of the Remaining Value except from the payment timetable.
+[ListBullet] Admin and Sub Admin can edit all fields, and the Sales Representative who uploaded the unit can edit Total Value / pricing after creation; those edits may automatically change the Total Value where applicable AND DO NOT CHANGE THE REMAINING VALUE outside the payment timetable.
+[ListBullet] No user should manually type or directly edit Remaining Value.
+[ListBullet] The payment timetable is the only normal source that changes Remaining Value after the initial calculation.
+[ListBullet] When a payment is marked as paid in the payment timetable, the system updates payment history and recalculates Remaining Value.
+[ListBullet] Next Installment must appear as an exact number in Unit Details and PDF.
+[ListBullet] If Custom installment is selected, the user must be able to enter custom installment text and the same text must appear in the PDF.
+Payments Tab
+[ListBullet] The Payments Tab includes a system-calculated Remaining Value / Remaining Amount field.
+[ListBullet] Initial Remaining Value = Total Unit Cost - Down Payment.
+[ListBullet] When installments are recorded as paid through the timetable, Remaining Value is reduced accordingly.
+[ListBullet] Remaining Value must not be manually editable.
+[ListBullet] Payment history must preserve who marked a payment as paid, the amount, date/time, and previous/new Remaining Value.
+Installment Options
+1. Quarterly payments
+2. Semi-annual payments
+3. Annual payments
+4. Custom
+For Quarterly, Semi-Annual, Annual:
+[ListBullet] User sets installment period From/To using month and year selectors.
+[ListBullet] System calculates installment table automatically.
+[ListBullet] System displays schedule in Unit Details.
+[ListBullet] System supports installment amount filtering in search.
+For Custom:
+[ListBullet] No automatic calculation is required unless later configured.
+[ListBullet] System shows the custom installment text entered by the user.
+[ListBullet] The custom installment text must appear in the PDF.
+Automatic Installment Calculation
+[ListBullet] Installment Amount = Remaining Value divided by number of scheduled payments.
+[ListBullet] Quarterly = 4 payments per year.
+[ListBullet] Semi-annual = 2 payments per year.
+[ListBullet] Annual = 1 payment per year.
+[ListBullet] The calculation must use the configured From/To period and payment frequency.
+Installment Search Requirement
+[ListBullet] Search must support installment amount range by installment frequency.
+[ListBullet] Example: Installment Type = Quarterly; Installment Amount From = 60,000; Installment Amount To = 80,000.
+[ListBullet] This means users can search for units where the calculated quarterly installment is within the selected range.
+[Heading1] 15. Owner Data
+[TABLE]
+| Field | Type | Rule |
+| Original Owner Name | Text input | Sales cannot edit after creation. Admin/Sub Admin can edit. |
+| Country Code | Searchable dropdown | Required before phone entry. |
+| Original Owner Phone | Phone input | Sales cannot edit after creation. Visible only to Admin, Sub Admin, and uploading Sales Rep. |
+| Normalized Owner Phone | System field | Stored and compared by backend only. |
+[/TABLE]
+Phone number should support global numbers. There is no Egypt-only restriction.
+Phone Input Rules
+1. Country code dropdown/search.
+2. Local phone number input.
+The system stores the final number in normalized international format.
+[TABLE]
+| Country Code | Local Number | Stored Value |
+| UAE +971 | 501234567 | +971501234567 |
+| Egypt +20 | 1012345678 | +201012345678 |
+[/TABLE]
+Phone Normalization Rules
+[ListBullet] Remove spaces.
+[ListBullet] Remove dashes.
+[ListBullet] Remove parentheses.
+[ListBullet] Convert 00 prefix to +.
+[ListBullet] Ensure the stored phone number uses one normalized international format.
+[ListBullet] Compare duplicate phones using the normalized value only.
+Owner Duplicate Rule
+[ListBullet] Unit creation fails only if the normalized owner phone already exists under the same project.
+[ListBullet] Owner name must not trigger duplicate blocking because names can repeat.
+[ListBullet] Allowed: same owner name in same project if phone is different.
+[ListBullet] Allowed: same normalized phone in different projects.
+[ListBullet] Blocked: same normalized owner phone inside the same project.
+Cross-Project Duplicate Behavior
+[ListBullet] If the same normalized owner phone exists in another project, the system allows the new unit silently.
+[ListBullet] No warning is required for same phone in another project.
+[Heading1] 16. Delivery Date / Delivery Expectancy
+[Heading3] LATEST ADDITION 13/13 - Delivery Date Behavior
+[ListBullet] Delivery Date / Delivery Expectancy must remain a simplified field.
+[ListBullet] Delivery Date follows the approved year-only rule: users must not select a day or month for delivery date unless Leadra later approves month-year delivery display again.
+[ListBullet] Installment period From/To is separate from Delivery Date and uses month-year selectors.
+[ListBullet] Sales users must be able to select future delivery years beyond the next year.
+[Heading1] 17. Media Uploads and Photo Actions
+General Media Rules
+[ListBullet] Up to 10 files per unit.
+[ListBullet] Allowed media: images and permitted PDF attachments only. Videos are not allowed.
+[ListBullet] Maximum total upload size: 40 MB per unit.
+[ListBullet] The 40 MB limit is total per unit, not per file.
+[ListBullet] Limit can be increased later if server storage allows.
+[ListBullet] First uploaded image becomes thumbnail.
+[ListBullet] Video upload, video storage, video display, and video thumbnail generation are not supported because videos are not allowed.
+[ListBullet] If no image exists, system shows default unit placeholder.
+[ListBullet] The system must reject video files during upload and must show a clear validation message instead of accepting or storing them.
+[Heading3] LATEST ADDITION 11/13 - Media and Image PDF Inclusion Controls
+[ListBullet] Users must have the option to exclude a selected image from the generated PDF.
+[ListBullet] Each uploaded image should have a control such as Show in PDF / Hide from PDF.
+[ListBullet] Images marked as hidden from PDF must not appear in generated PDFs.
+[ListBullet] Only selected/allowed images should appear in the PDF.
+[ListBullet] All roles that can view a unit must be able to download uploaded photos for that unit.
+[ListBullet] Users with edit permission must be able to remove uploaded images one by one while editing.
+[ListBullet] When a user uploads a PDF attachment, at least one related photo must also be uploaded.
+[ListBullet] The system must not allow a PDF upload without at least one related photo.
+Upload Failure Rules
+[ListBullet] The system must not fail silently when media upload exceeds the allowed size.
+[ListBullet] If upload exceeds the limit, show a clear error message.
+[ListBullet] Explain the exact reason.
+[ListBullet] Prevent form submission or failed upload confusion.
+[ListBullet] Tell the user the current limit.
+Example error message: Upload failed. Total media size exceeds 40 MB per unit. Please remove or compress some files.
+[Heading1] 18. Unit Notes
+Purpose
+Unit notes help the team add comments and context about a unit without changing the core unit data.
+Sales Notes
+[ListBullet] Open text field.
+[ListBullet] Added during unit creation.
+[ListBullet] Editable based on permission.
+[ListBullet] Appears in the Unit Details page.
+Admin / Manager Notes
+[ListBullet] Added after unit creation only.
+[ListBullet] Used for internal follow-up and review.
+[ListBullet] Sales cannot add admin/manager notes.
+[ListBullet] Each note must show note content, created by, user role, date, and time.
+[ListBullet] Sales user receives notification when Admin, Sub Admin, or Manager comments on one of their units.
+[Heading1] 19. Unit Status
+[Heading3] LATEST ADDITION 8/13 - Replace Mark Functionality
+[ListBullet] The current mark functionality must be replaced with clearer unit status options.
+[ListBullet] Available status options: Available, Hold, Sold by Us, Sold by Others.
+[ListBullet] Default status is Available.
+[ListBullet] Hold means the unit is temporarily reserved or paused but not sold.
+[ListBullet] Sold by Us means Leadra sold the unit.
+[ListBullet] Sold by Others means the unit was sold externally or by another party.
+[ListBullet] Status must be visible in Unit Details, unit cards, filters, audit log, and PDF where applicable.
+Status Rules
+[ListBullet] Hold does not expire automatically.
+[ListBullet] Hold remains active until changed manually.
+[ListBullet] Sold by Us and Sold by Others are separate final status values.
+[ListBullet] Status changes must be tracked in audit log.
+[ListBullet] Relevant users receive notifications.
+[Heading1] 20. View All Units Page
+[Heading3] LATEST ADDITION 2/13 - All Units Navigation and Searchable Dropdowns
+[ListBullet] When a user selects a location from the All Units page, the selected location must open in a separate page.
+[ListBullet] The system should not only expand or filter inline on the same page.
+[ListBullet] Expected flow: user opens All Units, selects a location/project, system navigates to a separate location/project page, then user views units inside that selected page.
+[ListBullet] All dropdown fields must support text input for easier searching.
+[ListBullet] Dropdowns must allow the user to type into the field, filter options while typing, understand partial matches, handle user-friendly matching where possible, and make selection faster on mobile.
+[ListBullet] Searchable dropdown behavior applies to Destination, Developer, Project, Unit Type, Floor, View, Finishing, Furnishing, payment dropdowns, and all other dropdowns in the system.
+View All Units should be project/location-first.
+Purpose
+Users should not immediately see a long unorganized list of units. First, they select a project or location, then they see units inside that selected context on a separate page.
+Flow
+1. User opens View All Units.
+2. System shows project/location cards.
+3. User selects a project or location card.
+4. System opens a separate page for the selected project/location.
+5. System shows units under selected project/location.
+6. User opens Unit Details.
+Project/Location Card Should Show
+[ListBullet] Name
+[ListBullet] Total units
+[ListBullet] Available units
+[ListBullet] Hold units
+[ListBullet] Sold by Us units
+[ListBullet] Sold by Others units
+Filters
+[ListBullet] Unit code
+[ListBullet] Status
+[ListBullet] Developer
+[ListBullet] Destination
+[ListBullet] Project
+[ListBullet] Unit type
+[ListBullet] Bedrooms
+[ListBullet] Bathrooms
+[ListBullet] BUA range
+[ListBullet] Land Area range where applicable
+[ListBullet] Terrace Area range where applicable
+[ListBullet] Garden Area range where applicable
+[ListBullet] Price range
+[ListBullet] Payment method
+[ListBullet] Total amount / cash price range
+[ListBullet] Down payment range for installment units
+[ListBullet] Remaining Value range for installment units
+[ListBullet] Installment frequency
+[ListBullet] Installment amount range
+[ListBullet] Delivery expectancy
+[ListBullet] Owner phone only for Admin and Sub Admin
+[Heading1] 21. Unit Details Page
+[Heading3] LATEST ADDITION 3/13 - Mobile-Fit Unit Details Page and Edit Option
+[ListBullet] The Unit Details page must be redesigned so that all unit details fit cleanly into one mobile-first page.
+[ListBullet] Target route pattern: /#details/:unitId, including the current example page /#details/3.
+[ListBullet] The page must avoid unnecessary scrolling, duplicated sections, and oversized spacing where possible.
+[ListBullet] The mobile layout must prioritize clear section grouping, compact information display, readable labels and values, easy access to key actions, and full unit information on one page.
+[ListBullet] There must be a visible option to edit the property/unit for users who have edit permission.
+[ListBullet] If the user has permission to edit the unit, the edit action must be visible and accessible.
+Purpose
+Unit Details is the full page for one unit. It shows all visible unit information, media, notes, allowed owner data, and actions.
+Display Order
+1. Unit header
+2. Status and main actions
+3. Main unit information, with Destination shown before Developer
+4. Pricing and payment information, excluding Commission
+5. Installment details, only if payment method is Installment
+6. Delivery expectancy
+7. Commission and transfer fees, shown after Delivery
+8. Notes
+9. Media gallery
+10. Owner data, only if user has permission
+Unit Details Page Shows
+[ListBullet] Unit code
+[ListBullet] Unit thumbnail
+[ListBullet] Uploader name
+[ListBullet] Unit status
+[ListBullet] Destination
+[ListBullet] Developer
+[ListBullet] Project
+[ListBullet] Unit type
+[ListBullet] Floor / position only when applicable
+[ListBullet] BUA
+[ListBullet] Land Area only when applicable
+[ListBullet] Garden Area only when applicable
+[ListBullet] Terrace Area only when applicable
+[ListBullet] View
+[ListBullet] Bedrooms
+[ListBullet] Bathrooms
+[ListBullet] Elevator
+[ListBullet] Furnished - show only when Furnished is selected; if not furnished, do not display this field at all.
+[ListBullet] Finishing Status *
+[ListBullet] Payment method in Unit Details, but not PDF
+[ListBullet] Total amount / cash price if payment method is Cash
+[ListBullet] Total amount, down payment, Remaining Value, and installments if payment method is Installment
+[ListBullet] Installments table only if payment method is Installment
+[ListBullet] Delivery expectancy
+[ListBullet] Commission
+[ListBullet] Transfer fees if applicable
+[ListBullet] Sales notes
+[ListBullet] Admin/manager notes
+[ListBullet] Media gallery
+[ListBullet] Owner data only if user has permission
+Actions
+[ListBullet] Share unit link
+[ListBullet] Generate PDF
+[ListBullet] Share generated PDF
+[ListBullet] Export / download PDF
+[ListBullet] Edit unit if allowed
+[ListBullet] Archive unit if allowed
+[ListBullet] Set status to Hold
+[ListBullet] Set status to Sold by Us
+[ListBullet] Set status to Sold by Others
+[ListBullet] Toggle image Show in PDF / Hide from PDF if user has edit permission
+[Heading1] 22. Internal Share Link
+Each Unit Details page has a Share button.
+[ListBullet] Link works only for logged-in users.
+[ListBullet] Link does not bypass permissions.
+[ListBullet] Owner data remains hidden if viewer lacks permission.
+[ListBullet] Sales-sensitive data remains hidden if viewer lacks permission.
+[Heading1] 23. PDF Export and Sharing
+[Heading3] LATEST ADDITION 12/13 - Full PDF Export Requirements
+[ListBullet] The PDF must include the Leadra logo.
+[ListBullet] The PDF must include Destination, Developer, Project, and Unit Type.
+[ListBullet] For land-area unit types, the PDF must show Land Area and BUA and must not show Floor.
+For Apartment, Chalet, Duplex, Senior Chalet, Junior Chalet, Loft, and similar floor-based unit types, the PDF must show BUA and Floor. If Ground is selected, show Garden Area. Penthouse units are handled through the Penthouse unit type and show Terrace Area.
+[ListBullet] For Cabin, the PDF must show BUA only.
+[ListBullet] For Penthouse, the PDF must show BUA and Terrace Area only.
+[ListBullet] The PDF must show Bedrooms / Bathrooms, Finishing Status, Furnished only when selected, and Elevator only when selected.
+[ListBullet] The PDF must show all pricing details except payment method.
+[ListBullet] The PDF pricing section must show Down Payment, Remaining Value, Total Value, Next Installment exact number, Commission, Transfer Fees if applicable, and Custom Installment text if applicable.
+[ListBullet] If Custom installment is selected, the related custom text must appear in the PDF.
+[ListBullet] The PDF must show Delivery Date / Delivery Expectancy.
+[ListBullet] Only images marked to appear in PDF should be included.
+Each Unit Details page has an Export PDF button. PDF must be branded and permission-safe.
+Admin/Sub Admin configure:
+[ListBullet] Company logo
+[ListBullet] Company name
+[ListBullet] Footer text
+[ListBullet] Contact details
+[ListBullet] PDF visual layout settings if needed
+PDF Permission Rules
+[ListBullet] PDF must respect user permissions.
+[ListBullet] For users exporting units they do not own, hide owner phone unless the user is Admin/Sub Admin.
+[ListBullet] Hide sales-sensitive information if the viewer lacks permission.
+[ListBullet] For Admin and Sub Admin, show full allowed details based on permission.
+PDF Media Rules
+[ListBullet] Images marked Show in PDF appear in PDF.
+[ListBullet] Images marked Hide from PDF do not appear in PDF.
+[ListBullet] Videos are not allowed; the system must reject video uploads before PDF generation.
+[ListBullet] Because videos are not allowed, PDF export must never include video thumbnails.
+[ListBullet] Because videos are not allowed, PDF export must never include video references.
+PDF Structure
+[ListBullet] Page 1 should be one clean page containing logo, unit code, Destination, Developer, Project, Unit Type, area details, Bedrooms and Bathrooms, pricing, delivery expectancy, commission, and installment summary if applicable.
+[ListBullet] Page 2+ should display selected images in a clean bento grid.
+[ListBullet] Images should be spacious, clear, and not squeezed.
+Every PDF export creates:
+[ListBullet] Audit log entry
+[ListBullet] Admin/Sub Admin notification
+Two-Click PDF Share Flow
+1. User opens Unit Details.
+2. User clicks Generate PDF.
+3. System creates permission-safe PDF.
+4. User clicks Share.
+5. System opens available device/browser sharing options where supported.
+6. User shares the PDF through WhatsApp, Instagram, or another available app.
+Important limitation: web apps cannot guarantee direct sharing to every app on every device.
+[ListBullet] A web app can request the native browser/device sharing menu where supported, but it cannot force WhatsApp, Instagram, Gmail, or any specific app to appear as a share target.
+[ListBullet] Available share targets depend on browser support, operating system behavior, device type, installed apps, app permissions, and whether the target app accepts the generated PDF file type.
+[ListBullet] If native sharing is unavailable or the target app is not available, the system must still allow the user to download the PDF and manually send it through any app.
+[Heading1] 24. Admin Dashboard
+Admin Dashboard contains:
+1. User Management
+2. Unit Management
+3. Master Data Management
+4. Audit Log
+[Heading1] 25. User Management
+Admin and Sub Admin can:
+[ListBullet] Create users.
+[ListBullet] Edit users.
+[ListBullet] Deactivate users.
+[ListBullet] Assign roles.
+[ListBullet] Assign teams.
+[ListBullet] Assign branches.
+[ListBullet] Reset/edit passwords through an admin-controlled process.
+[ListBullet] Admin and Sub Admin can edit/reset passwords for users through User Management. This does not allow users to self-edit passwords from Profile & Settings.
+Inactive users:
+[ListBullet] Cannot log in.
+[ListBullet] Stay visible in audit logs.
+[ListBullet] Stay attached to historical actions.
+The system should use Deactivate for user accounts and Archive for units.
+Sales Representative Deletion / Deactivation
+[ListBullet] When a sales representative is deleted or deactivated from the system, the system must not delete any of that representative assigned units.
+[ListBullet] Before deletion/deactivation is completed, the system must require Admin or authorized Sub Admin to select another Sales Representative.
+[ListBullet] All units assigned to the deleted/deactivated Sales Representative must be reassigned to the selected replacement Sales Representative.
+[ListBullet] The system must keep enough history to show that units were previously assigned to the deleted/deactivated Sales Representative.
+[ListBullet] Deleting or deactivating a Sales Representative must never delete, archive, or hide assigned units.
+[Heading1] 26. Unit Management and Master Data
+Admin and Sub Admin manage dropdown values and master data:
+[ListBullet] Developer
+[ListBullet] Destination
+[ListBullet] Project
+[ListBullet] View
+[ListBullet] Finish options if configurable
+[ListBullet] Payment options if configurable
+Admin/Sub Admin also manage:
+[ListBullet] Commission percentage
+[ListBullet] Company logo for PDF
+[ListBullet] Branches
+[ListBullet] Teams
+Configurable settings may include:
+[ListBullet] Media upload size limit.
+[ListBullet] Payment method options.
+[ListBullet] PDF layout settings.
+[ListBullet] Required field configuration if approved.
+[Heading1] 27. Audit Log
+System must track important actions.
+Audit log includes:
+[ListBullet] User who performed action
+[ListBullet] User role
+[ListBullet] Action type
+[ListBullet] Related unit
+[ListBullet] Previous value if available
+[ListBullet] New value if available
+[ListBullet] Date and time
+[ListBullet] IP address if available
+Tracked actions:
+[ListBullet] Login
+[ListBullet] Multiple-session creation/revocation
+[ListBullet] Unit created
+[ListBullet] Unit edited
+[ListBullet] Unit archived
+[ListBullet] Unit status changed to Hold
+[ListBullet] Unit status changed to Sold by Us
+[ListBullet] Unit status changed to Sold by Others
+[ListBullet] Duplicate owner phone attempt inside same project
+[ListBullet] Down payment updated
+[ListBullet] Total Value / pricing updated by Admin, Sub Admin, or uploading Sales Representative
+[ListBullet] Remaining Value recalculated by payment timetable
+[ListBullet] Payment method updated
+[ListBullet] Installments updated
+[ListBullet] Payment marked paid/unpaid
+[ListBullet] Maintenance toggle or maintenance cost updated
+[ListBullet] PDF generated
+[ListBullet] PDF exported/downloaded
+[ListBullet] PDF shared if detectable
+[ListBullet] Image marked Show in PDF / Hide from PDF
+[ListBullet] Image downloaded
+[ListBullet] Image removed
+[ListBullet] Admin/manager note added
+[ListBullet] User created
+[ListBullet] User edited
+[ListBullet] User deactivated
+[ListBullet] Sales Representative reassignment before deletion/deactivation
+[ListBullet] Password reset/edit by Admin/Sub Admin
+[ListBullet] Dropdown/master data value created
+[ListBullet] Dropdown/master data value edited
+[ListBullet] Dropdown/master data value archived/deleted
+Audit history must keep inactive users visible.
+[Heading1] 28. Notifications
+Notifications should be sent through:
+[ListBullet] In-app notification center
+[ListBullet] Email
+Sales Notifications
+[ListBullet] Admin/Sub Admin/Manager comments on one of their units.
+[ListBullet] They have not uploaded a unit for 72 hours.
+[ListBullet] A payment timetable update affects a unit they uploaded.
+[ListBullet] A unit they uploaded changes to Hold, Sold by Us, or Sold by Others.
+Manager Notifications
+[ListBullet] Admin/Sub Admin comments on one of their uploaded units.
+[ListBullet] Sales user in their team uploads a unit.
+[ListBullet] Team unit is marked Hold.
+[ListBullet] Team unit is marked Sold by Us or Sold by Others.
+[ListBullet] Team unit is edited.
+[ListBullet] Team member has not uploaded a unit for 72 hours.
+Admin / Sub Admin Notifications
+[ListBullet] Duplicate owner phone attempt happens inside the same project.
+[ListBullet] New unit is uploaded.
+[ListBullet] Down payment is updated.
+[ListBullet] Total Value / pricing is updated by Admin, Sub Admin, or the uploading Sales Representative.
+[ListBullet] Payment method is updated.
+[ListBullet] Installments are updated.
+[ListBullet] Remaining Value is recalculated by payment timetable.
+[ListBullet] Unit is edited.
+[ListBullet] Unit is marked Sold by Us or Sold by Others.
+[ListBullet] Unit is marked Hold.
+[ListBullet] Unit is exported to PDF.
+[ListBullet] Employee has not uploaded a unit for 72 hours.
+[ListBullet] Sales Representative reassignment occurs before deletion/deactivation.
+[Heading1] 29. Profile & Settings
+Each user can view:
+[ListBullet] Name
+[ListBullet] Email
+[ListBullet] Phone number
+[ListBullet] Role
+[ListBullet] Team
+[ListBullet] Branch
+User can edit:
+[ListBullet] Phone number if allowed by Admin/Sub Admin.
+User cannot edit:
+[ListBullet] Password directly through profile/self-service
+[ListBullet] Role
+[ListBullet] Team
+[ListBullet] Branch
+[ListBullet] Email unless Admin/Sub Admin allows
+Password changes must be handled through Admin/Sub Admin reset/edit or another approved administrative process. Admin and Sub Admin can manage passwords in User Management.
+[Heading1] 30. Mobile-First UI Requirements
+System must be mobile-first.
+Requirements:
+[ListBullet] Mobile layout first.
+[ListBullet] Large touch-friendly buttons.
+[ListBullet] Easy form completion from phone.
+[ListBullet] Clean unit cards.
+[ListBullet] Fast project/location browsing.
+[ListBullet] Admin screens usable from mobile.
+[ListBullet] Desktop must remain usable.
+[ListBullet] Desktop can be enhanced later.
+Mobile-first means the system should be designed around phone usage first because most work is expected to happen from mobile.
+[Heading1] 31. Screen Order and Field Order Requirement
+The PRD must match how the app is expected to appear as closely as possible. For every major screen, the final UI should follow the documented section order unless Leadra approves a different design.
+This applies to:
+[ListBullet] Create Unit screen field order.
+[ListBullet] Create Unit field order must place Destination before Developer.
+[ListBullet] View All Units page structure.
+[ListBullet] Unit Details page section order.
+[ListBullet] Unit Details order must show Destination before Developer and Delivery before Commission.
+[ListBullet] Filters order.
+[ListBullet] Notes placement.
+[ListBullet] Action button placement.
+[ListBullet] PDF content order.
+Developers should not freely reorder major sections without approval.
+[Heading1] 32. Core User Flows
+Create Unit Flow
+1. User logs in.
+2. User clicks Add Unit.
+3. User fills unit form.
+4. User selects Destination, Developer, Project, Unit Type, and conditional area fields.
+5. System shows only fields relevant to selected Unit Type.
+6. User selects payment method: Cash or Installment.
+7. User fills pricing fields based on selected payment method.
+8. User sets installment period From/To if applicable.
+9. User selects owner country code.
+10. User enters owner phone.
+11. System normalizes phone number.
+12. System validates required fields and required-field stars.
+13. System checks duplicate owner phone rules using normalized phone.
+14. System blocks creation only if the same normalized phone exists inside the same project.
+15. System allows same normalized phone in other projects silently.
+16. System calculates initial Remaining Value if payment method is Installment.
+17. System calculates installment amount if installment type is Quarterly, Semi-Annual, or Annual.
+18. System generates unit code.
+19. User uploads allowed images and permitted PDF attachments only; videos are rejected.
+20. System validates media count, total media size per unit, related-photo requirement for PDFs, and that no videos are included.
+21. User submits unit.
+22. System creates unit.
+23. System sends in-app and email notifications.
+24. System records action in audit log.
+View Unit Flow
+1. User opens View All Units.
+2. User sees project/location cards.
+3. User selects project/location card.
+4. System opens a separate page for that project/location.
+5. User sees units inside selected project/location.
+6. User applies filters if needed.
+7. User selects unit.
+8. System opens Unit Details.
+9. System hides or shows sensitive data based on permission.
+Export PDF Flow
+1. User opens Unit Details.
+2. User selects which images should appear in PDF if user has edit permission.
+3. User clicks Generate PDF or Export PDF.
+4. System checks user permission.
+5. System hides restricted information if needed.
+6. System excludes images marked Hide from PDF and validates that no video media exists because videos are not allowed.
+7. System generates branded PDF.
+8. User downloads PDF.
+9. System records export action.
+10. System sends Admin/Sub Admin notification.
+Share Generated PDF Flow
+1. User opens Unit Details.
+2. User generates PDF.
+3. User clicks Share PDF.
+4. System opens native/device share options if supported.
+5. User chooses WhatsApp, Instagram, or another app.
+6. If sharing is unavailable, user can download PDF and send manually.
+Archive Unit Flow
+1. Authorized user opens Unit Details.
+2. User clicks Archive Unit.
+3. System asks for confirmation.
+4. System archives unit.
+5. Unit no longer appears in active lists.
+6. Unit remains stored in database.
+7. Action appears in audit log.
+Sales Representative Deactivation/Reassignment Flow
+1. Admin/Sub Admin opens User Management.
+2. Admin/Sub Admin selects Sales Representative to deactivate/delete.
+3. System checks whether the Sales Representative has assigned or uploaded units.
+4. If units exist, system requires selecting a replacement Sales Representative.
+5. System reassigns units to the replacement Sales Representative.
+6. System preserves prior assignment history.
+7. System completes deactivation/deletion.
+8. System records action in audit log.
+[Heading1] 33. Business Rules
+Business rules are intentionally not yellow highlighted, per Leadra instruction.
+1. Users cannot register themselves.
+2. Any user can create units.
+3. All roles can view all units.
+4. Owner phone is visible only to Admin, Sub Admin, and the Sales Representative who uploaded the unit.
+5. Owner phone search is available only to Admin and Sub Admin.
+6. Sales users cannot archive units.
+7. Managers cannot archive units.
+8. Units are archived, not permanently deleted.
+9. Sales users cannot edit owner name or phone after creation.
+10. Sales users cannot see owner phone for units uploaded by other sales users.
+11. Sales users cannot search owner phone.
+12. Sales users can see who uploaded a unit globally.
+13. Admin and Sub Admin have the same access level unless a future approved change separates them.
+14. Admin/Sub Admin can create and manage Destination, Developer, and Project.
+15. Destination must remain in the system and in PDF output.
+16. Owner duplicate checking uses normalized owner phone only.
+17. Owner name must not trigger duplicate blocking.
+18. Same normalized owner phone cannot be duplicated inside the same project.
+19. Same normalized owner phone in another project is allowed silently.
+20. Unit code must be generated automatically.
+21. Unit code format is Project Abbreviation + Number of Bedrooms + BR.
+22. Unit Type must use the fixed 12-type list.
+23. Unit Type controls which area and floor fields appear.
+24. For floor-based unit types, Floor supports Ground and floors 1 through 40.
+25. Ground selection shows Garden Area where applicable.
+26. Penthouse wording must be used globally for top-level/penthouse labels.
+27. Penthouse Unit Type shows BUA and Terrace Area only.
+28. Cabin shows BUA only.
+29. Each unit can have only one payment method: Cash or Installment.
+30. Payment method is shown in Unit Details but excluded from generated PDF.
+31. Cash price is the same as Total Value.
+32. Remaining Value initial calculation is Total Unit Cost minus Down Payment.
+33. Remaining Value must not be manually edited.
+34. Remaining Value changes only through the payment timetable after creation.
+35. Admin/Sub Admin and the Sales Representative who uploaded the unit may edit Total Value / pricing where applicable, but those edits must not change Remaining Value outside the payment timetable.
+36. Installment period uses From/To month-year selectors instead of numeric Installment Years.
+37. Installment amount must be calculated automatically for Quarterly, Semi-Annual, and Annual payment options.
+38. Custom installments must not be automatically calculated unless future configuration allows it.
+39. Custom installment text must appear in the PDF when selected.
+40. Fixed commission defaults to 1.5% unless configured otherwise.
+41. Fixed commission can only be changed by Admin/Sub Admin.
+42. Transfer fees show only if applicable.
+43. Hold status does not expire automatically.
+44. Sold status must distinguish Sold by Us and Sold by Others.
+45. First uploaded image becomes thumbnail.
+46. Videos are not allowed in unit media, galleries, thumbnails, generated PDFs, or PDF references.
+47. Users can choose whether selected images appear in PDF.
+48. PDF export must be branded and include the required unit, area, pricing, delivery, and custom installment data.
+49. PDF sharing must be available after PDF generation where browser/device supports sharing, but web sharing cannot guarantee direct sharing to every app; PDF download fallback is required.
+50. Notifications must be in-app and email.
+51. Inactive users must remain visible in audit history.
+52. Every sensitive action must be tracked in audit log.
+53. Media upload limit starts at 40 MB total per unit.
+54. Upload failure must show a clear error and must not fail silently.
+55. Delivery Date / Delivery Expectancy uses year-only selection unless Leadra later approves month-year delivery display again.
+56. Delivery expectancy must support future years beyond next year.
+57. Mobile UI has priority over desktop UI in first phase.
+58. Major screen order and field order should match the PRD unless approved otherwise.
+59. Users cannot edit their own passwords through self-service. Admin/Sub Admin can edit/reset user passwords through User Management or another approved administrative process.
+60. The same user may keep multiple active sessions across devices unless revoked by admin or security policy.
+61. Deleting or deactivating a Sales Representative must require reassignment and must never delete, archive, or hide assigned units.
+62. Total Value / pricing after creation is editable only by Admin, Sub Admin, and the Sales Representative who uploaded the unit.
+63. Destination must appear before Developer in Create Unit and Unit Details.
+64. Furnished must be shown only when the unit is furnished; if not furnished, the field must not appear.
+65. Finishing Status is required and must show a required-field star.
+66. Unit Details must show Delivery before Commission.
+67. Videos must be rejected at upload and must not be stored, shown, thumbnailed, exported, or referenced.
+68. Admin/Sub Admin can reset/edit user passwords, while direct self-service password editing remains disabled.
+[Heading1] 34. Open Implementation Notes
+[ListBullet] The final UI should be reviewed against this PRD before handoff to development.
+[ListBullet] Any later change that separates Admin and Sub Admin permissions should be documented as a new signed change request.
+[ListBullet] Any later change to delivery date granularity should be documented because the current approved state is year-only delivery date and month-year installment period.
+[ListBullet] Any later change to owner phone search for Sales Representatives should be documented because the current approved state keeps owner phone search limited to Admin/Sub Admin.
+[ListBullet] Any later change that allows videos must be documented as a new approved change request because the current approved state rejects videos entirely.

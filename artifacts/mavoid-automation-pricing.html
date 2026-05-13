@@ -1,0 +1,402 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>MaVoid Automation Pricing</title>
+  <style>
+    :root {
+      --deep-ink: #06191F;
+      --dark-section: #071317;
+      --operational-blue: #1A5BFA;
+      --sky-blue: #5DB1D4;
+      --emerald: #34D399;
+      --teal-signal: #00FFC6;
+      --mint: #10B981;
+      --paper: #F7FCF9;
+      --soft-paper: #F1F5F9;
+      --white: #FFFFFF;
+      --line: rgba(6, 25, 31, 0.13);
+    }
+
+    * { box-sizing: border-box; }
+
+    html,
+    body {
+      margin: 0;
+      background: var(--soft-paper);
+      color: var(--deep-ink);
+      font-family: "Josefin Sans", "Segoe UI", Arial, sans-serif;
+      font-weight: 300;
+      line-height: 1.35;
+    }
+
+    @page {
+      size: A4;
+      margin: 0;
+    }
+
+    .page {
+      width: 210mm;
+      height: 297mm;
+      position: relative;
+      overflow: hidden;
+      background: var(--paper);
+      padding: 17mm;
+    }
+
+    .topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 16px;
+      margin-bottom: 17mm;
+    }
+
+    .brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+    }
+
+    .brand img {
+      width: 34mm;
+      height: auto;
+      object-fit: contain;
+    }
+
+    .brand-mark {
+      width: 10px;
+      height: 34px;
+      border-radius: 999px;
+      background: var(--teal-signal);
+    }
+
+    .doc-label {
+      border: 1px solid var(--line);
+      border-radius: 999px;
+      padding: 7px 12px 5px;
+      color: rgba(6, 25, 31, 0.72);
+      font-size: 10px;
+      font-weight: 600;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      background: rgba(255, 255, 255, 0.62);
+    }
+
+    .eyebrow {
+      margin: 0 0 3mm;
+      color: var(--mint);
+      font-size: 10px;
+      font-weight: 600;
+      letter-spacing: 1.5px;
+      text-transform: uppercase;
+    }
+
+    h1,
+    h2,
+    h3,
+    p {
+      margin-top: 0;
+    }
+
+    h1 {
+      max-width: 160mm;
+      margin-bottom: 5mm;
+      font-size: 43px;
+      line-height: 1.02;
+      font-weight: 200;
+      letter-spacing: 0;
+    }
+
+    h2 {
+      margin-bottom: 4mm;
+      font-size: 22px;
+      line-height: 1.08;
+      font-weight: 200;
+      letter-spacing: 0;
+    }
+
+    h3 {
+      margin-bottom: 3mm;
+      font-size: 15px;
+      font-weight: 600;
+    }
+
+    p {
+      color: rgba(6, 25, 31, 0.74);
+      font-size: 12.5px;
+    }
+
+    .lead {
+      max-width: 155mm;
+      margin-bottom: 9mm;
+      color: rgba(6, 25, 31, 0.78);
+      font-size: 16px;
+    }
+
+    .summary {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 4mm;
+      margin-bottom: 7mm;
+    }
+
+    .summary-card,
+    .automation,
+    .terms,
+    .total {
+      border: 1px solid var(--line);
+      border-radius: 16px;
+      background: rgba(255, 255, 255, 0.72);
+    }
+
+    .summary-card {
+      min-height: 28mm;
+      padding: 4.5mm;
+    }
+
+    .summary-card strong {
+      display: block;
+      margin-bottom: 2mm;
+      color: var(--operational-blue);
+      font-size: 24px;
+      font-weight: 200;
+      line-height: 1;
+    }
+
+    .summary-card span {
+      color: rgba(6, 25, 31, 0.72);
+      font-size: 11px;
+    }
+
+    .automation-grid {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 5mm;
+      margin-bottom: 6mm;
+    }
+
+    .automation {
+      padding: 5.5mm;
+      min-height: 91mm;
+    }
+
+    .price {
+      display: flex;
+      align-items: baseline;
+      gap: 2mm;
+      margin: 3mm 0 4mm;
+      color: var(--deep-ink);
+    }
+
+    .price strong {
+      font-size: 31px;
+      line-height: 1;
+      font-weight: 200;
+      color: var(--operational-blue);
+    }
+
+    .price span {
+      font-size: 11px;
+      font-weight: 600;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+      color: rgba(6, 25, 31, 0.58);
+    }
+
+    ul {
+      margin: 0;
+      padding: 0;
+      list-style: none;
+    }
+
+    li {
+      position: relative;
+      margin: 0 0 2.2mm;
+      padding-left: 4.5mm;
+      color: rgba(6, 25, 31, 0.76);
+      font-size: 11.4px;
+    }
+
+    li::before {
+      content: "";
+      position: absolute;
+      left: 0;
+      top: 5px;
+      width: 5px;
+      height: 5px;
+      border-radius: 999px;
+      background: var(--operational-blue);
+    }
+
+    .payment {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 3mm;
+      margin-top: 4mm;
+    }
+
+    .payment div {
+      border-radius: 12px;
+      padding: 3.5mm;
+      background: rgba(16, 185, 129, 0.10);
+      border: 1px solid rgba(16, 185, 129, 0.20);
+    }
+
+    .payment b {
+      display: block;
+      margin-bottom: 1mm;
+      color: var(--deep-ink);
+      font-size: 12px;
+      font-weight: 600;
+    }
+
+    .payment span {
+      color: rgba(6, 25, 31, 0.70);
+      font-size: 11px;
+    }
+
+    .bottom-grid {
+      display: grid;
+      grid-template-columns: 1.05fr 0.95fr;
+      gap: 5mm;
+      align-items: stretch;
+    }
+
+    .total {
+      padding: 5.5mm;
+      color: var(--white);
+      background: var(--deep-ink);
+      border-color: rgba(255, 255, 255, 0.12);
+    }
+
+    .total .eyebrow,
+    .total h2,
+    .total p {
+      color: var(--white);
+    }
+
+    .total .eyebrow { color: var(--teal-signal); }
+
+    .total-number {
+      margin: 4mm 0 3mm;
+      color: var(--teal-signal);
+      font-size: 38px;
+      font-weight: 200;
+      line-height: 1;
+    }
+
+    .terms {
+      padding: 5.5mm;
+    }
+
+    .terms li {
+      font-size: 11.2px;
+    }
+
+    .footer {
+      position: absolute;
+      left: 17mm;
+      right: 17mm;
+      bottom: 9mm;
+      display: flex;
+      justify-content: space-between;
+      color: rgba(6, 25, 31, 0.48);
+      font-size: 9px;
+      font-weight: 600;
+      letter-spacing: 1px;
+      text-transform: uppercase;
+    }
+  </style>
+</head>
+<body>
+  <section class="page">
+    <div class="topbar">
+      <div class="brand">
+        <img src="file:///E:/GitHub/leadra/artifacts/mavoid-logo-512.png" alt="MaVoid" />
+        <div class="brand-mark"></div>
+      </div>
+      <div class="doc-label">Implementation Pricing</div>
+    </div>
+
+    <p class="eyebrow">AI Automation Systems</p>
+    <h1>Implementation pricing for the Facebook and WhatsApp automations.</h1>
+    <p class="lead">Two controlled automation builds: one for scheduled Facebook posting from Leadra unit data, and one for Excel-driven WhatsApp outreach through an active WhatsApp Web session.</p>
+
+    <div class="summary">
+      <div class="summary-card">
+        <strong>7,000 EGP</strong>
+        <span>Facebook posting automation implementation.</span>
+      </div>
+      <div class="summary-card">
+        <strong>8,000 EGP</strong>
+        <span>WhatsApp outreach automation implementation.</span>
+      </div>
+      <div class="summary-card">
+        <strong>15,000 EGP</strong>
+        <span>Total implementation price for both automations.</span>
+      </div>
+    </div>
+
+    <div class="automation-grid">
+      <div class="automation">
+        <p class="eyebrow">Automation 01</p>
+        <h2>Leadra to Facebook Posting Operating System</h2>
+        <div class="price"><strong>7,000</strong><span>EGP implementation</span></div>
+        <ul>
+          <li>Reads approved Leadra unit data without changing the Leadra codebase.</li>
+          <li>Prepares Facebook-ready posts using real unit fields, images, and links.</li>
+          <li>Supports controlled AI copy generation with traceable post records.</li>
+          <li>Handles scheduled output, publishing fallback, monitoring, and duplicate prevention.</li>
+        </ul>
+        <div class="payment">
+          <div><b>Payment 1</b><span>3,500 EGP to start implementation.</span></div>
+          <div><b>Payment 2</b><span>3,500 EGP on completion.</span></div>
+        </div>
+      </div>
+
+      <div class="automation">
+        <p class="eyebrow">Automation 02</p>
+        <h2>Excel to WhatsApp Outreach Automation</h2>
+        <div class="price"><strong>8,000</strong><span>EGP implementation</span></div>
+        <ul>
+          <li>Reads Excel rows, validates phone numbers, and generates internal customer IDs.</li>
+          <li>Sends through an already logged-in WhatsApp Web session using a normal number.</li>
+          <li>Supports fixed messages or AI-assisted wording variations.</li>
+          <li>Updates Excel with Sent, Failed, Invalid Number, Not on WhatsApp, Skipped, or Retry.</li>
+        </ul>
+        <div class="payment">
+          <div><b>Payment 1</b><span>4,000 EGP to start implementation.</span></div>
+          <div><b>Payment 2</b><span>4,000 EGP on completion.</span></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="bottom-grid">
+      <div class="total">
+        <p class="eyebrow">Combined Approval</p>
+        <h2>Both automations together</h2>
+        <div class="total-number">15,000 EGP</div>
+        <p>If both automations are approved together, the total can be split into two equal payments: 7,500 EGP to start and 7,500 EGP on completion.</p>
+      </div>
+
+      <div class="terms">
+        <p class="eyebrow">Commercial Notes</p>
+        <h2>Payment structure</h2>
+        <ul>
+          <li>Each automation can be implemented independently.</li>
+          <li>Each automation can be split into two payments of 50% and 50%.</li>
+          <li>Implementation pricing covers the automation build described above.</li>
+          <li>External platform fees, ad spend, laptop hardware, SIM/number costs, and hosting are separate unless agreed otherwise.</li>
+        </ul>
+      </div>
+    </div>
+
+    <div class="footer">
+      <span>MaVoid Operating Systems</span>
+      <span>Pricing Summary</span>
+    </div>
+  </section>
+</body>
+</html>

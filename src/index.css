@@ -422,6 +422,22 @@ h2 {
   margin-bottom: var(--space-3);
 }
 
+.toast-region {
+  position: fixed;
+  inset-block-start: calc(1rem + env(safe-area-inset-top));
+  inset-inline: 1rem;
+  z-index: 60;
+  display: flex;
+  justify-content: center;
+  pointer-events: none;
+}
+
+.toast-region .flash {
+  width: min(100%, 36rem);
+  margin: 0;
+  pointer-events: auto;
+}
+
 .integration-badge.danger {
   color: var(--danger);
   border-color: color-mix(in oklch, var(--danger), transparent 55%);
@@ -1037,6 +1053,10 @@ label {
   color: var(--muted);
   font-weight: 800;
   font-size: 0.82rem;
+}
+
+.required-marker {
+  color: var(--danger);
 }
 
 .sr-only {
@@ -3081,6 +3101,10 @@ dd,
     line-height: 1.35;
   }
 
+  .toast-region .flash {
+    width: min(100%, 36rem);
+  }
+
   .role-grid {
     grid-template-columns: 1fr;
     gap: var(--space-3);
@@ -3663,7 +3687,8 @@ dd,
   }
 
   .user-card-actions,
-  .user-card-actions .secondary-button {
+  .user-card-actions .secondary-button,
+  .user-card-actions .danger-button {
     width: 100%;
   }
 

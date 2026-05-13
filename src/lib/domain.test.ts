@@ -3,6 +3,8 @@ import {
   calculatePaymentSummary,
   canArchiveUnit,
   canSearchOwnerPhone,
+  canViewSalesSensitiveData,
+  canViewUnit,
   canViewOwnerData,
   filterUnitsForUser,
   generateUnitCode,
@@ -10,10 +12,14 @@ import {
   summarizeDestinations,
   summarizeProjects,
   buildInstallmentSchedule,
+  deriveProjectAbbreviation,
+  getApplicableUnitAreaFields,
   getOwnerPhoneCountryMeta,
   getOwnerPhoneCountryOptions,
   getThumbnailMedia,
   normalizeOwnerPhone,
+  PRD_FLOOR_OPTIONS,
+  PRD_UNIT_TYPES,
   sanitizeUnitForPdf,
   unitHasSameProjectPhoneDuplicate,
   validateOwnerPhoneForCountry,
@@ -31,6 +37,14 @@ const admin: LeadraUser = {
   teamId: 'team-a',
   branchId: 'branch-cairo',
   status: 'active',
+}
+
+const subAdmin: LeadraUser = {
+  ...admin,
+  id: 'subadmin-1',
+  fullName: 'Laila Sub Admin',
+  email: 'subadmin@leadra.test',
+  role: 'sub_admin',
 }
 
 const manager: LeadraUser = {
@@ -60,7 +74,7 @@ const salesB: LeadraUser = {
 
 const baseUnit: LeadraUnit = {
   id: 105,
-  unitCode: 'NE105BR3Ba2',
+  unitCode: 'NC3BR',
   developerId: 'dev-1',
   developerName: 'Palm Hills',
   projectId: 'project-new-cairo',
@@ -71,6 +85,8 @@ const baseUnit: LeadraUnit = {
   floor: '3rd',
   bua: 165,
   roofGardenArea: null,
+  gardenArea: null,
+  terraceArea: null,
   viewId: 'view-garden',
   viewName: 'Garden',
   bedrooms: 3,
@@ -148,23 +164,40 @@ describe('Leadra domain rules', () => {
 
   it('applies owner visibility and owner-phone search permissions by role', () => {
     expect(canViewOwnerData(admin, baseUnit)).toBe(true)
-    expect(canViewOwnerData(manager, baseUnit)).toBe(true)
+    expect(canViewOwnerData(subAdmin, baseUnit)).toBe(true)
+    expect(canViewOwnerData(manager, baseUnit)).toBe(false)
     expect(canViewOwnerData(salesA, baseUnit)).toBe(true)
     expect(canViewOwnerData(salesB, baseUnit)).toBe(false)
 
     expect(canSearchOwnerPhone(admin, baseUnit)).toBe(true)
-    expect(canSearchOwnerPhone(manager, baseUnit)).toBe(true)
-    expect(canSearchOwnerPhone(salesA, baseUnit)).toBe(true)
+    expect(canSearchOwnerPhone(subAdmin, baseUnit)).toBe(true)
+    expect(canSearchOwnerPhone(manager, baseUnit)).toBe(false)
+    expect(canSearchOwnerPhone(salesA, baseUnit)).toBe(false)
     expect(canSearchOwnerPhone(salesB, baseUnit)).toBe(false)
+
+    expect(canViewSalesSensitiveData(admin, baseUnit)).toBe(true)
+    expect(canViewSalesSensitiveData(subAdmin, baseUnit)).toBe(true)
+    expect(canViewSalesSensitiveData(manager, baseUnit)).toBe(false)
+    expect(canViewSalesSensitiveData(salesA, baseUnit)).toBe(true)
+    expect(canViewSalesSensitiveData(salesB, baseUnit)).toBe(false)
   })
 
-  it('limits manager visibility to team units and does not use branches for visibility', () => {
-    const sameBranchOtherTeam = { ...baseUnit, id: 106, teamId: 'team-b', branchId: 'branch-cairo' }
+  it('allows every role to view all units while keeping owner data separately restricted', () => {
+    const sameBranchOtherTeam = { ...baseUnit, id: 106, teamId: 'team-b', branchId: 'branch-cairo', createdBy: salesB.id }
     const sameTeamOtherBranch = { ...baseUnit, id: 107, teamId: 'team-a', branchId: 'branch-alex' }
+    const archivedOtherTeam = { ...baseUnit, id: 108, teamId: 'team-b', archived: true }
 
-    expect(filterUnitsForUser(manager, [sameBranchOtherTeam, sameTeamOtherBranch])).toEqual([
+    expect(canViewUnit(admin, sameBranchOtherTeam)).toBe(true)
+    expect(canViewUnit(manager, sameBranchOtherTeam)).toBe(true)
+    expect(canViewUnit(salesA, sameBranchOtherTeam)).toBe(true)
+    expect(canViewUnit(salesA, archivedOtherTeam)).toBe(true)
+    expect(filterUnitsForUser(manager, [sameBranchOtherTeam, sameTeamOtherBranch, archivedOtherTeam])).toEqual([
+      sameBranchOtherTeam,
       sameTeamOtherBranch,
+      archivedOtherTeam,
     ])
+    expect(canViewOwnerData(manager, sameBranchOtherTeam)).toBe(false)
+    expect(canViewOwnerData(salesA, sameBranchOtherTeam)).toBe(false)
   })
 
   it('calculates cash, installment, custom installment, and commission values', () => {
@@ -247,12 +280,44 @@ describe('Leadra domain rules', () => {
     expect(searchUnits(admin, [baseUnit, otherSalesUnit], { buaFrom: 0, buaTo: 100 })).toEqual([otherSalesUnit])
     expect(searchUnits(admin, [baseUnit, otherSalesUnit], { installmentType: 'quarterly', installmentAmountFrom: 150_000, installmentAmountTo: 250_000 })).toEqual([baseUnit])
     expect(searchUnits(salesA, [baseUnit, otherSalesUnit], { ownerPhone: '01099999999' })).toEqual([])
-    expect(searchUnits(salesA, [baseUnit, otherSalesUnit], { ownerPhone: '501234567' })).toEqual([baseUnit])
+    expect(searchUnits(salesA, [baseUnit, otherSalesUnit], { ownerPhone: '501234567' })).toEqual([])
+    expect(searchUnits(subAdmin, [baseUnit, otherSalesUnit], { ownerPhone: '501234567' })).toEqual([baseUnit])
   })
 
-  it('generates the PRD unit code format from destination, id, bedrooms, and bathrooms', () => {
-    expect(generateUnitCode('New Cairo', 105, 3, 2)).toBe('NE105BR3Ba2')
-    expect(generateUnitCode('North Edge', 7, 1, 1)).toBe('NO7BR1Ba1')
+  it('defines the fixed PRD unit types and conditional fields', () => {
+    expect(PRD_UNIT_TYPES).toEqual([
+      'One Story Villa',
+      'Stand Alone',
+      'Twin House',
+      'Town House',
+      'Apartment',
+      'Chalet',
+      'Duplex',
+      'Senior Chalet',
+      'Junior Chalet',
+      'Loft',
+      'Cabin',
+      'Penthouse',
+    ])
+    expect(getApplicableUnitAreaFields('Stand Alone')).toMatchObject({ showFloor: false, showLandArea: true, showGardenArea: false, showTerraceArea: false })
+    expect(getApplicableUnitAreaFields('Apartment', 'Ground')).toMatchObject({ showFloor: true, showLandArea: false, showGardenArea: true, showTerraceArea: false })
+    expect(getApplicableUnitAreaFields('Cabin')).toMatchObject({ showFloor: false, showLandArea: false, showGardenArea: false, showTerraceArea: false })
+    expect(getApplicableUnitAreaFields('Penthouse')).toMatchObject({ showFloor: false, showLandArea: false, showGardenArea: false, showTerraceArea: true })
+  })
+
+  it('supports only Ground and floors 1 through 40 for floor-based unit types', () => {
+    expect(PRD_FLOOR_OPTIONS[0]).toBe('Ground')
+    expect(PRD_FLOOR_OPTIONS).toHaveLength(41)
+    expect(PRD_FLOOR_OPTIONS).toContain('40th')
+    expect(PRD_FLOOR_OPTIONS).not.toContain('Roof')
+  })
+
+  it('generates the PRD unit code from project abbreviation and bedroom count', () => {
+    expect(deriveProjectAbbreviation('Mountain View')).toBe('MV')
+    expect(deriveProjectAbbreviation('ZED')).toBe('ZE')
+    expect(generateUnitCode('Mountain View', 3)).toBe('MV3BR')
+    expect(generateUnitCode('Mountain View', 3)).toBe(generateUnitCode('Mountain View', 3))
+    expect(generateUnitCode('New Cairo', 3)).not.toContain('Ba')
   })
 
   it('validates media limits and chooses the first image thumbnail', () => {
@@ -288,7 +353,8 @@ describe('Leadra domain rules', () => {
 
   it('archives only for allowed roles and sanitizes restricted PDF output', () => {
     expect(canArchiveUnit(admin, baseUnit)).toBe(true)
-    expect(canArchiveUnit(manager, baseUnit)).toBe(true)
+    expect(canArchiveUnit(subAdmin, baseUnit)).toBe(true)
+    expect(canArchiveUnit(manager, baseUnit)).toBe(false)
     expect(canArchiveUnit(salesA, baseUnit)).toBe(false)
 
     const sanitized = sanitizeUnitForPdf(salesB, baseUnit)

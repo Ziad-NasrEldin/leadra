@@ -1,6 +1,6 @@
 import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from 'pdf-lib'
-import { buildInstallmentSchedule, formatCurrency, formatDeliveryExpectancy, sanitizeUnitForPdf } from './domain'
-import { getPaymentMethodLabel, translate, type LocaleCode } from './i18n'
+import { buildInstallmentSchedule, formatCurrency, formatDeliveryExpectancy, getApplicableUnitAreaFields, sanitizeUnitForPdf } from './domain'
+import { translate, type LocaleCode } from './i18n'
 import type { AppSettings, LeadraUnit, LeadraUser } from './types'
 
 export interface GeneratedPdf {
@@ -16,17 +16,22 @@ export function buildPermissionSafePdfText(
 ): string {
   const safeUnit = sanitizeUnitForPdf(user, unit)
   const includeSalesData = canIncludeSalesExportData(user, unit)
+  const areaFields = getApplicableUnitAreaFields(safeUnit.unitType, safeUnit.floor)
   const lines = [
     settings.companyName,
     `${translate(locale, 'export.generatedBy')}: ${user.fullName}`,
     `${translate(locale, 'units.unitCode')}: ${safeUnit.unitCode}`,
-    `${translate(locale, 'export.project')}: ${safeUnit.projectName}`,
     `${translate(locale, 'export.destination')}: ${safeUnit.destinationName}`,
+    `${translate(locale, 'details.developer')}: ${safeUnit.developerName}`,
+    `${translate(locale, 'export.project')}: ${safeUnit.projectName}`,
     `${translate(locale, 'export.type')}: ${safeUnit.unitType}`,
     `${translate(locale, 'export.area')}: ${safeUnit.bua}`,
+    areaFields.showLandArea ? `${translate(locale, 'details.landArea')}: ${safeUnit.landArea ?? ''}` : '',
+    areaFields.showFloor ? `${translate(locale, 'details.floor')}: ${safeUnit.floor}` : '',
+    areaFields.showGardenArea ? `${translate(locale, 'details.gardenArea')}: ${safeUnit.gardenArea ?? ''}` : '',
+    areaFields.showTerraceArea ? `${translate(locale, 'details.terraceArea')}: ${safeUnit.terraceArea ?? ''}` : '',
     `${translate(locale, 'export.bedsBaths')}: ${safeUnit.bedrooms} / ${safeUnit.bathrooms}`,
     `${translate(locale, 'export.totalAmount')}: ${formatCurrency(safeUnit.totalAmount, locale)}`,
-    `${translate(locale, 'export.paymentMethod')}: ${getPaymentMethodLabel(locale, safeUnit.paymentMethod)}`,
     safeUnit.paymentMethod === 'installment'
       ? `${translate(locale, 'export.installment')}: ${formatCurrency(safeUnit.installmentAmount, locale)}`
       : '',
@@ -51,6 +56,7 @@ export async function buildPermissionSafePdfBlob(
 ): Promise<Blob> {
   const safeUnit = sanitizeUnitForPdf(user, unit)
   const includeSalesData = canIncludeSalesExportData(user, unit)
+  const areaFields = getApplicableUnitAreaFields(safeUnit.unitType, safeUnit.floor)
   const pdf = await PDFDocument.create()
   const font = await pdf.embedFont(StandardFonts.Helvetica)
   const bold = await pdf.embedFont(StandardFonts.HelveticaBold)
@@ -61,16 +67,22 @@ export async function buildPermissionSafePdfBlob(
   page.drawRectangle({ x: 32, y: height - 154, width: 531, height: 120, color: rgb(0.08, 0.13, 0.11) })
   drawPdfText(page, settings.companyName || 'Leadra', { x: 52, y: height - 78, size: 24, font: bold, color: rgb(1, 0.98, 0.9) })
   drawPdfText(page, safeUnit.unitCode, { x: 52, y: height - 112, size: 18, font: bold, color: rgb(0.94, 0.86, 0.73) })
-  drawPdfText(page, `${safeUnit.projectName} / ${safeUnit.destinationName}`, { x: 52, y: height - 136, size: 11, font, color: rgb(1, 0.98, 0.9) })
+  drawPdfText(page, `${safeUnit.destinationName} / ${safeUnit.developerName} / ${safeUnit.projectName}`, { x: 52, y: height - 136, size: 11, font, color: rgb(1, 0.98, 0.9) })
 
   const facts = [
+    ['Destination', safeUnit.destinationName],
+    ['Developer', safeUnit.developerName],
+    ['Project', safeUnit.projectName],
     ['Unit type', safeUnit.unitType],
     ['Area', `${safeUnit.bua} m2`],
     ['Bedrooms / Bathrooms', `${safeUnit.bedrooms} / ${safeUnit.bathrooms}`],
     ['Pricing', formatCurrency(safeUnit.totalAmount, locale)],
-    ['Payment', getPaymentMethodLabel(locale, safeUnit.paymentMethod)],
     ['Delivery', formatDeliveryExpectancy(safeUnit, locale)],
   ]
+  if (areaFields.showLandArea) facts.splice(5, 0, ['Land area', safeUnit.landArea ? `${safeUnit.landArea} m2` : ''])
+  if (areaFields.showFloor) facts.splice(5, 0, ['Floor', safeUnit.floor])
+  if (areaFields.showGardenArea) facts.splice(6, 0, ['Garden area', safeUnit.gardenArea ? `${safeUnit.gardenArea} m2` : ''])
+  if (areaFields.showTerraceArea) facts.splice(5, 0, ['Terrace area', safeUnit.terraceArea ? `${safeUnit.terraceArea} m2` : ''])
 
   if (includeSalesData) facts.splice(4, 0, ['Commission', `${formatCurrency(safeUnit.commissionAmount, locale)} (${safeUnit.commissionPercentage}%)`])
   if (safeUnit.paymentMethod === 'installment') {
@@ -154,8 +166,14 @@ export function downloadGeneratedPdf(pdf: GeneratedPdf): void {
   const anchor = document.createElement('a')
   anchor.href = url
   anchor.download = pdf.fileName
+  anchor.rel = 'noopener'
+  anchor.style.display = 'none'
+  document.body.append(anchor)
   anchor.click()
-  window.setTimeout(() => URL.revokeObjectURL(url), 1000)
+  window.setTimeout(() => {
+    anchor.remove()
+    URL.revokeObjectURL(url)
+  }, 1000)
 }
 
 export async function shareGeneratedPdf(pdf: GeneratedPdf): Promise<boolean> {

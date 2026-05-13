@@ -4,6 +4,7 @@ import {
   canArchiveUnit,
   canViewUnit,
   generateUnitCode,
+  normalizeUnitOutdoorFields,
   normalizeOwnerPhone,
   validateOwnerPhoneForCountry,
   unitHasSameProjectPhoneDuplicate,
@@ -61,7 +62,14 @@ export function createUserWorkflow(
     id: `user-${Date.now()}`,
     createdAt: new Date().toISOString(),
     lastLoginAt: null,
-    ...input,
+    fullName: input.fullName,
+    email: input.email,
+    role: input.role,
+    jobTitle: input.jobTitle,
+    phoneNumber: input.phoneNumber,
+    teamId: input.teamId,
+    branchId: input.branchId,
+    status: input.status,
   }
 
   const nextState = withAnalyticsEvent(
@@ -86,6 +94,130 @@ export function createUserWorkflow(
     ok: true,
     state: nextState,
   }
+}
+
+export function deleteSalesRepresentativeWorkflow(
+  state: AppDataState,
+  actor: LeadraUser,
+  salesUserId: string,
+  replacementSalesUserId: string,
+): WorkflowResult {
+  if (!isAdminActor(actor)) {
+    return { ok: false, state, ...createErrorMessage('error.onlyAdminsCanCreateUsers', 'Only Admin and Sub Admin can create users.') }
+  }
+
+  const salesUser = state.users.find((item) => item.id === salesUserId)
+  const replacement = state.users.find((item) => item.id === replacementSalesUserId)
+
+  if (!salesUser || salesUser.role !== 'sales') {
+    return { ok: false, state, error: 'Select a sales representative to deactivate.', errorKey: null, errorParams: null }
+  }
+
+  if (!replacement || replacement.role !== 'sales' || replacement.status !== 'active' || replacement.deletedAt) {
+    return { ok: false, state, error: 'Select an active replacement sales representative.', errorKey: null, errorParams: null }
+  }
+
+  if (salesUser.id === replacement.id) {
+    return { ok: false, state, error: 'Replacement sales representative must be different from the deleted sales representative.', errorKey: null, errorParams: null }
+  }
+
+  const now = new Date().toISOString()
+  const reassignedUnits = state.units.filter((unit) => unit.createdBy === salesUser.id)
+  const auditMessage = createAuditMessage('sales_rep_deactivated_after_reassignment', {
+    deletedName: salesUser.fullName,
+    replacementName: replacement.fullName,
+    count: reassignedUnits.length,
+  })
+  const nextState = withAnalyticsEvent(
+    withAudit(
+      {
+        ...state,
+        users: state.users.map((item) =>
+          item.id === salesUser.id ? { ...item, status: 'inactive', deletedAt: now } : item,
+        ),
+        units: state.units.map((unit) =>
+          unit.createdBy === salesUser.id
+            ? {
+                ...unit,
+                createdBy: replacement.id,
+                createdByName: replacement.fullName,
+                teamId: replacement.teamId,
+                branchId: replacement.branchId,
+                updatedAt: now,
+              }
+            : unit,
+        ),
+      },
+      actor,
+      auditMessage.text,
+      salesUser.id,
+      { salesUserId: salesUser.id, assignedUnits: reassignedUnits.length },
+      { replacementSalesUserId: replacement.id, assignedUnits: reassignedUnits.length },
+      auditMessage,
+    ),
+    actor,
+    'settings_updated',
+    {
+      metadata: {
+        operation: 'sales_rep_deactivated_after_reassignment',
+        deactivatedSalesUserId: salesUser.id,
+        replacementSalesUserId: replacement.id,
+        reassignedUnitCount: reassignedUnits.length,
+      },
+    },
+  )
+
+  return { ok: true, state: nextState }
+}
+
+export function deleteManagedUserWorkflow(
+  state: AppDataState,
+  actor: LeadraUser,
+  userId: string,
+): WorkflowResult {
+  if (!isAdminActor(actor)) {
+    return { ok: false, state, ...createErrorMessage('error.onlyAdminsCanCreateUsers', 'Only Admin and Sub Admin can create users.') }
+  }
+
+  const managedUser = state.users.find((item) => item.id === userId)
+  if (!managedUser) {
+    return { ok: false, state, error: 'Select a user to delete.', errorKey: null, errorParams: null }
+  }
+
+  if (managedUser.role === 'admin') {
+    return { ok: false, state, error: 'Admin accounts cannot be deleted from user management.', errorKey: null, errorParams: null }
+  }
+
+  if (managedUser.role === 'sales') {
+    return { ok: false, state, error: 'Sales representatives require reassignment before deletion.', errorKey: null, errorParams: null }
+  }
+
+  const now = new Date().toISOString()
+  const auditMessage = createAuditMessage('user_deleted', {
+    deletedName: managedUser.fullName,
+    role: managedUser.role,
+  })
+  const nextState = withAnalyticsEvent(
+    withAudit(
+      {
+        ...state,
+        users: state.users.map((item) =>
+          item.id === managedUser.id ? { ...item, status: 'inactive', deletedAt: now } : item,
+        ),
+      },
+      actor,
+      auditMessage.text,
+      managedUser.id,
+      { userId: managedUser.id, status: managedUser.status },
+      { userId: managedUser.id, status: 'inactive', deletedAt: now },
+      auditMessage,
+    ),
+    actor,
+    'settings_updated',
+    { metadata: { operation: 'user_deleted', deletedUserId: managedUser.id, role: managedUser.role } },
+  )
+
+  return { ok: true, state: nextState }
 }
 
 export function createUnitWorkflow(
@@ -135,9 +267,10 @@ export function createUnitWorkflow(
     installmentYears: input.installmentYears,
     commissionPercentage: state.settings.commissionPercentage,
   })
+  const outdoorFields = normalizeUnitOutdoorFields(input)
   const candidate: LeadraUnit = {
     id: nextId,
-    unitCode: generateUnitCode(input.destinationName, nextId, input.bedrooms, input.bathrooms),
+    unitCode: generateUnitCode(input.projectName, input.bedrooms),
     developerId: input.developerId,
     developerName: input.developerName,
     projectId: input.projectId,
@@ -145,15 +278,17 @@ export function createUnitWorkflow(
     destinationId: input.destinationId,
     destinationName: input.destinationName,
     unitType: input.unitType,
-    floor: input.floor,
+    floor: outdoorFields.floor,
     bua: input.bua,
-    roofGardenArea: input.roofGardenArea ?? null,
+    roofGardenArea: outdoorFields.roofGardenArea,
+    gardenArea: outdoorFields.gardenArea,
+    terraceArea: outdoorFields.terraceArea,
     viewId: input.viewId,
     viewName: input.viewName,
     bedrooms: input.bedrooms,
     bathrooms: input.bathrooms,
     elevator: input.elevator,
-    landArea: input.landArea ?? null,
+    landArea: outdoorFields.landArea,
     furnished: input.furnished,
     finish: input.finish,
     paymentMethod: input.paymentMethod,

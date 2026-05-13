@@ -25,6 +25,8 @@ const input: CreateUnitInput = {
   floor: '2nd',
   bua: 150,
   roofGardenArea: null,
+  gardenArea: null,
+  terraceArea: null,
   viewId: 'view-1',
   viewName: 'Garden',
   bedrooms: 3,
@@ -58,16 +60,26 @@ describe('Supabase mappers', () => {
       installment_years: 5,
       country_code: '+20',
       original_owner_phone: '010 1234 5678',
+      garden_area: null,
+      terrace_area: null,
       created_by: 'user-1',
       team_id: 'team-1',
       branch_id: 'branch-1',
     })
   })
 
+  it('stores null team and branch IDs for unassigned sales representatives', () => {
+    expect(toUnitInsertPayload(input, { ...actor, teamId: '', branchId: '' })).toMatchObject({
+      created_by: 'user-1',
+      team_id: null,
+      branch_id: null,
+    })
+  })
+
   it('maps joined Supabase rows back to the app unit model', () => {
     const row: SupabaseUnitRow = {
       id: 105,
-      unit_code: 'NE105BR3Ba2',
+      unit_code: 'NC3BR',
       developer_id: 'dev-1',
       developer: { label: 'Palm Hills' },
       project_id: 'project-1',
@@ -78,6 +90,8 @@ describe('Supabase mappers', () => {
       floor: '2nd',
       bua: 150,
       roof_garden_area: null,
+      garden_area: null,
+      terrace_area: null,
       view_id: 'view-1',
       view: { label: 'Garden' },
       bedrooms: 3,
@@ -106,8 +120,8 @@ describe('Supabase mappers', () => {
       archived: false,
       created_by: 'user-1',
       creator: { full_name: 'Sales User' },
-      team_id: 'team-1',
-      branch_id: 'branch-1',
+      team_id: null,
+      branch_id: null,
       created_at: '2026-05-04T00:00:00.000Z',
       updated_at: '2026-05-04T00:00:00.000Z',
       unit_media: [],
@@ -116,5 +130,7 @@ describe('Supabase mappers', () => {
 
     expect(toUnitViewModel(row).projectName).toBe('New Cairo Estates')
     expect(toUnitViewModel(row).deliveryExpectancy).toEqual({ mode: 'year', year: 2028 })
+    expect(toUnitViewModel(row).teamId).toBe('')
+    expect(toUnitViewModel(row).branchId).toBe('')
   })
 })

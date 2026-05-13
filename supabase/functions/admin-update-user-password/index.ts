@@ -21,7 +21,7 @@ function json(body: unknown, status = 200) {
 }
 
 function isStrongEnoughPassword(password: string) {
-  return password.length >= 10 && /\S/.test(password)
+  return password.length >= 8 && /\S/.test(password)
 }
 
 serve(async (request) => {
@@ -57,7 +57,7 @@ serve(async (request) => {
   }
 
   if (!isStrongEnoughPassword(password)) {
-    return json({ ok: false, error: 'Password must be at least 10 characters.' }, 400)
+    return json({ ok: false, error: 'Password must be at least 8 characters.' }, 400)
   }
 
   const { data: callerProfile, error: profileError } = await adminClient

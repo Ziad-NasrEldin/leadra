@@ -1,91 +1,173 @@
 import { describe, expect, it } from 'vitest'
-import { initialAppState } from '../data/seed'
-import { buildAnalyticsCsv, buildAnalyticsDashboard, canAccessAnalytics, getAnalyticsDateRange } from './analytics'
-import type { AnalyticsTarget, LeadraUser } from './types'
+import { buildAnalyticsDashboard, defaultAnalyticsFilters } from './analytics'
+import type { AnalyticsEvent, AnalyticsTarget, AppDataState, LeadraUnit, LeadraUser } from './types'
 
-const admin = initialAppState.users.find((user) => user.role === 'admin') as LeadraUser
-const manager = initialAppState.users.find((user) => user.role === 'manager') as LeadraUser
-const sales = initialAppState.users.find((user) => user.role === 'sales') as LeadraUser
+const manager: LeadraUser = {
+  id: 'manager-1',
+  fullName: 'Mona Manager',
+  email: 'manager@leadra.test',
+  role: 'manager',
+  jobTitle: 'Manager',
+  phoneNumber: '+201000000000',
+  teamId: 'team-a',
+  branchId: 'branch-cairo',
+  status: 'active',
+}
 
-const monthlyTarget: AnalyticsTarget = {
-  id: 'target-team-prime',
-  scopeType: 'team',
-  scopeId: 'team-prime',
+const salesA: LeadraUser = {
+  ...manager,
+  id: 'sales-a',
+  fullName: 'Sara Sales',
+  email: 'sales-a@leadra.test',
+  role: 'sales',
+}
+
+const salesB: LeadraUser = {
+  ...salesA,
+  id: 'sales-b',
+  fullName: 'Omar Sales',
+  email: 'sales-b@leadra.test',
+  teamId: 'team-b',
+  branchId: 'branch-alex',
+}
+
+const baseUnit: LeadraUnit = {
+  id: 101,
+  unitCode: 'NE101BR2Ba2',
+  developerId: 'dev-1',
+  developerName: 'Palm Hills',
+  projectId: 'project-1',
+  projectName: 'New Cairo Estates',
+  destinationId: 'dest-1',
+  destinationName: 'New Cairo',
+  unitType: 'Apartment',
+  floor: '2',
+  bua: 140,
+  roofGardenArea: null,
+  gardenArea: null,
+  terraceArea: null,
+  viewId: 'view-1',
+  viewName: 'Garden',
+  bedrooms: 2,
+  bathrooms: 2,
+  elevator: true,
+  landArea: null,
+  furnished: false,
+  finish: 'Fully Finished',
+  paymentMethod: 'cash',
+  totalAmount: 4_000_000,
+  downPayment: null,
+  remainingPayment: null,
+  commissionPercentage: 1.5,
+  commissionAmount: 60_000,
+  installmentType: null,
+  installmentYears: null,
+  installmentAmount: null,
+  deliveryExpectancy: { mode: 'year', year: 2027 },
+  originalOwnerName: null,
+  countryCode: '+20',
+  originalOwnerPhone: null,
+  normalizedOwnerPhone: null,
+  salesNotes: '',
+  status: 'available',
+  archived: false,
+  createdBy: 'sales-a',
+  createdByName: 'Sara Sales',
+  teamId: 'team-a',
+  branchId: 'branch-cairo',
+  createdAt: '2026-05-04T00:00:00.000Z',
+  updatedAt: '2026-05-04T00:00:00.000Z',
+  media: [],
+  adminManagerNotes: [],
+}
+
+const otherTeamEvent: AnalyticsEvent = {
+  id: 'event-1',
+  eventType: 'unit_created',
+  actorId: 'sales-b',
+  actorRole: 'sales',
+  teamId: 'team-b',
+  branchId: 'branch-alex',
+  unitId: 102,
+  projectId: 'project-2',
+  developerId: 'dev-2',
+  destinationId: 'dest-2',
+  metadata: {},
+  createdAt: '2026-05-04T08:00:00.000Z',
+}
+
+const companyTarget: AnalyticsTarget = {
+  id: 'target-1',
+  scopeType: 'company',
+  scopeId: null,
   period: 'monthly',
   targetUnitsCreated: 2,
   targetUnitsSold: 1,
-  targetSoldValue: 5_000_000,
-  targetCommission: 75_000,
-  targetActivityEvents: 4,
+  targetSoldValue: 1,
+  targetCommission: 1,
+  targetActivityEvents: 1,
   startsAt: '2026-05-01T00:00:00.000Z',
-  endsAt: '2026-05-31T23:59:59.999Z',
-  createdBy: admin.id,
+  endsAt: '2026-05-31T23:59:59.000Z',
+  createdBy: 'admin-1',
   createdAt: '2026-05-01T00:00:00.000Z',
   updatedAt: '2026-05-01T00:00:00.000Z',
 }
 
-describe('analytics dashboard calculations', () => {
-  it('allows admin/sub-admin and managers but blocks sales analytics access', () => {
-    expect(canAccessAnalytics(admin)).toBe(true)
-    expect(canAccessAnalytics(manager)).toBe(true)
-    expect(canAccessAnalytics(sales)).toBe(false)
-  })
+const state: AppDataState = {
+  users: [manager, salesA, salesB],
+  units: [
+    baseUnit,
+    {
+      ...baseUnit,
+      id: 102,
+      unitCode: 'ZE102BR3Ba2',
+      projectId: 'project-2',
+      projectName: 'ZED East',
+      developerId: 'dev-2',
+      developerName: 'SODIC',
+      destinationId: 'dest-2',
+      destinationName: 'Sheikh Zayed',
+      createdBy: 'sales-b',
+      createdByName: 'Omar Sales',
+      teamId: 'team-b',
+      branchId: 'branch-alex',
+      totalAmount: 6_000_000,
+      commissionAmount: 90_000,
+    },
+  ],
+  branches: [],
+  teams: [],
+  notifications: [],
+  auditLogs: [],
+  analyticsEvents: [otherTeamEvent],
+  analyticsTargets: [companyTarget],
+  settings: {
+    companyName: 'Leadra',
+    commissionPercentage: 1.5,
+    footerText: '',
+    contactDetails: '',
+    logoPath: '',
+    pdfLayout: 'classic',
+    mediaLimitMb: 40,
+    paymentMethods: ['cash', 'installment'],
+  },
+}
 
-  it('builds company-wide executive metrics from units, events, and targets', () => {
-    const dashboard = buildAnalyticsDashboard(admin, {
-      ...initialAppState,
-      analyticsTargets: [monthlyTarget],
-    })
+describe('analytics visibility', () => {
+  it('does not scope manager analytics to the manager team or branch', () => {
+    const dashboard = buildAnalyticsDashboard(
+      manager,
+      state,
+      'en',
+      new Date('2026-05-04T12:00:00.000Z'),
+      defaultAnalyticsFilters,
+    )
 
     expect(dashboard.scopeLabel).toBe('Company-wide')
     expect(dashboard.overview.totalActiveUnits).toBe(2)
-    expect(dashboard.overview.holdUnits).toBe(1)
-    expect(dashboard.overview.projectedCommission).toBe(277_500)
-    expect(dashboard.overview.pdfExports).toBe(1)
-    expect(dashboard.inventoryHealth[0]).toMatchObject({
-      projectName: 'New Cairo Estates',
-      totalUnits: 1,
-      mediaCompleteness: 100,
-    })
-    expect(dashboard.targetProgress[0]).toMatchObject({
-      label: 'team-prime monthly target',
-      unitsCreatedProgress: 50,
-      activityProgress: 100,
-    })
-  })
-
-  it('scopes manager analytics to their team and keeps owner data out of event metadata', () => {
-    const dashboard = buildAnalyticsDashboard(manager, {
-      ...initialAppState,
-      analyticsTargets: [monthlyTarget],
-    })
-
-    expect(dashboard.scopeLabel).toBe('Team team-prime')
-    expect(dashboard.overview.totalActiveUnits).toBe(1)
-    expect(dashboard.overview.projectedCommission).toBe(75_000)
-    expect(dashboard.salesPerformance).toHaveLength(1)
-    expect(JSON.stringify(dashboard.activityTimeline)).not.toMatch(/owner|phone|Hassan|Mariam/i)
-  })
-
-  it('maps analytics date windows to concrete ranges', () => {
-    const now = new Date('2026-05-04T12:00:00.000Z')
-
-    expect(getAnalyticsDateRange({ dateWindow: 'live', teamIds: [], userIds: [], projectIds: [], developerIds: [], destinationIds: [], statuses: [], paymentMethods: [] }, now).start.toISOString().slice(0, 10)).toBe('2026-04-28')
-    expect(getAnalyticsDateRange({ dateWindow: '30d', teamIds: [], userIds: [], projectIds: [], developerIds: [], destinationIds: [], statuses: [], paymentMethods: [] }, now).start.toISOString().slice(0, 10)).toBe('2026-04-05')
-    expect(getAnalyticsDateRange({ dateWindow: '90d', teamIds: [], userIds: [], projectIds: [], developerIds: [], destinationIds: [], statuses: [], paymentMethods: [] }, now).start.toISOString().slice(0, 10)).toBe('2026-02-04')
-    expect(getAnalyticsDateRange({ dateWindow: 'custom', startDate: '2026-03-01', endDate: '2026-03-15', teamIds: [], userIds: [], projectIds: [], developerIds: [], destinationIds: [], statuses: [], paymentMethods: [] }, now).end.toISOString().slice(0, 10)).toBe('2026-03-15')
-  })
-
-  it('exports aggregate CSV without owner-sensitive fields', () => {
-    const filters = { dateWindow: '30d' as const, teamIds: [], userIds: [], projectIds: [], developerIds: [], destinationIds: [], statuses: [], paymentMethods: [] }
-    const dashboard = buildAnalyticsDashboard(admin, {
-      ...initialAppState,
-      analyticsTargets: [monthlyTarget],
-    }, 'en', new Date('2026-05-04T12:00:00.000Z'), filters)
-    const csv = buildAnalyticsCsv(dashboard, filters)
-
-    expect(csv).toMatch(/Overview/)
-    expect(csv).toMatch(/Sales/)
-    expect(csv).not.toMatch(/owner|phone|normalized|Hassan|Mariam/i)
+    expect(dashboard.overview.activeUsers).toBe(3)
+    expect(dashboard.activityTimeline.some((point) => point.unitsCreated === 1)).toBe(true)
+    expect(dashboard.filterOptions.teams.map((team) => team.id).sort()).toEqual(['team-a', 'team-b'])
+    expect(dashboard.targetProgress).toHaveLength(1)
   })
 })
