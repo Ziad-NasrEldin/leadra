@@ -1662,6 +1662,13 @@ dd {
   grid-column: 1 / -1;
 }
 
+.dashboard-page .content-card,
+.dashboard-page .analytics-row,
+.dashboard-page .unit-row,
+.dashboard-page .notification-row {
+  content-visibility: visible;
+}
+
 .notification-row,
 .admin-row {
   display: flex;
@@ -2767,6 +2774,121 @@ dd,
   gap: var(--space-3);
 }
 
+.master-data-workspace {
+  display: grid;
+  grid-template-columns: minmax(13rem, 0.32fr) minmax(0, 1fr);
+  align-items: start;
+  gap: var(--space-4);
+}
+
+.master-data-rail {
+  position: sticky;
+  top: calc(var(--space-4) + 72px);
+  display: grid;
+  gap: var(--space-2);
+  max-height: calc(100vh - 120px);
+  overflow: auto;
+  padding: var(--space-2);
+  border: 1px solid var(--line);
+  border-radius: 1.1rem;
+  background: rgba(255, 252, 244, 0.72);
+}
+
+.master-data-tab {
+  min-height: 48px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--space-3);
+  border: 1px solid transparent;
+  border-radius: 0.85rem;
+  padding: 0.65rem 0.75rem;
+  background: transparent;
+  color: var(--ink);
+  text-align: start;
+  font: inherit;
+  font-weight: 850;
+  cursor: pointer;
+}
+
+.master-data-tab:hover,
+.master-data-tab.active {
+  border-color: color-mix(in oklch, var(--olive), transparent 64%);
+  background: rgba(220, 232, 213, 0.4);
+}
+
+.master-data-tab strong {
+  min-width: 2rem;
+  min-height: 1.6rem;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 999px;
+  background: #fffaf0;
+  color: var(--olive);
+  font-size: 0.78rem;
+}
+
+.master-data-detail {
+  display: grid;
+  gap: var(--space-4);
+  min-width: 0;
+}
+
+.master-data-toolbar {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(14rem, 0.42fr);
+  align-items: end;
+  gap: var(--space-4);
+  padding-bottom: var(--space-3);
+  border-bottom: 1px solid var(--line);
+}
+
+.master-data-toolbar h3,
+.user-management-list h3 {
+  margin: 0;
+}
+
+.master-data-search {
+  display: grid;
+  gap: 0.45rem;
+  color: var(--muted);
+  font-size: 0.82rem;
+  font-weight: 800;
+}
+
+.master-data-search input {
+  width: 100%;
+}
+
+.master-data-detail .create-user-panel {
+  margin-bottom: 0;
+}
+
+.master-data-detail .user-management-list {
+  gap: var(--space-2);
+}
+
+.master-data-detail .user-management-card {
+  grid-template-columns: minmax(0, 1fr) auto;
+  padding: var(--space-3);
+  border-radius: 0.95rem;
+  box-shadow: none;
+  background: rgba(255, 252, 244, 0.74);
+}
+
+.master-data-detail .user-management-main span {
+  color: var(--muted);
+  font-size: 0.8rem;
+  font-weight: 750;
+}
+
+.master-data-detail .user-card-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: end;
+  gap: var(--space-2);
+}
+
 .user-management-card {
   display: grid;
   grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) auto;
@@ -2995,7 +3117,7 @@ dd,
   }
 
   .main-panel {
-    padding: 0.85rem 0.85rem calc(6.7rem + env(safe-area-inset-bottom));
+    padding: 0.72rem 0.85rem calc(6rem + env(safe-area-inset-bottom));
   }
 
   .topbar {
@@ -3007,6 +3129,15 @@ dd,
   .topbar h1 {
     font-size: clamp(1.85rem, 11vw, 2.7rem);
     line-height: 0.95;
+  }
+
+  .dashboard-topbar {
+    gap: var(--space-2);
+    margin-bottom: var(--space-2);
+  }
+
+  .dashboard-topbar h1 {
+    font-size: clamp(1.7rem, 9.2vw, 2.35rem);
   }
 
   .compact-topbar {
@@ -3116,6 +3247,41 @@ dd,
     border-radius: 1.25rem;
   }
 
+  .dashboard-page {
+    gap: var(--space-3);
+    padding-bottom: calc(6.7rem + env(safe-area-inset-bottom));
+  }
+
+  .dashboard-page .hero-panel {
+    min-height: auto;
+    padding: 1rem;
+    align-content: start;
+    gap: 0.7rem;
+    border-radius: 1.25rem;
+  }
+
+  .dashboard-page .hero-panel p:not(.eyebrow) {
+    max-width: 32ch;
+    font-size: 0.96rem;
+    line-height: 1.45;
+  }
+
+  .dashboard-page .hero-panel .action-row {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--space-2);
+    margin-top: 0.2rem;
+  }
+
+  .dashboard-page .hero-panel .primary-button,
+  .dashboard-page .hero-panel .secondary-button,
+  .dashboard-page .hero-panel .secondary-link {
+    width: 100%;
+    min-height: 48px;
+    padding-inline: 0.65rem;
+    white-space: normal;
+  }
+
   .hero-panel h2,
   .section-heading h2,
   .content-card h2,
@@ -3143,13 +3309,75 @@ dd,
     gap: var(--space-3);
   }
 
+  .dashboard-page .metric-grid {
+    gap: var(--space-2);
+  }
+
+  .admin-dashboard .metric-grid {
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+  }
+
   .metric-card {
     padding: 0.9rem;
     border-radius: 1.05rem;
   }
 
+  .dashboard-page .metric-card {
+    min-height: 84px;
+    padding: 0.75rem;
+    display: grid;
+    align-content: space-between;
+    gap: 0.35rem;
+  }
+
+  .dashboard-page .metric-card span {
+    font-size: 0.78rem;
+    line-height: 1.2;
+  }
+
   .metric-card strong {
     font-size: 1.55rem;
+  }
+
+  .dashboard-page .metric-card strong {
+    margin-top: 0;
+    font-size: 1.42rem;
+    line-height: 1;
+  }
+
+  .dashboard-page .content-card {
+    padding: 1rem;
+  }
+
+  .dashboard-page .content-card > h2,
+  .dashboard-page .content-card > .section-heading {
+    margin-bottom: var(--space-3);
+  }
+
+  .dashboard-page .notification-row {
+    margin-top: var(--space-2);
+    padding: 0.75rem;
+  }
+
+  .dashboard-page .notification-row:first-child,
+  .dashboard-page h2 + .notification-row {
+    margin-top: 0;
+  }
+
+  .dashboard-page .project-health-row {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: var(--space-2);
+  }
+
+  .dashboard-page .project-health-row > div {
+    grid-column: 1 / -1;
+  }
+
+  .dashboard-page .project-health-row .analytics-chip {
+    width: 100%;
+    justify-self: stretch;
+    justify-content: center;
+    text-align: center;
   }
 
   .project-grid {
@@ -3553,6 +3781,21 @@ dd,
 
   .admin-user-header,
   .user-management-card {
+    grid-template-columns: 1fr;
+  }
+
+  .master-data-workspace,
+  .master-data-toolbar {
+    grid-template-columns: 1fr;
+  }
+
+  .master-data-rail {
+    position: static;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    max-height: none;
+  }
+
+  .master-data-detail .user-management-card {
     grid-template-columns: 1fr;
   }
 

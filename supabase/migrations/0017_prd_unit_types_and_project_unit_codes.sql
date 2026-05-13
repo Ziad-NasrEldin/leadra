@@ -45,26 +45,37 @@ begin
 end;
 $$;
 
-create or replace function public.set_unit_defaults()
+create or replace function public.prepare_unit_calculations()
 returns trigger
 language plpgsql
-security definer
-set search_path = public
 as $$
 declare
   project_label text;
+  payments_per_year integer;
 begin
+  new.normalized_owner_phone := public.normalize_owner_phone(new.original_owner_phone, new.country_code);
+
+  if new.payment_method = 'cash' then
+    new.down_payment := null;
+    new.remaining_payment := null;
+    new.installment_type := null;
+    new.installment_years := null;
+    new.installment_amount := null;
+  else
+    new.remaining_payment := greatest(new.total_amount - coalesce(new.down_payment, 0), 0);
+  end if;
+
   if new.remaining_payment is null and new.payment_method = 'installment' then
     new.remaining_payment := greatest(new.total_amount - coalesce(new.down_payment, 0), 0);
   end if;
 
-  if new.installment_amount is null and new.payment_method = 'installment' and new.installment_years is not null then
-    new.installment_amount := case
-      when new.installment_type = 'quarterly' then new.remaining_payment / (new.installment_years * 4)
-      when new.installment_type = 'semi_annual' then new.remaining_payment / (new.installment_years * 2)
-      when new.installment_type = 'annual' then new.remaining_payment / new.installment_years
-      else null
-    end;
+  if new.payment_method = 'installment' then
+    if new.installment_type = 'custom' then
+      new.installment_amount := null;
+    else
+      payments_per_year := case new.installment_type when 'quarterly' then 4 when 'semi_annual' then 2 when 'annual' then 1 else null end;
+      new.installment_amount := round(new.remaining_payment / nullif((coalesce(new.installment_years, 0) * payments_per_year), 0), 2);
+    end if;
   end if;
 
   select label into project_label from public.lookup_values where id = new.project_id;

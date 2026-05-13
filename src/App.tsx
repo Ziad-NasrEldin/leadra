@@ -670,7 +670,7 @@ function App() {
       </aside>
 
       <main className="main-panel">
-        <header className={`topbar ${activeView !== 'dashboard' ? 'compact-topbar' : ''}`}>
+        <header className={`topbar ${activeView === 'dashboard' ? 'dashboard-topbar' : 'compact-topbar'}`}>
           <div>
             <p className="eyebrow">{t('topbar.eyebrow')}</p>
             <h1>{getViewTitle(activeView, user, locale)}</h1>
@@ -3745,14 +3745,81 @@ function MasterDataPanel({
   onArchiveTeam: (teamId: string) => Promise<void>
 }) {
   const { locale, t } = useLocale()
-  const [lookupKind, setLookupKind] = useState<LookupKind>('developer')
-  const lookupGroups = lookupKindOptions.map((kind) => ({
-    kind,
-    label: getLookupKindLabel(kind, locale),
-    values: lookupValues
-      .filter((value) => value.kind === kind && !value.archived)
-      .sort((first, second) => compareText(locale, first.label, second.label)),
-  }))
+  const [activeDirectory, setActiveDirectory] = useState<LookupKind | 'branches' | 'teams'>('developer')
+  const [directoryQuery, setDirectoryQuery] = useState('')
+  const directoryOptions = [
+    ...lookupKindOptions.map((kind) => ({
+      id: kind,
+      label: getLookupKindLabel(kind, locale),
+      count: lookupValues.filter((value) => value.kind === kind && !value.archived).length,
+    })),
+    { id: 'branches' as const, label: t('admin.branchManagement'), count: branches.length },
+    { id: 'teams' as const, label: t('admin.teamManagement'), count: teams.length },
+  ]
+  const activeOption = directoryOptions.find((option) => option.id === activeDirectory) ?? directoryOptions[0]
+  const query = directoryQuery.trim().toLowerCase()
+  const activeItems =
+    activeDirectory === 'branches'
+      ? branches.map((branch) => ({
+          id: branch.id,
+          name: branch.name,
+          meta: t('admin.branch'),
+          locked: teams.some((team) => team.branchId === branch.id),
+        }))
+      : activeDirectory === 'teams'
+        ? teams.map((team) => ({
+            id: team.id,
+            name: team.name,
+            meta: t('admin.teamMemberCount', { count: formatCount(locale, userCounts[team.id] ?? 0) }),
+            locked: (userCounts[team.id] ?? 0) > 0,
+          }))
+        : lookupValues
+            .filter((value) => value.kind === activeDirectory && !value.archived)
+            .map((value) => ({
+              id: value.id,
+              name: value.label,
+              meta: getLookupKindLabel(value.kind, locale),
+              locked: false,
+            }))
+  const visibleItems = activeItems
+    .filter((item) => query.length === 0 || item.name.toLowerCase().includes(query) || item.meta.toLowerCase().includes(query))
+    .sort((first, second) => compareText(locale, first.name, second.name))
+  const createConfig =
+    activeDirectory === 'branches'
+      ? {
+          label: t('admin.branchName'),
+          name: 'branchName',
+          placeholder: t('admin.branchNamePlaceholder'),
+          buttonLabel: t('admin.addBranch'),
+          onCreate: onCreateBranch,
+        }
+      : activeDirectory === 'teams'
+        ? {
+            label: t('admin.teamName'),
+            name: 'teamName',
+            placeholder: t('admin.teamNamePlaceholder'),
+            buttonLabel: t('admin.addTeam'),
+            onCreate: onCreateTeam,
+          }
+        : {
+            label: t('admin.lookupLabel'),
+            name: 'lookupLabel',
+            placeholder: t('admin.lookupLabelPlaceholder'),
+            buttonLabel: t('admin.addLookupValue'),
+            onCreate: (label: string) => onCreateLookupValue(activeDirectory, label),
+          }
+  const updateDirectoryItem =
+    activeDirectory === 'branches'
+      ? onUpdateBranch
+      : activeDirectory === 'teams'
+        ? onUpdateTeam
+        : onUpdateLookupValue
+  const archiveDirectoryItem =
+    activeDirectory === 'branches'
+      ? onArchiveBranch
+      : activeDirectory === 'teams'
+        ? onArchiveTeam
+        : onArchiveLookupValue
 
   return (
     <section className="content-card admin-panel motion-stage motion-subtle" style={motionStyle(1)}>
@@ -3764,57 +3831,53 @@ function MasterDataPanel({
         </div>
       </div>
 
-      <DirectoryCreateForm
-        label={t('admin.lookupLabel')}
-        name="lookupLabel"
-        placeholder={t('admin.lookupLabelPlaceholder')}
-        buttonLabel={t('admin.addLookupValue')}
-        extraControl={(
-          <ControlledSelectField
-            label={t('admin.lookupKind')}
-            options={lookupKindOptions.map((kind) => ({ value: kind, label: getLookupKindLabel(kind, locale) }))}
-            value={lookupKind}
-            onValueChange={(value) => setLookupKind(value as LookupKind)}
+      <div className="master-data-workspace">
+        <nav className="master-data-rail" aria-label={t('admin.masterData')}>
+          {directoryOptions.map((option) => (
+            <button
+              key={option.id}
+              className={`master-data-tab ${option.id === activeDirectory ? 'active' : ''}`}
+              type="button"
+              aria-current={option.id === activeDirectory ? 'page' : undefined}
+              onClick={() => {
+                setActiveDirectory(option.id)
+                setDirectoryQuery('')
+              }}
+            >
+              <span>{option.label}</span>
+              <strong>{formatCount(locale, option.count)}</strong>
+            </button>
+          ))}
+        </nav>
+
+        <div className="master-data-detail">
+          <div className="master-data-toolbar">
+            <div>
+              <p className="eyebrow">{t('admin.selectedDirectory')}</p>
+              <h3>{activeOption.label}</h3>
+            </div>
+            <label className="master-data-search">
+              {t('admin.searchMasterData')}
+              <input
+                value={directoryQuery}
+                onChange={(event) => setDirectoryQuery(event.target.value)}
+                placeholder={t('admin.searchMasterDataPlaceholder')}
+                dir="auto"
+              />
+            </label>
+          </div>
+
+          <DirectoryCreateForm {...createConfig} />
+          <DirectoryList
+            title={activeOption.label}
+            emptyTitle={t('admin.noLookupValuesTitle')}
+            emptyBody={t('admin.noLookupValuesBody')}
+            items={visibleItems}
+            onUpdate={updateDirectoryItem}
+            onArchive={archiveDirectoryItem}
           />
-        )}
-        onCreate={(label) => onCreateLookupValue(lookupKind, label)}
-      />
-
-      {lookupGroups.map((group) => (
-        <DirectoryList
-          key={group.kind}
-          title={group.label}
-          emptyTitle={t('admin.noLookupValuesTitle')}
-          emptyBody={t('admin.noLookupValuesBody')}
-          items={group.values.map((value) => ({ id: value.id, name: value.label, meta: value.id, locked: false }))}
-          onUpdate={onUpdateLookupValue}
-          onArchive={onArchiveLookupValue}
-        />
-      ))}
-
-      <DirectoryCreateForm
-        label={t('admin.branchName')}
-        name="branchName"
-        placeholder={t('admin.branchNamePlaceholder')}
-        buttonLabel={t('admin.addBranch')}
-        onCreate={onCreateBranch}
-      />
-      <DirectoryList
-        title={t('admin.branchManagement')}
-        emptyTitle={t('admin.noBranchesTitle')}
-        emptyBody={t('admin.noBranchesBody')}
-        items={branches.map((branch) => ({ id: branch.id, name: branch.name, meta: branch.id, locked: teams.some((team) => team.branchId === branch.id) }))}
-        onUpdate={onUpdateBranch}
-        onArchive={onArchiveBranch}
-      />
-
-      <TeamManagementPanel
-        teams={teams}
-        userCounts={userCounts}
-        onCreateTeam={onCreateTeam}
-        onUpdateTeam={onUpdateTeam}
-        onArchiveTeam={onArchiveTeam}
-      />
+        </div>
+      </div>
     </section>
   )
 }
@@ -3986,178 +4049,6 @@ function DirectoryCard({
           <div className="user-edit-actions">
             <button className="secondary-button" type="button" onClick={onCancel} disabled={pending}>{t('common.cancel')}</button>
             <button className="secondary-button" type="submit" disabled={pending}>{pending ? t('common.saving') : t('common.save')}</button>
-          </div>
-        </form>
-      )}
-    </article>
-  )
-}
-
-function TeamManagementPanel({
-  teams,
-  userCounts,
-  onCreateTeam,
-  onUpdateTeam,
-  onArchiveTeam,
-}: {
-  teams: TeamDirectoryItem[]
-  userCounts: Record<string, number>
-  onCreateTeam: (name: string) => Promise<void>
-  onUpdateTeam: (teamId: string, name: string) => Promise<void>
-  onArchiveTeam: (teamId: string) => Promise<void>
-}) {
-  const { t } = useLocale()
-  const [editingTeamId, setEditingTeamId] = useState<string | null>(null)
-  const [pendingTeamId, setPendingTeamId] = useState<string | null>(null)
-  const [createError, setCreateError] = useState('')
-
-  return (
-    <section className="content-card admin-panel motion-stage motion-subtle" style={motionStyle(1)}>
-      <div className="admin-user-header">
-        <div>
-          <p className="eyebrow">{t('admin.teamOperations')}</p>
-          <h2><Users size={19} /> {t('admin.teamManagement')}</h2>
-          <p>{t('admin.teamManagementCopy')}</p>
-        </div>
-      </div>
-      <form
-        className="settings-form create-user-panel"
-        onSubmit={async (event) => {
-          event.preventDefault()
-          const form = event.currentTarget
-          const name = String(new FormData(form).get('teamName') ?? '').trim()
-          setCreateError('')
-          if (!name) {
-            setCreateError(t('admin.teamNameRequired'))
-            return
-          }
-          try {
-            setPendingTeamId('new')
-            await onCreateTeam(name)
-            form.reset()
-          } catch (error) {
-            setCreateError(error instanceof Error ? error.message : t('admin.teamSaveFailed'))
-          } finally {
-            setPendingTeamId(null)
-          }
-        }}
-      >
-        <label>
-          {t('admin.teamName')}
-          <input name="teamName" required placeholder={t('admin.teamNamePlaceholder')} dir="auto" />
-        </label>
-        {createError && <p className="form-error">{createError}</p>}
-        <button className="secondary-button" type="submit" disabled={pendingTeamId === 'new'}>
-          {pendingTeamId === 'new' ? t('common.saving') : t('admin.addTeam')}
-        </button>
-      </form>
-
-      <div className="user-management-list" aria-label={t('admin.teamManagement')}>
-        {teams.map((team, index) => (
-          <TeamManagementCard
-            key={team.id}
-            index={index}
-            team={team}
-            userCount={userCounts[team.id] ?? 0}
-            isEditing={editingTeamId === team.id}
-            pending={pendingTeamId === team.id}
-            onEdit={() => setEditingTeamId(team.id)}
-            onCancel={() => setEditingTeamId(null)}
-            onSave={async (name) => {
-              setPendingTeamId(team.id)
-              try {
-                await onUpdateTeam(team.id, name)
-                setEditingTeamId(null)
-              } finally {
-                setPendingTeamId(null)
-              }
-            }}
-            onArchive={async () => {
-              setPendingTeamId(team.id)
-              try {
-                await onArchiveTeam(team.id)
-              } finally {
-                setPendingTeamId(null)
-              }
-            }}
-          />
-        ))}
-        {teams.length === 0 && <EmptyState title={t('admin.noTeamsTitle')} body={t('admin.noTeamsBody')} />}
-      </div>
-    </section>
-  )
-}
-
-function TeamManagementCard({
-  team,
-  userCount,
-  index,
-  isEditing,
-  pending,
-  onEdit,
-  onCancel,
-  onSave,
-  onArchive,
-}: {
-  team: TeamDirectoryItem
-  userCount: number
-  index: number
-  isEditing: boolean
-  pending: boolean
-  onEdit: () => void
-  onCancel: () => void
-  onSave: (name: string) => Promise<void>
-  onArchive: () => Promise<void>
-}) {
-  const { locale, t } = useLocale()
-  const [error, setError] = useState('')
-
-  return (
-    <article className="user-management-card motion-stage active" style={motionStyle(index)}>
-      <div className="user-management-main">
-        <div>
-          <strong>{team.name}</strong>
-          <span>{team.id}</span>
-        </div>
-        <div className="user-management-meta">
-          <span>{t('admin.teamMemberCount', { count: formatCount(locale, userCount) })}</span>
-        </div>
-      </div>
-      {!isEditing && (
-        <div className="user-card-actions">
-          <button className="secondary-button" type="button" onClick={onEdit} disabled={pending}>{t('admin.editTeam')}</button>
-          <button className="danger-button" type="button" onClick={onArchive} disabled={pending || userCount > 0}>
-            {pending ? t('common.saving') : t('admin.removeTeam')}
-          </button>
-        </div>
-      )}
-      {isEditing && (
-        <form
-          className="user-edit-form motion-stage"
-          style={motionStyle(0, 80)}
-          onSubmit={async (event) => {
-            event.preventDefault()
-            const name = String(new FormData(event.currentTarget).get('teamName') ?? '').trim()
-            setError('')
-            if (!name) {
-              setError(t('admin.teamNameRequired'))
-              return
-            }
-            try {
-              await onSave(name)
-            } catch (saveError) {
-              setError(saveError instanceof Error ? saveError.message : t('admin.teamSaveFailed'))
-            }
-          }}
-        >
-          <label>
-            {t('admin.teamName')}
-            <input name="teamName" required defaultValue={team.name} dir="auto" />
-          </label>
-          {error && <p className="form-error">{error}</p>}
-          <div className="user-edit-actions">
-            <button className="secondary-button" type="button" onClick={onCancel} disabled={pending}>{t('common.cancel')}</button>
-            <button className="secondary-button" type="submit" disabled={pending}>{pending ? t('common.saving') : t('admin.saveTeam')}</button>
           </div>
         </form>
       )}
