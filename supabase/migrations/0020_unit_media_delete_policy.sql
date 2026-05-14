@@ -1,3 +1,5 @@
+drop policy if exists "unit media delete by unit editors" on public.unit_media;
+
 create policy "unit media delete by unit editors" on public.unit_media
 for delete using (
   exists (
