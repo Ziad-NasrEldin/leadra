@@ -2,6 +2,11 @@ import {
   calculatePaymentSummary,
   canAddAdminManagerNote,
   canArchiveUnit,
+  canEditAnyUnitDetails,
+  canEditNonOwnerUnitDetails,
+  canEditOwnerFields,
+  canEditUnitCommission,
+  canEditUnitPricing,
   canViewUnit,
   generateUnitCode,
   normalizeUnitOutdoorFields,
@@ -21,6 +26,7 @@ import type {
   LeadraUnit,
   LeadraUser,
   NotificationItem,
+  UnitEditInput,
   UnitStatus,
   WorkflowResult,
 } from './types'
@@ -377,7 +383,6 @@ export function createUnitWorkflow(
               unitCode: candidate.unitCode,
               fileCount: candidate.media.length,
               imageCount: candidate.media.filter((file) => file.type === 'image').length,
-              videoCount: candidate.media.filter((file) => file.type === 'video').length,
             },
           },
         ),
@@ -470,6 +475,223 @@ export function updateUnitStatusWorkflow(
       notificationMessage,
       actor.role === 'sales' ? undefined : 'admin',
       unit.createdBy,
+    ),
+  }
+}
+
+export function updateUnitWorkflow(
+  state: AppDataState,
+  actor: LeadraUser,
+  unitId: number,
+  input: UnitEditInput,
+): WorkflowResult {
+  const unit = state.units.find((item) => item.id === unitId)
+  if (!unit) return { ok: false, state, ...createErrorMessage('error.unitNotFound', 'Unit not found.') }
+  if (!canViewUnit(actor, unit)) return { ok: false, state, ...createErrorMessage('error.unitOutsideVisibility', 'Unit is outside your visibility scope.') }
+  if (!canEditAnyUnitDetails(actor, unit)) {
+    return { ok: false, state, error: 'You cannot edit this unit.', errorKey: null, errorParams: null }
+  }
+
+  const canEditNonOwner = canEditNonOwnerUnitDetails(actor, unit)
+  const canEditOwner = canEditOwnerFields(actor, unit)
+  const canEditPricing = canEditUnitPricing(actor, unit)
+  const canEditCommission = canEditUnitCommission(actor, unit)
+
+  const ownerChanged =
+    input.originalOwnerName !== (unit.originalOwnerName ?? '') ||
+    input.countryCode !== (unit.countryCode ?? '') ||
+    input.originalOwnerPhone !== (unit.originalOwnerPhone ?? '')
+  let ownerPhoneValidation: ReturnType<typeof validateOwnerPhoneForCountry> | null = null
+  let normalizedOwnerPhone = unit.normalizedOwnerPhone
+
+  if (canEditOwner && ownerChanged) {
+    ownerPhoneValidation = validateOwnerPhoneForCountry(input.originalOwnerPhone, input.countryCode)
+    if (!ownerPhoneValidation.ok) {
+      return {
+        ok: false,
+        state,
+        ...createErrorMessage(
+          'error.invalidOwnerPhoneForCountry',
+          `Owner phone must match ${ownerPhoneValidation.countryLabel}. Example: ${ownerPhoneValidation.example}.`,
+          { country: ownerPhoneValidation.countryLabel, example: ownerPhoneValidation.example },
+        ),
+      }
+    }
+    normalizedOwnerPhone = normalizeOwnerPhone(ownerPhoneValidation.localPhone, input.countryCode)
+  }
+
+  const outdoorFields = canEditNonOwner ? normalizeUnitOutdoorFields(input) : unit
+  const nextTotalAmount = canEditPricing ? input.totalAmount : unit.totalAmount
+  const nextCommissionPercentage = canEditCommission ? input.commissionPercentage : unit.commissionPercentage
+  const installmentAmount =
+    unit.paymentMethod === 'installment' && unit.installmentType !== 'custom' && unit.installmentYears
+      ? calculatePaymentSummary({
+          paymentMethod: unit.paymentMethod,
+          totalAmount: (unit.remainingPayment ?? 0) + (unit.downPayment ?? 0),
+          downPayment: unit.downPayment,
+          installmentType: unit.installmentType,
+          installmentYears: unit.installmentYears,
+          commissionPercentage: nextCommissionPercentage,
+        }).installmentAmount
+      : unit.installmentAmount
+
+  const updatedUnit: LeadraUnit = {
+    ...unit,
+    developerId: canEditNonOwner ? input.developerId : unit.developerId,
+    developerName: canEditNonOwner ? input.developerName : unit.developerName,
+    projectId: canEditNonOwner ? input.projectId : unit.projectId,
+    projectName: canEditNonOwner ? input.projectName : unit.projectName,
+    destinationId: canEditNonOwner ? input.destinationId : unit.destinationId,
+    destinationName: canEditNonOwner ? input.destinationName : unit.destinationName,
+    unitType: canEditNonOwner ? input.unitType : unit.unitType,
+    floor: canEditNonOwner ? outdoorFields.floor : unit.floor,
+    bua: canEditNonOwner ? input.bua : unit.bua,
+    roofGardenArea: canEditNonOwner ? outdoorFields.roofGardenArea : unit.roofGardenArea,
+    gardenArea: canEditNonOwner ? outdoorFields.gardenArea : unit.gardenArea,
+    terraceArea: canEditNonOwner ? outdoorFields.terraceArea : unit.terraceArea,
+    viewId: canEditNonOwner ? input.viewId : unit.viewId,
+    viewName: canEditNonOwner ? input.viewName : unit.viewName,
+    bedrooms: canEditNonOwner ? input.bedrooms : unit.bedrooms,
+    bathrooms: canEditNonOwner ? input.bathrooms : unit.bathrooms,
+    elevator: canEditNonOwner ? input.elevator : unit.elevator,
+    landArea: canEditNonOwner ? outdoorFields.landArea : unit.landArea,
+    furnished: canEditNonOwner ? input.furnished : unit.furnished,
+    finish: canEditNonOwner ? input.finish : unit.finish,
+    deliveryExpectancy: canEditNonOwner ? input.deliveryExpectancy : unit.deliveryExpectancy,
+    salesNotes: canEditNonOwner ? input.salesNotes : unit.salesNotes,
+    totalAmount: nextTotalAmount,
+    remainingPayment: unit.remainingPayment,
+    commissionPercentage: nextCommissionPercentage,
+    commissionAmount: Math.round((nextTotalAmount * nextCommissionPercentage) / 100),
+    installmentAmount,
+    originalOwnerName: canEditOwner ? input.originalOwnerName : unit.originalOwnerName,
+    countryCode: canEditOwner ? input.countryCode : unit.countryCode,
+    originalOwnerPhone: canEditOwner ? ownerPhoneValidation?.localPhone ?? input.originalOwnerPhone : unit.originalOwnerPhone,
+    normalizedOwnerPhone,
+    updatedAt: new Date().toISOString(),
+  }
+
+  if (unitHasSameProjectPhoneDuplicate(updatedUnit, state.units)) {
+    const auditMessage = createAuditMessage('duplicate_phone_blocked')
+    return {
+      ok: false,
+      state: withAnalyticsEvent(
+        withAudit(
+          state,
+          actor,
+          auditMessage.text,
+          unit.unitCode,
+          { projectId: unit.projectId, normalizedOwnerPhone: unit.normalizedOwnerPhone },
+          { projectId: updatedUnit.projectId, normalizedOwnerPhone: updatedUnit.normalizedOwnerPhone },
+          auditMessage,
+        ),
+        actor,
+        'duplicate_phone_blocked',
+        { unit: updatedUnit, metadata: { unitCode: unit.unitCode, projectId: updatedUnit.projectId } },
+      ),
+      ...createErrorMessage('error.duplicateOwnerPhoneBlocked', 'Duplicate owner phone blocked inside this project.'),
+    }
+  }
+
+  const baseState = {
+    ...state,
+    units: state.units.map((item) => item.id === unitId ? updatedUnit : item),
+  }
+  const priceChanged = updatedUnit.totalAmount !== unit.totalAmount || updatedUnit.commissionPercentage !== unit.commissionPercentage
+  const editedFields = diffUnitEditFields(unit, updatedUnit)
+  let nextState = withAudit(
+    baseState,
+    actor,
+    'Unit edited',
+    unit.unitCode,
+    pickUnitEditAuditValue(unit, editedFields),
+    pickUnitEditAuditValue(updatedUnit, editedFields),
+  )
+  nextState = withAnalyticsEvent(nextState, actor, 'unit_updated', {
+    unit: updatedUnit,
+    metadata: { unitCode: unit.unitCode, fields: editedFields.join(',') },
+  })
+
+  if (priceChanged) {
+    nextState = withAudit(
+      nextState,
+      actor,
+      'Total Value / pricing updated',
+      unit.unitCode,
+      { totalAmount: unit.totalAmount, commissionPercentage: unit.commissionPercentage, remainingPayment: unit.remainingPayment },
+      { totalAmount: updatedUnit.totalAmount, commissionPercentage: updatedUnit.commissionPercentage, remainingPayment: updatedUnit.remainingPayment },
+    )
+    nextState = withAnalyticsEvent(nextState, actor, 'price_updated', {
+      unit: updatedUnit,
+      amountValue: updatedUnit.totalAmount,
+      commissionValue: updatedUnit.commissionAmount,
+      metadata: { unitCode: unit.unitCode, remainingPaymentPreserved: updatedUnit.remainingPayment === unit.remainingPayment },
+    })
+  }
+
+  if (ownerChanged && canEditOwner) {
+    nextState = withAudit(
+      nextState,
+      actor,
+      'Owner data updated',
+      unit.unitCode,
+      { originalOwnerName: unit.originalOwnerName, countryCode: unit.countryCode, originalOwnerPhone: unit.originalOwnerPhone },
+      { originalOwnerName: updatedUnit.originalOwnerName, countryCode: updatedUnit.countryCode, originalOwnerPhone: updatedUnit.originalOwnerPhone },
+    )
+  }
+
+  nextState = withNotification(
+    nextState,
+    {
+      title: { text: 'Unit edited', messageKey: null, messageParams: null },
+      body: { text: `${actor.fullName} edited ${unit.unitCode}.`, messageKey: null, messageParams: null },
+    },
+    'admin',
+    unit.createdBy,
+  )
+
+  return { ok: true, state: nextState }
+}
+
+export function removeUnitMediaWorkflow(
+  state: AppDataState,
+  actor: LeadraUser,
+  unitId: number,
+  mediaId: string,
+): WorkflowResult {
+  const unit = state.units.find((item) => item.id === unitId)
+  if (!unit) return { ok: false, state, ...createErrorMessage('error.unitNotFound', 'Unit not found.') }
+  if (!canEditNonOwnerUnitDetails(actor, unit)) {
+    return { ok: false, state, ...createErrorMessage('error.unitMediaRemoveNotAllowed', 'You cannot remove media from this unit.') }
+  }
+
+  const media = unit.media.find((item) => item.id === mediaId)
+  if (!media) return { ok: false, state, ...createErrorMessage('error.unitMediaNotFound', 'Media file not found.') }
+
+  const updatedUnit = {
+    ...unit,
+    media: unit.media.filter((item) => item.id !== mediaId),
+    updatedAt: new Date().toISOString(),
+  }
+  const nextState = {
+    ...state,
+    units: state.units.map((item) => item.id === unitId ? updatedUnit : item),
+  }
+
+  return {
+    ok: true,
+    state: withAnalyticsEvent(
+      withAudit(
+        nextState,
+        actor,
+        'Media removed',
+        unit.unitCode,
+        { mediaId, fileName: media.name },
+        { mediaCount: updatedUnit.media.length },
+      ),
+      actor,
+      'unit_updated',
+      { unit: updatedUnit, metadata: { unitCode: unit.unitCode, mediaId, fileName: media.name } },
     ),
   }
 }
@@ -725,6 +947,42 @@ function withAnalyticsEvent(
   }
 
   return { ...state, analyticsEvents: [item, ...state.analyticsEvents] }
+}
+
+const editableAuditFields = [
+  'developerId',
+  'projectId',
+  'destinationId',
+  'unitType',
+  'floor',
+  'bua',
+  'roofGardenArea',
+  'gardenArea',
+  'terraceArea',
+  'viewId',
+  'bedrooms',
+  'bathrooms',
+  'elevator',
+  'landArea',
+  'furnished',
+  'finish',
+  'deliveryExpectancy',
+  'salesNotes',
+  'totalAmount',
+  'commissionPercentage',
+  'originalOwnerName',
+  'countryCode',
+  'originalOwnerPhone',
+] as const
+
+function diffUnitEditFields(before: LeadraUnit, after: LeadraUnit): string[] {
+  return editableAuditFields.filter((field) => JSON.stringify(before[field]) !== JSON.stringify(after[field]))
+}
+
+function pickUnitEditAuditValue(unit: LeadraUnit, fields: string[]): Record<string, unknown> {
+  return Object.fromEntries(
+    fields.map((field) => [field, unit[field as keyof LeadraUnit]]),
+  )
 }
 
 function isAdminActor(actor: LeadraUser): boolean {

@@ -2,6 +2,11 @@ import { describe, expect, it } from 'vitest'
 import {
   calculatePaymentSummary,
   canArchiveUnit,
+  canEditAnyUnitDetails,
+  canEditNonOwnerUnitDetails,
+  canEditOwnerFields,
+  canEditUnitCommission,
+  canEditUnitPricing,
   canSearchOwnerPhone,
   canViewSalesSensitiveData,
   canViewUnit,
@@ -182,6 +187,37 @@ describe('Leadra domain rules', () => {
     expect(canViewSalesSensitiveData(salesB, baseUnit)).toBe(false)
   })
 
+  it('applies PRD edit permissions by role and unit scope', () => {
+    const sameTeamOtherSalesUnit = { ...baseUnit, createdBy: salesB.id, teamId: manager.teamId }
+    const otherTeamUnit = { ...baseUnit, createdBy: salesB.id, teamId: 'team-b' }
+
+    expect(canEditNonOwnerUnitDetails(admin, otherTeamUnit)).toBe(true)
+    expect(canEditNonOwnerUnitDetails(subAdmin, otherTeamUnit)).toBe(true)
+    expect(canEditNonOwnerUnitDetails(manager, sameTeamOtherSalesUnit)).toBe(true)
+    expect(canEditNonOwnerUnitDetails(manager, otherTeamUnit)).toBe(false)
+    expect(canEditNonOwnerUnitDetails(salesA, baseUnit)).toBe(true)
+    expect(canEditNonOwnerUnitDetails(salesB, baseUnit)).toBe(false)
+
+    expect(canEditOwnerFields(admin, baseUnit)).toBe(true)
+    expect(canEditOwnerFields(subAdmin, baseUnit)).toBe(true)
+    expect(canEditOwnerFields(manager, sameTeamOtherSalesUnit)).toBe(false)
+    expect(canEditOwnerFields(salesA, baseUnit)).toBe(false)
+
+    expect(canEditUnitPricing(admin, baseUnit)).toBe(true)
+    expect(canEditUnitPricing(subAdmin, baseUnit)).toBe(true)
+    expect(canEditUnitPricing(manager, baseUnit)).toBe(false)
+    expect(canEditUnitPricing(salesA, baseUnit)).toBe(true)
+    expect(canEditUnitPricing(salesB, baseUnit)).toBe(false)
+
+    expect(canEditUnitCommission(admin, baseUnit)).toBe(true)
+    expect(canEditUnitCommission(subAdmin, baseUnit)).toBe(true)
+    expect(canEditUnitCommission(manager, baseUnit)).toBe(false)
+    expect(canEditUnitCommission(salesA, baseUnit)).toBe(false)
+
+    expect(canEditAnyUnitDetails(manager, sameTeamOtherSalesUnit)).toBe(true)
+    expect(canEditAnyUnitDetails(salesB, baseUnit)).toBe(false)
+  })
+
   it('allows every role to view all units while keeping owner data separately restricted', () => {
     const sameBranchOtherTeam = { ...baseUnit, id: 106, teamId: 'team-b', branchId: 'branch-cairo', createdBy: salesB.id }
     const sameTeamOtherBranch = { ...baseUnit, id: 107, teamId: 'team-a', branchId: 'branch-alex' }
@@ -322,7 +358,6 @@ describe('Leadra domain rules', () => {
 
   it('validates media limits and chooses the first image thumbnail', () => {
     const files: LeadraMediaFile[] = [
-      { id: 'v1', type: 'video', url: '/tour.mp4', name: 'tour.mp4', sizeBytes: 5_000_000 },
       { id: 'i1', type: 'image', url: '/living.jpg', name: 'living.jpg', sizeBytes: 1_000_000 },
     ]
 

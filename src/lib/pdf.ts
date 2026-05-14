@@ -128,7 +128,7 @@ export async function buildPermissionSafePdfBlob(
     maxWidth: 490,
   })
 
-  const images = safeUnit.media.filter((file) => file.type === 'image')
+  const images = safeUnit.media.filter((file) => file.type === 'image' && file.includeInPdf !== false)
   for (let index = 0; index < images.length; index += 4) {
     const imagePage = pdf.addPage([595, 842])
     drawPdfText(imagePage, `Unit images / ${safeUnit.unitCode}`, { x: 42, y: 790, size: 18, font: bold, color: rgb(0.08, 0.13, 0.11) })

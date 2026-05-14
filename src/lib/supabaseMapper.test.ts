@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { toUnitInsertPayload, toUnitViewModel, type SupabaseUnitRow } from './supabaseMapper'
-import type { CreateUnitInput, LeadraUser } from './types'
+import { toUnitInsertPayload, toUnitUpdatePayload, toUnitViewModel, type SupabaseUnitRow } from './supabaseMapper'
+import type { CreateUnitInput, LeadraUser, UnitEditInput } from './types'
 
 const actor: LeadraUser = {
   id: 'user-1',
@@ -48,6 +48,36 @@ const input: CreateUnitInput = {
   media: [],
 }
 
+const editInput: UnitEditInput = {
+  developerId: 'dev-2',
+  developerName: 'SODIC',
+  projectId: 'project-2',
+  projectName: 'ZED East',
+  destinationId: 'dest-2',
+  destinationName: 'Sheikh Zayed',
+  unitType: 'Penthouse',
+  floor: 'Ground',
+  bua: 180,
+  roofGardenArea: null,
+  gardenArea: null,
+  terraceArea: 40,
+  viewId: 'view-2',
+  viewName: 'Sea',
+  bedrooms: 4,
+  bathrooms: 3,
+  elevator: true,
+  landArea: null,
+  furnished: true,
+  finish: 'Semi Finished',
+  deliveryExpectancy: { mode: 'year', year: 2029 },
+  originalOwnerName: 'Updated Owner',
+  countryCode: '+971',
+  originalOwnerPhone: '0501234568',
+  salesNotes: 'Updated notes.',
+  totalAmount: 6_500_000,
+  commissionPercentage: 2,
+}
+
 describe('Supabase mappers', () => {
   it('creates a snake_case unit insert payload that relies on database calculations', () => {
     expect(toUnitInsertPayload(input, actor)).toMatchObject({
@@ -74,6 +104,47 @@ describe('Supabase mappers', () => {
       team_id: null,
       branch_id: null,
     })
+  })
+
+  it('creates a snake_case unit update payload without protected fields', () => {
+    const payload = toUnitUpdatePayload(editInput, {
+      canEditOwner: true,
+      canEditPricing: true,
+      canEditCommission: true,
+    })
+
+    expect(payload).toMatchObject({
+      developer_id: 'dev-2',
+      project_id: 'project-2',
+      destination_id: 'dest-2',
+      unit_type: 'Penthouse',
+      terrace_area: 40,
+      original_owner_name: 'Updated Owner',
+      country_code: '+971',
+      original_owner_phone: '0501234568',
+      total_amount: 6_500_000,
+      commission_percentage: 2,
+    })
+    expect(payload).not.toHaveProperty('remaining_payment')
+    expect(payload).not.toHaveProperty('payment_method')
+    expect(payload).not.toHaveProperty('down_payment')
+    expect(payload).not.toHaveProperty('created_by')
+    expect(payload).not.toHaveProperty('unit_code')
+  })
+
+  it('omits owner and pricing fields from update payloads when permissions do not allow them', () => {
+    const payload = toUnitUpdatePayload(editInput, {
+      canEditOwner: false,
+      canEditPricing: false,
+      canEditCommission: false,
+    })
+
+    expect(payload).not.toHaveProperty('original_owner_name')
+    expect(payload).not.toHaveProperty('country_code')
+    expect(payload).not.toHaveProperty('original_owner_phone')
+    expect(payload).not.toHaveProperty('total_amount')
+    expect(payload).not.toHaveProperty('commission_percentage')
+    expect(payload).toMatchObject({ bua: 180, sales_notes: 'Updated notes.' })
   })
 
   it('maps joined Supabase rows back to the app unit model', () => {

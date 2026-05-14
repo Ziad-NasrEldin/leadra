@@ -1,6 +1,6 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { toSafeUnitViewModel, toUnitInsertPayload, toUnitViewModel, type SafeUnitRpcRow, type SupabaseUnitRow } from './supabaseMapper'
-import type { CreateUnitInput, LeadraUnit, LeadraUser, UnitFilters, UnitStatus } from './types'
+import { toSafeUnitViewModel, toUnitInsertPayload, toUnitUpdatePayload, toUnitViewModel, type SafeUnitRpcRow, type SupabaseUnitRow } from './supabaseMapper'
+import type { CreateUnitInput, LeadraUnit, LeadraUser, UnitEditInput, UnitFilters, UnitStatus } from './types'
 
 const unitSelect = `
   *,
@@ -59,6 +59,24 @@ export class LeadraRepository {
     return toUnitViewModel(data as unknown as SupabaseUnitRow)
   }
 
+  async updateUnitDetails(
+    actor: LeadraUser,
+    unitId: number,
+    input: UnitEditInput,
+    permissions: { canEditOwner: boolean; canEditPricing: boolean; canEditCommission: boolean },
+  ): Promise<LeadraUnit> {
+    void actor
+    const { data, error } = await this.client
+      .from('units')
+      .update(toUnitUpdatePayload(input, permissions))
+      .eq('id', unitId)
+      .select(unitSelect)
+      .single()
+
+    if (error) throw error
+    return toUnitViewModel(data as unknown as SupabaseUnitRow)
+  }
+
   async archiveUnit(unitId: number): Promise<void> {
     const { error } = await this.client.from('units').update({ archived: true }).eq('id', unitId)
     if (error) throw error
@@ -66,6 +84,19 @@ export class LeadraRepository {
 
   async updateUnitStatus(unitId: number, status: UnitStatus): Promise<void> {
     const { error } = await this.client.from('units').update({ status }).eq('id', unitId)
+    if (!error) return
+
+    if ((status === 'sold_by_us' || status === 'sold_by_others') && isUnsupportedSplitSoldStatusError(error)) {
+      const { error: fallbackError } = await this.client.from('units').update({ status: 'sold' }).eq('id', unitId)
+      if (!fallbackError) return
+      throw fallbackError
+    }
+
+    throw error
+  }
+
+  async deleteUnitMedia(mediaId: string): Promise<void> {
+    const { error } = await this.client.from('unit_media').delete().eq('id', mediaId)
     if (error) throw error
   }
 
@@ -92,6 +123,18 @@ export class LeadraRepository {
     void unitId
     throw new Error('The generate-unit-pdf edge function is retired. Use the localized printable brief export in the web client.')
   }
+}
+
+function isUnsupportedSplitSoldStatusError(error: unknown) {
+  const details = [
+    error instanceof Error ? error.message : '',
+    typeof error === 'object' && error ? String('message' in error ? error.message : '') : '',
+    typeof error === 'object' && error ? String('details' in error ? error.details : '') : '',
+    typeof error === 'object' && error ? String('hint' in error ? error.hint : '') : '',
+    typeof error === 'object' && error ? String('code' in error ? error.code : '') : '',
+  ].join(' ')
+
+  return details.includes('22P02') || /invalid input value for enum public\.unit_status/i.test(details)
 }
 
 function compactUnitFilters(filters: UnitFilters): Record<string, unknown> {

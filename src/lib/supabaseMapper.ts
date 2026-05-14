@@ -6,6 +6,7 @@ import type {
   LeadraUnit,
   LeadraUser,
   PaymentMethod,
+  UnitEditInput,
   UnitStatus,
   UserRole,
 } from './types'
@@ -178,6 +179,47 @@ export function toUnitInsertPayload(input: CreateUnitInput, actor: LeadraUser) {
   }
 }
 
+export function toUnitUpdatePayload(
+  input: UnitEditInput,
+  permissions: {
+    canEditOwner: boolean
+    canEditPricing: boolean
+    canEditCommission: boolean
+  },
+) {
+  const outdoorFields = normalizeUnitOutdoorFields(input)
+  return {
+    developer_id: input.developerId,
+    project_id: input.projectId,
+    destination_id: input.destinationId,
+    unit_type: input.unitType,
+    floor: outdoorFields.floor,
+    bua: input.bua,
+    roof_garden_area: outdoorFields.roofGardenArea,
+    garden_area: outdoorFields.gardenArea,
+    terrace_area: outdoorFields.terraceArea,
+    view_id: input.viewId,
+    bedrooms: input.bedrooms,
+    bathrooms: input.bathrooms,
+    elevator: input.elevator,
+    land_area: outdoorFields.landArea,
+    furnished: input.furnished,
+    finish: input.finish,
+    delivery_month: input.deliveryExpectancy.mode === 'month_year' ? input.deliveryExpectancy.month ?? null : null,
+    delivery_year: input.deliveryExpectancy.year,
+    sales_notes: input.salesNotes,
+    ...(permissions.canEditOwner
+      ? {
+          original_owner_name: input.originalOwnerName,
+          country_code: input.countryCode,
+          original_owner_phone: input.originalOwnerPhone,
+        }
+      : {}),
+    ...(permissions.canEditPricing ? { total_amount: input.totalAmount } : {}),
+    ...(permissions.canEditCommission ? { commission_percentage: input.commissionPercentage } : {}),
+  }
+}
+
 export function toUnitViewModel(row: SupabaseUnitRow): LeadraUnit {
   const outdoorFields = normalizeUnitOutdoorFields({
     unitType: row.unit_type,
@@ -236,7 +278,7 @@ export function toUnitViewModel(row: SupabaseUnitRow): LeadraUnit {
     branchId: row.branch_id ?? '',
     createdAt: row.created_at,
     updatedAt: row.updated_at,
-    media: (row.unit_media ?? []).map(toMediaViewModel),
+    media: (row.unit_media ?? []).filter(isImageMediaRow).map(toMediaViewModel),
     adminManagerNotes: (row.unit_notes ?? []).map(toNoteViewModel),
   }
 }
@@ -299,19 +341,23 @@ export function toSafeUnitViewModel(row: SafeUnitRpcRow): LeadraUnit {
     branchId: row.branch_id ?? '',
     createdAt: row.created_at,
     updatedAt: row.updated_at,
-    media: (row.unit_media ?? []).map(toMediaViewModel),
+    media: (row.unit_media ?? []).filter(isImageMediaRow).map(toMediaViewModel),
     adminManagerNotes: (row.unit_notes ?? []).map(toSafeNoteViewModel),
   }
 }
 
-function toMediaViewModel(row: SupabaseMediaRow): LeadraMediaFile {
+function toMediaViewModel(row: SupabaseMediaRow & { type: 'image' }): LeadraMediaFile {
   return {
     id: row.id,
-    type: row.type,
+    type: 'image',
     url: row.storage_path,
     name: row.file_name,
     sizeBytes: row.size_bytes,
   }
+}
+
+function isImageMediaRow(row: SupabaseMediaRow): row is SupabaseMediaRow & { type: 'image' } {
+  return row.type === 'image'
 }
 
 function toNoteViewModel(row: SupabaseNoteRow): LeadraNote {

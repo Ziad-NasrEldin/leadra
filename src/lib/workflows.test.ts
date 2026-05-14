@@ -11,8 +11,9 @@ import {
   signInWorkflow,
   updateSettingsWorkflow,
   updateUnitStatusWorkflow,
+  updateUnitWorkflow,
 } from './workflows'
-import type { AppDataState, LeadraUser } from './types'
+import type { AppDataState, LeadraUnit, LeadraUser, UnitEditInput } from './types'
 
 const admin: LeadraUser = {
   id: 'admin-1',
@@ -70,6 +71,39 @@ function state(): AppDataState {
       mediaLimitMb: 40,
       paymentMethods: ['cash', 'installment'],
     },
+  }
+}
+
+function editInput(unit: LeadraUnit, overrides: Partial<UnitEditInput> = {}): UnitEditInput {
+  return {
+    developerId: unit.developerId,
+    developerName: unit.developerName,
+    projectId: unit.projectId,
+    projectName: unit.projectName,
+    destinationId: unit.destinationId,
+    destinationName: unit.destinationName,
+    unitType: unit.unitType,
+    floor: unit.floor,
+    bua: unit.bua,
+    roofGardenArea: unit.roofGardenArea,
+    gardenArea: unit.gardenArea,
+    terraceArea: unit.terraceArea,
+    viewId: unit.viewId,
+    viewName: unit.viewName,
+    bedrooms: unit.bedrooms,
+    bathrooms: unit.bathrooms,
+    elevator: unit.elevator,
+    landArea: unit.landArea,
+    furnished: unit.furnished,
+    finish: unit.finish,
+    deliveryExpectancy: unit.deliveryExpectancy,
+    originalOwnerName: unit.originalOwnerName ?? '',
+    countryCode: unit.countryCode ?? '+20',
+    originalOwnerPhone: unit.originalOwnerPhone ?? '',
+    salesNotes: unit.salesNotes,
+    totalAmount: unit.totalAmount,
+    commissionPercentage: unit.commissionPercentage,
+    ...overrides,
   }
 }
 
@@ -263,6 +297,87 @@ describe('Leadra product workflows', () => {
     expect(result.ok).toBe(false)
     expect(result.error).toContain('Owner phone must match Egypt +20')
     expect(result.errorKey).toBe('error.invalidOwnerPhoneForCountry')
+  })
+
+  it('updates allowed unit fields and preserves remaining value when total value changes', () => {
+    const unit = seedUnits[0]
+    const result = updateUnitWorkflow(state(), sales, unit.id, editInput(unit, {
+      bua: 180,
+      totalAmount: 5_500_000,
+      originalOwnerName: 'Blocked Sales Owner Edit',
+      originalOwnerPhone: '0501234568',
+      salesNotes: 'Updated from edit mode.',
+    }))
+
+    expect(result.ok).toBe(true)
+    const updated = result.state.units.find((item) => item.id === unit.id)
+    expect(updated).toMatchObject({
+      bua: 180,
+      totalAmount: 5_500_000,
+      remainingPayment: unit.remainingPayment,
+      originalOwnerName: unit.originalOwnerName,
+      originalOwnerPhone: unit.originalOwnerPhone,
+      salesNotes: 'Updated from edit mode.',
+    })
+    expect(result.state.auditLogs.at(0)?.actionType).toBe('Total Value / pricing updated')
+    expect(result.state.analyticsEvents.at(0)).toMatchObject({
+      eventType: 'price_updated',
+      unitId: unit.id,
+      amountValue: 5_500_000,
+    })
+  })
+
+  it('blocks manager edits outside team scope and pricing edits inside team scope', () => {
+    const otherTeamUnit = seedUnits[1]
+    const outsideTeam = updateUnitWorkflow(state(), manager, otherTeamUnit.id, editInput(otherTeamUnit, { bua: otherTeamUnit.bua + 10 }))
+    expect(outsideTeam.ok).toBe(false)
+    expect(outsideTeam.error).toContain('edit this unit')
+
+    const teamUnit = seedUnits[0]
+    const insideTeam = updateUnitWorkflow(state(), { ...manager, teamId: teamUnit.teamId }, teamUnit.id, editInput(teamUnit, {
+      bua: teamUnit.bua + 10,
+      totalAmount: teamUnit.totalAmount + 500_000,
+    }))
+    expect(insideTeam.ok).toBe(true)
+    const updated = insideTeam.state.units.find((item) => item.id === teamUnit.id)
+    expect(updated?.bua).toBe(teamUnit.bua + 10)
+    expect(updated?.totalAmount).toBe(teamUnit.totalAmount)
+  })
+
+  it('lets admins edit owner fields with validation and duplicate-phone protection', () => {
+    const unit = seedUnits[0]
+    const changed = updateUnitWorkflow(state(), admin, unit.id, editInput(unit, {
+      originalOwnerName: 'Updated Owner',
+      countryCode: '+20',
+      originalOwnerPhone: '010 3333 4444',
+    }))
+
+    expect(changed.ok).toBe(true)
+    expect(changed.state.units.find((item) => item.id === unit.id)).toMatchObject({
+      originalOwnerName: 'Updated Owner',
+      originalOwnerPhone: '01033334444',
+      normalizedOwnerPhone: '+201033334444',
+    })
+
+    const invalid = updateUnitWorkflow(state(), admin, unit.id, editInput(unit, {
+      countryCode: '+20',
+      originalOwnerPhone: '12345',
+    }))
+    expect(invalid.ok).toBe(false)
+    expect(invalid.error).toContain('Owner phone must match')
+
+    const duplicateUnit = { ...seedUnits[1], id: 200, projectId: unit.projectId, projectName: unit.projectName }
+    const duplicate = updateUnitWorkflow(
+      { ...state(), units: [unit, duplicateUnit] },
+      admin,
+      duplicateUnit.id,
+      editInput(duplicateUnit, {
+        countryCode: unit.countryCode ?? '+971',
+        originalOwnerPhone: unit.originalOwnerPhone ?? '',
+      }),
+    )
+    expect(duplicate.ok).toBe(false)
+    expect(duplicate.error).toContain('Duplicate owner phone blocked')
   })
 
   it('archives and changes status only when the actor has permission', () => {

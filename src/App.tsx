@@ -19,17 +19,24 @@ import {
   Settings,
   Share2,
   SlidersHorizontal,
+  Trash2,
   Users,
 } from 'lucide-react'
 import type { User as SupabaseUser } from '@supabase/supabase-js'
-import { memo, useDeferredValue, useEffect, useId, useMemo, useRef, useState, type CSSProperties, type FormEvent, type ReactNode } from 'react'
+import { memo, useCallback, useDeferredValue, useEffect, useId, useMemo, useRef, useState, type CSSProperties, type FormEvent, type ReactNode } from 'react'
 import { createPortal, flushSync } from 'react-dom'
+import { BrowserRouter, Link, useLocation, useNavigate } from 'react-router-dom'
 import { demoUsers, initialAppState, lookupValues } from './data/seed'
 import { buildPerformanceWorkspace } from './data/performanceSeed'
 import { buildAnalyticsCsv, buildAnalyticsDashboard, canAccessAnalytics, defaultAnalyticsFilters } from './lib/analytics'
 import {
   canAddAdminManagerNote,
   canArchiveUnit,
+  canEditAnyUnitDetails,
+  canEditNonOwnerUnitDetails,
+  canEditOwnerFields,
+  canEditUnitCommission,
+  canEditUnitPricing,
   canViewSalesSensitiveData,
   canViewOwnerData,
   getOwnerPhoneCountryMeta,
@@ -39,6 +46,7 @@ import {
   formatDeliveryExpectancy,
   buildInstallmentSchedule,
   getApplicableUnitAreaFields,
+  isSoldStatus,
   getThumbnailMedia,
   PRD_UNIT_TYPES,
   PRD_FLOOR_OPTIONS,
@@ -83,20 +91,41 @@ import {
   deleteManagedUserWorkflow,
   deleteSalesRepresentativeWorkflow,
   deleteUnitAdminNoteWorkflow,
+  removeUnitMediaWorkflow,
   saveUnitAdminNoteWorkflow,
   updateSettingsWorkflow,
   updateUnitStatusWorkflow,
+  updateUnitWorkflow,
 } from './lib/workflows'
 import { createAuditMessage, createFlashForStatus, createFlashMessage, createNotificationMessage } from './lib/systemMessages'
+import {
+  adminSectionPath,
+  analyticsPath,
+  createStepPath,
+  destinationPath,
+  legacyHashPath,
+  masterDataPath,
+  parseAppRoute,
+  pathForView,
+  projectPath,
+  unitDetailsPath,
+  type AdminSectionSlug,
+  type AnalyticsWindowSlug,
+  type AppRoute,
+  type CreateStepSlug,
+  type MasterDataDirectorySlug,
+  type View,
+} from './lib/routes'
 import type {
   AnalyticsDashboard,
   AnalyticsChartPoint,
   AnalyticsDateWindow,
-  AnalyticsFilters,
+  AnalyticsFilters as LeadraAnalyticsFilters,
   AppDataState,
   AppSettings,
   AuditLogItem,
   BranchDirectoryItem,
+  CreateUnitInput,
   LeadraMediaFile,
   LeadraUnit,
   LeadraUser,
@@ -107,12 +136,12 @@ import type {
   PaymentMethod,
   TeamDirectoryItem,
   InstallmentType,
+  UnitEditInput,
   UnitFilters,
   UnitStatus,
 } from './lib/types'
 
-type View = 'dashboard' | 'units' | 'create' | 'details' | 'notifications' | 'profile' | 'analytics' | 'admin' | 'palette'
-type HashView = View
+type UnitsBrowserStage = 'destinations' | 'projects' | 'units'
 
 type TransitionDocument = Document & {
   startViewTransition?: (callback: () => void) => {
@@ -149,9 +178,108 @@ function runPageTransition(update: () => void) {
 }
 type UiMessage = { message: string; messageKey?: string | null; messageParams?: MessageParams | null }
 
+function errorMessage(error: unknown) {
+  if (error instanceof Error) return error.message
+  if (typeof error === 'object' && error && 'message' in error) return String(error.message)
+  return 'Please try again.'
+}
+
 const createUnitSteps = ['Property', 'Specs', 'Payment', 'Owner', 'Review'] as const
 const adminSections = ['Users', 'Master Data', 'Settings', 'Metrics', 'Audit'] as const
 const lookupKindOptions: LookupKind[] = ['developer', 'destination', 'project', 'view', 'finish', 'unit_type']
+type CreateUnitStep = (typeof createUnitSteps)[number]
+type AdminSection = (typeof adminSections)[number]
+type MasterDataDirectory = LookupKind | 'branches' | 'teams'
+
+const createStepFromSlug: Record<CreateStepSlug, CreateUnitStep> = {
+  property: 'Property',
+  specs: 'Specs',
+  payment: 'Payment',
+  owner: 'Owner',
+  review: 'Review',
+}
+
+const createStepToSlug: Record<CreateUnitStep, CreateStepSlug> = {
+  Property: 'property',
+  Specs: 'specs',
+  Payment: 'payment',
+  Owner: 'owner',
+  Review: 'review',
+}
+
+const adminSectionFromSlug: Record<AdminSectionSlug, AdminSection> = {
+  users: 'Users',
+  'master-data': 'Master Data',
+  settings: 'Settings',
+  metrics: 'Metrics',
+  audit: 'Audit',
+}
+
+const adminSectionToSlug: Record<AdminSection, AdminSectionSlug> = {
+  Users: 'users',
+  'Master Data': 'master-data',
+  Settings: 'settings',
+  Metrics: 'metrics',
+  Audit: 'audit',
+}
+
+const masterDataDirectoryFromSlug: Record<MasterDataDirectorySlug, MasterDataDirectory> = {
+  developers: 'developer',
+  destinations: 'destination',
+  projects: 'project',
+  views: 'view',
+  finishes: 'finish',
+  'unit-types': 'unit_type',
+  branches: 'branches',
+  teams: 'teams',
+}
+
+const masterDataDirectoryToSlug: Record<MasterDataDirectory, MasterDataDirectorySlug> = {
+  developer: 'developers',
+  destination: 'destinations',
+  project: 'projects',
+  view: 'views',
+  finish: 'finishes',
+  unit_type: 'unit-types',
+  branches: 'branches',
+  teams: 'teams',
+}
+
+const unitStatusValues: UnitStatus[] = ['available', 'hold', 'sold', 'sold_by_us', 'sold_by_others']
+const paymentMethodValues: PaymentMethod[] = ['cash', 'installment']
+
+function analyticsFiltersFromRoute(route: AppRoute): LeadraAnalyticsFilters {
+  return {
+    ...defaultAnalyticsFilters,
+    dateWindow: route.analyticsWindow as AnalyticsDateWindow,
+    startDate: route.analyticsFilters.start ?? undefined,
+    endDate: route.analyticsFilters.end ?? undefined,
+    teamIds: route.analyticsFilters.team,
+    userIds: route.analyticsFilters.user,
+    projectIds: route.analyticsFilters.project,
+    developerIds: route.analyticsFilters.developer,
+    destinationIds: route.analyticsFilters.destination,
+    statuses: route.analyticsFilters.status.filter((status): status is UnitStatus => unitStatusValues.includes(status as UnitStatus)),
+    paymentMethods: route.analyticsFilters.payment.filter((method): method is PaymentMethod => paymentMethodValues.includes(method as PaymentMethod)),
+  }
+}
+
+function analyticsRouteForFilters(filters: LeadraAnalyticsFilters, filtersOpen: boolean): string {
+  return analyticsPath(filters.dateWindow as AnalyticsWindowSlug, {
+    filtersOpen,
+    filters: {
+      team: filters.teamIds,
+      user: filters.userIds,
+      project: filters.projectIds,
+      developer: filters.developerIds,
+      destination: filters.destinationIds,
+      status: filters.statuses,
+      payment: filters.paymentMethods,
+      start: filters.startDate ?? null,
+      end: filters.endDate ?? null,
+    },
+  })
+}
 const unitListPageSize = 60
 const notificationPageSize = 60
 const userManagementPageSize = 48
@@ -183,17 +311,25 @@ function getInitialWorkspace() {
   return workspace
 }
 
-function App() {
+export default function App() {
+  return (
+    <BrowserRouter>
+      <LeadraApp />
+    </BrowserRouter>
+  )
+}
+
+function LeadraApp() {
   const { locale, t } = useLocale()
+  const location = useLocation()
+  const routerNavigate = useNavigate()
+  const route = parseAppRoute(location.pathname, location.search, location.hash)
   const [initialWorkspace] = useState(getInitialWorkspace)
   const initialWorkspaceRef = useRef(initialWorkspace)
   const [currentUser, setCurrentUser] = useState<LeadraUser | null>(null)
-  const [view, setView] = useState<View>(() => readHashView())
+  const [, setView] = useState<View>(() => route.view)
   const [appState, setAppState] = useState(initialWorkspace.state)
   const [activeLookupValues, setActiveLookupValues] = useState<LookupValue[]>(initialWorkspace.lookupValues)
-  const [selectedDestinationId, setSelectedDestinationId] = useState<string | null>(null)
-  const [selectedProjectId, setSelectedProjectId] = useState<string | null>(null)
-  const [selectedUnitId, setSelectedUnitId] = useState<number | null>(() => readHashUnitId())
   const [unitFilters, setUnitFilters] = useState<UnitFilters>({ status: 'all' })
   const [remoteSearchUnits, setRemoteSearchUnits] = useState<LeadraUnit[] | null>(null)
   const [flash, setFlash] = useState<LocalizedFlashMessage | null>(null)
@@ -203,10 +339,17 @@ function App() {
   const [generatingPdfUnitId, setGeneratingPdfUnitId] = useState<number | null>(null)
   const [sharingPdfUnitId, setSharingPdfUnitId] = useState<number | null>(null)
   const [updatingStatusUnitId, setUpdatingStatusUnitId] = useState<number | null>(null)
+  const [statusActionFeedback, setStatusActionFeedback] = useState<{
+    unitId: number
+    status: UnitStatus
+    state: 'saving' | 'saved'
+  } | null>(null)
+  const [removingMediaId, setRemovingMediaId] = useState<string | null>(null)
+  const [downloadingMediaId, setDownloadingMediaId] = useState<string | null>(null)
   const [generatedPdfs, setGeneratedPdfs] = useState<Record<number, { blob: Blob; fileName: string }>>({})
   const completingAuthUserRef = useRef<string | null>(null)
 
-  async function completeSupabaseLogin(authUser: SupabaseUser) {
+  const completeSupabaseLogin = useCallback(async (authUser: SupabaseUser) => {
     if (!supabase) return
     if (completingAuthUserRef.current === authUser.id) return
     completingAuthUserRef.current = authUser.id
@@ -229,10 +372,10 @@ function App() {
       setAppState(remote.state)
       setActiveLookupValues(remote.lookupValues.length > 0 ? remote.lookupValues : lookupValues)
       setCurrentUser(profile)
-      const requestedView = readHashView()
+      const requestedView = parseAppRoute(window.location.pathname, window.location.search, window.location.hash).view
       const nextView = isViewAllowedForUser(requestedView, profile) ? requestedView : 'dashboard'
       setView(nextView)
-      if (nextView !== requestedView) writeHashView(nextView)
+      if (nextView !== requestedView) routerNavigate(pathForView(nextView), { replace: true })
       setLoginError(null)
     } catch {
       setLoginError({
@@ -244,7 +387,7 @@ function App() {
       completingAuthUserRef.current = null
       setAuthLoading(false)
     }
-  }
+  }, [routerNavigate])
 
   async function handleSupabasePasswordLogin(email: string, password: string) {
     if (!supabase) return
@@ -266,19 +409,23 @@ function App() {
   }
 
   useEffect(() => {
-    function syncViewFromHash() {
-      const requestedView = readHashView()
-      const hashUnitId = readHashUnitId()
+    function syncRouteFromLocation() {
+      const requestedRoute = parseAppRoute(window.location.pathname, window.location.search, window.location.hash)
+      const legacyPath = legacyHashPath(window.location.hash)
+      if (legacyPath) {
+        routerNavigate(legacyPath, { replace: true })
+        return
+      }
       runPageTransition(() => {
-        if (hashUnitId) setSelectedUnitId(hashUnitId)
-        setView(requestedView)
+        setView(requestedRoute.view)
         setFlash(null)
       })
     }
 
-    window.addEventListener('hashchange', syncViewFromHash)
-    return () => window.removeEventListener('hashchange', syncViewFromHash)
-  }, [])
+    syncRouteFromLocation()
+    window.addEventListener('hashchange', syncRouteFromLocation)
+    return () => window.removeEventListener('hashchange', syncRouteFromLocation)
+  }, [location.pathname, location.hash, routerNavigate])
 
   useEffect(() => {
     if (!isSupabaseConfigured || !supabase) return undefined
@@ -317,7 +464,7 @@ function App() {
       cancelled = true
       listener.subscription.unsubscribe()
     }
-  }, [])
+  }, [completeSupabaseLogin])
 
   if (!currentUser) {
     return (
@@ -326,10 +473,10 @@ function App() {
         loginError={loginError}
         onLogin={(nextUser) => {
           setCurrentUser(nextUser)
-          const requestedView = readHashView()
+          const requestedView = parseAppRoute(window.location.pathname, window.location.search, window.location.hash).view
           const nextView = isViewAllowedForUser(requestedView, nextUser) ? requestedView : 'dashboard'
           setView(nextView)
-          if (nextView !== requestedView) writeHashView(nextView)
+          if (nextView !== requestedView) routerNavigate(pathForView(nextView), { replace: true })
           setFlash(null)
         }}
         onPasswordLogin={handleSupabasePasswordLogin}
@@ -340,13 +487,22 @@ function App() {
   const user = currentUser
   const canUseAdmin = canAccessAdmin(user)
   const canUseAnalytics = canAccessAnalytics(user)
-  const activeView = isViewAllowedForUser(view, user) ? view : 'dashboard'
+  const activeView = isViewAllowedForUser(route.view, user) ? route.view : 'dashboard'
   const visibleUnits = filterUnitsForUser(user, appState.units)
   const destinationSummaries = summarizeDestinations(visibleUnits, locale)
-  const activeSelectedDestinationId = unitFilters.destinationId || selectedDestinationId || destinationSummaries[0]?.destinationId || null
+  const routeDestinationId = route.view === 'units' ? route.destinationId : null
+  const routeProjectId = route.view === 'units' ? route.projectId : null
+  const routeUnitId = route.view === 'details' ? route.unitId : null
+  const activeSelectedDestinationId = routeDestinationId || unitFilters.destinationId || null
   const projectSummaries = summarizeProjects(visibleUnits, locale, activeSelectedDestinationId)
-  const activeSelectedProjectId = unitFilters.projectId || selectedProjectId || projectSummaries[0]?.projectId || null
-  const selectedUnit = visibleUnits.find((unit) => unit.id === selectedUnitId) ?? (activeView === 'details' ? null : visibleUnits[0] ?? null)
+  const activeSelectedProjectId = routeProjectId || unitFilters.projectId || null
+  const unitsBrowserStage: UnitsBrowserStage = routeProjectId ? 'units' : routeDestinationId ? 'projects' : 'destinations'
+  const activeCreateStep = createStepFromSlug[route.createStep]
+  const activeAdminSection = adminSectionFromSlug[route.adminSection]
+  const activeMasterDataDirectory = masterDataDirectoryFromSlug[route.masterDataDirectory]
+  const selectedUnit = activeView === 'details'
+    ? visibleUnits.find((unit) => unit.id === routeUnitId) ?? null
+    : visibleUnits[0] ?? null
   const filteredUnits = searchUnits(user, appState.units, {
     ...unitFilters,
     destinationId: unitFilters.destinationId || activeSelectedDestinationId || undefined,
@@ -362,15 +518,26 @@ function App() {
   function navigate(nextView: View) {
     runPageTransition(() => {
       setView(nextView)
-      if (nextView !== 'details') {
-        writeHashView(nextView)
-      }
+      routerNavigate(pathForView(nextView))
       setFlash(null)
       setMobileMenuOpen(false)
     })
   }
 
-  function handleCreateUnit(event: FormEvent<HTMLFormElement>, uploadedMedia: LeadraMediaFile[]) {
+  function navigateToPath(path: string, options?: { replace?: boolean }) {
+    runPageTransition(() => {
+      routerNavigate(path, { replace: options?.replace })
+      setFlash(null)
+      setMobileMenuOpen(false)
+    })
+  }
+
+  function closeNavigation() {
+    setFlash(null)
+    setMobileMenuOpen(false)
+  }
+
+  async function handleCreateUnit(event: FormEvent<HTMLFormElement>, uploadedMedia: LeadraMediaFile[]) {
     event.preventDefault()
     const formData = new FormData(event.currentTarget)
     const paymentMethod = String(formData.get('paymentMethod')) as PaymentMethod
@@ -404,7 +571,7 @@ function App() {
       return
     }
 
-    const result = createUnitWorkflow(appState, user, {
+    const input: CreateUnitInput = {
       developerId,
       developerName: developer?.label ?? 'Unknown developer',
       projectId,
@@ -439,10 +606,11 @@ function App() {
       originalOwnerPhone: ownerPhoneValidation.localPhone,
       salesNotes: String(formData.get('salesNotes')),
       media: uploadedMedia,
-    })
+    }
+    const result = createUnitWorkflow(appState, user, input)
 
-    setAppState(result.state)
     if (!result.ok) {
+      setAppState(result.state)
       setFlash({
         text: result.error,
         messageKey: result.errorKey ?? null,
@@ -451,13 +619,107 @@ function App() {
       return
     }
 
-    const newUnit = result.state.units[0]
+    let nextState = result.state
+    let newUnit = result.state.units[0]
+    try {
+      if (supabase && isSupabaseConfigured) {
+        const remoteUnit = await new LeadraRepository(supabase).createUnit(user, input)
+        nextState = {
+          ...result.state,
+          units: result.state.units.map((unit) => unit.id === newUnit.id ? remoteUnit : unit),
+        }
+        newUnit = remoteUnit
+      }
+    } catch (error) {
+      setFlash({ text: `Unit could not be created: ${errorMessage(error)}`, messageKey: null, messageParams: null })
+      return
+    }
+
+    setAppState(nextState)
     setFlash(createFlashMessage('flash.unitCreated', 'Unit created, notifications queued, and audit action recorded.'))
     runPageTransition(() => {
-      setSelectedProjectId(newUnit.projectId)
-      setSelectedUnitId(newUnit.id)
       setView('details')
+      routerNavigate(unitDetailsPath(newUnit.id))
     })
+  }
+
+  async function handleUpdateUnit(unit: LeadraUnit, event: FormEvent<HTMLFormElement>): Promise<boolean> {
+    event.preventDefault()
+    const formData = new FormData(event.currentTarget)
+    const projectId = String(formData.get('projectId'))
+    const destinationId = String(formData.get('destinationId'))
+    const developerId = String(formData.get('developerId'))
+    const viewId = String(formData.get('viewId'))
+    const project = activeLookupValues.find((item) => item.id === projectId)
+    const destination = activeLookupValues.find((item) => item.id === destinationId)
+    const developer = activeLookupValues.find((item) => item.id === developerId)
+    const viewLookup = activeLookupValues.find((item) => item.id === viewId)
+    const input: UnitEditInput = {
+      developerId,
+      developerName: developer?.label ?? unit.developerName,
+      projectId,
+      projectName: project?.label ?? unit.projectName,
+      destinationId,
+      destinationName: destination?.label ?? unit.destinationName,
+      unitType: String(formData.get('unitType')),
+      floor: String(formData.get('floor') ?? ''),
+      bua: Number(formData.get('bua')),
+      roofGardenArea: Number(formData.get('roofGardenArea')) || null,
+      gardenArea: Number(formData.get('gardenArea')) || null,
+      terraceArea: Number(formData.get('terraceArea')) || null,
+      viewId,
+      viewName: viewLookup?.label ?? unit.viewName,
+      bedrooms: Number(formData.get('bedrooms')),
+      bathrooms: Number(formData.get('bathrooms')),
+      elevator: formData.get('elevator') === 'on',
+      landArea: Number(formData.get('landArea')) || null,
+      furnished: String(formData.get('furnished')) === 'true',
+      finish: String(formData.get('finish')),
+      deliveryExpectancy: {
+        mode: 'year',
+        year: Number(formData.get('deliveryYear')),
+      },
+      originalOwnerName: String(formData.get('ownerName') ?? unit.originalOwnerName ?? ''),
+      countryCode: String(formData.get('countryCode') ?? unit.countryCode ?? '+20'),
+      originalOwnerPhone: String(formData.get('ownerPhone') ?? unit.originalOwnerPhone ?? ''),
+      salesNotes: String(formData.get('salesNotes') ?? unit.salesNotes),
+      totalAmount: Number(formData.get('totalAmount')),
+      commissionPercentage: Number(formData.get('commissionPercentage')),
+    }
+    const result = updateUnitWorkflow(appState, user, unit.id, input)
+    if (!result.ok) {
+      setFlash({ text: result.error, messageKey: result.errorKey ?? null, messageParams: result.errorParams ?? null })
+      return false
+    }
+
+    const previousState = appState
+    let nextState = result.state
+    const updatedUnit = result.state.units.find((item) => item.id === unit.id) ?? unit
+    setAppState(nextState)
+    setRemoteSearchUnits((items) => items?.map((item) => item.id === unit.id ? updatedUnit : item) ?? null)
+
+    try {
+      if (supabase && isSupabaseConfigured) {
+        const remoteUnit = await new LeadraRepository(supabase).updateUnitDetails(user, unit.id, input, {
+          canEditOwner: canEditOwnerFields(user, unit),
+          canEditPricing: canEditUnitPricing(user, unit),
+          canEditCommission: canEditUnitCommission(user, unit),
+        })
+        nextState = {
+          ...result.state,
+          units: result.state.units.map((item) => item.id === unit.id ? remoteUnit : item),
+        }
+        setAppState(nextState)
+        setRemoteSearchUnits((items) => items?.map((item) => item.id === unit.id ? remoteUnit : item) ?? null)
+      }
+      setFlash(createFlashMessage('flash.unitUpdated', 'Unit details updated.'))
+      return true
+    } catch (error) {
+      setAppState(previousState)
+      setRemoteSearchUnits((items) => items?.map((item) => item.id === unit.id ? unit : item) ?? null)
+      setFlash({ text: `Unit could not be saved: ${errorMessage(error)}`, messageKey: null, messageParams: null })
+      return false
+    }
   }
 
   async function updateUnitStatus(unit: LeadraUnit, status: UnitStatus) {
@@ -470,6 +732,7 @@ function App() {
     }
     const previousState = appState
     setUpdatingStatusUnitId(unit.id)
+    setStatusActionFeedback({ unitId: unit.id, status, state: 'saving' })
     setAppState(result.state)
     setRemoteSearchUnits((items) =>
       items?.map((item) =>
@@ -481,15 +744,18 @@ function App() {
       if (supabase && isSupabaseConfigured) {
         await new LeadraRepository(supabase).updateUnitStatus(unit.id, status)
       }
+      setStatusActionFeedback({ unitId: unit.id, status, state: 'saved' })
       setFlash(createFlashForStatus(status))
-    } catch {
+    } catch (error) {
       setAppState(previousState)
       setRemoteSearchUnits((items) =>
         items?.map((item) =>
           item.id === unit.id ? { ...item, status: unit.status, updatedAt: unit.updatedAt } : item,
         ) ?? null,
       )
-      setFlash({ text: 'Status could not be saved. Please try again.', messageKey: null, messageParams: null })
+      setStatusActionFeedback(null)
+      console.error('Status update failed', error)
+      setFlash({ text: `Status could not be saved: ${errorMessage(error)}`, messageKey: null, messageParams: null })
     } finally {
       setUpdatingStatusUnitId(null)
     }
@@ -505,6 +771,7 @@ function App() {
     setFlash(createFlashMessage('flash.unitArchived', 'Unit archived. It remains stored for history, audit, and backups.'))
     runPageTransition(() => {
       setView('units')
+      routerNavigate('/units')
     })
   }
 
@@ -528,11 +795,95 @@ function App() {
     )
   }
 
+  async function removeUnitMedia(unit: LeadraUnit, mediaId: string) {
+    if (removingMediaId) return
+    const result = removeUnitMediaWorkflow(appState, user, unit.id, mediaId)
+    if (!result.ok) {
+      setFlash({ text: result.error, messageKey: result.errorKey ?? null, messageParams: result.errorParams ?? null })
+      return
+    }
+
+    const previousState = appState
+    setRemovingMediaId(mediaId)
+    setAppState(result.state)
+    setRemoteSearchUnits((items) =>
+      items?.map((item) =>
+        item.id === unit.id ? { ...item, media: item.media.filter((file) => file.id !== mediaId), updatedAt: new Date().toISOString() } : item,
+      ) ?? null,
+    )
+
+    try {
+      if (supabase && isSupabaseConfigured) {
+        await new LeadraRepository(supabase).deleteUnitMedia(mediaId)
+      }
+      setFlash(createFlashMessage('flash.unitMediaRemoved', 'Media removed from this unit.'))
+    } catch {
+      setAppState(previousState)
+      setRemoteSearchUnits((items) =>
+        items?.map((item) => item.id === unit.id ? unit : item) ?? null,
+      )
+      setFlash({ text: 'Media could not be removed. Please try again.', messageKey: null, messageParams: null })
+    } finally {
+      setRemovingMediaId(null)
+    }
+  }
+
   async function generatePdfFile(unit: LeadraUnit) {
     const { generateUnitPdfFile } = await import('./lib/pdf')
     const generated = await generateUnitPdfFile(user, unit, appState.settings, locale)
     setGeneratedPdfs((items) => ({ ...items, [unit.id]: generated }))
     return generated
+  }
+
+  function setUnitMediaPdfVisibility(unitId: number, mediaId: string, includeInPdf: boolean) {
+    setAppState((state) => ({
+      ...state,
+      units: state.units.map((unit) =>
+        unit.id === unitId
+          ? {
+              ...unit,
+              media: unit.media.map((file) =>
+                file.id === mediaId ? { ...file, includeInPdf } : file,
+              ),
+              updatedAt: new Date().toISOString(),
+            }
+          : unit,
+      ),
+    }))
+    setGeneratedPdfs((items) => {
+      const remaining = { ...items }
+      delete remaining[unitId]
+      return remaining
+    })
+  }
+
+  async function downloadUnitMedia(file: LeadraMediaFile) {
+    if (downloadingMediaId) return
+    setDownloadingMediaId(file.id)
+
+    try {
+      const response = await fetch(file.url)
+      if (!response.ok) throw new Error(`Media download failed with ${response.status}`)
+
+      const blob = await response.blob()
+      const url = URL.createObjectURL(blob)
+      const anchor = document.createElement('a')
+      anchor.href = url
+      anchor.download = file.name
+      anchor.rel = 'noopener'
+      anchor.style.display = 'none'
+      document.body.append(anchor)
+      anchor.click()
+      window.setTimeout(() => {
+        anchor.remove()
+        URL.revokeObjectURL(url)
+      }, 1000)
+    } catch {
+      window.open(file.url, '_blank', 'noopener,noreferrer')
+      setFlash({ text: 'Direct download is blocked by the image host, so the photo opened in a new tab.', messageKey: null, messageParams: null })
+    } finally {
+      setDownloadingMediaId(null)
+    }
   }
 
   async function generatePdf(unit: LeadraUnit) {
@@ -612,7 +963,7 @@ function App() {
   }
 
   async function copyUnitShareLink(unit: LeadraUnit) {
-    const url = `${window.location.origin}${window.location.pathname}#details/${unit.id}`
+    const url = `${window.location.origin}${unitDetailsPath(unit.id)}`
     try {
       await navigator.clipboard.writeText(url)
       setFlash({ text: 'Internal unit share link copied. It only works for logged-in users with permission.', messageKey: null, messageParams: null })
@@ -629,8 +980,6 @@ function App() {
 
   function resetUnitFilters() {
     setUnitFilters({ status: 'all' })
-    setSelectedDestinationId(null)
-    setSelectedProjectId(null)
     setRemoteSearchUnits(null)
   }
 
@@ -656,17 +1005,17 @@ function App() {
     <div className="app-shell">
       <aside className="side-rail" aria-label={t('nav.desktop')}>
         <div className="brand-mark">L</div>
-        <NavButton active={activeView === 'dashboard'} label={t('nav.dashboard')} onClick={() => navigate('dashboard')} icon={<Home />} className="motion-stage" style={motionStyle(0)} />
-        <NavButton active={activeView === 'units'} label={t('nav.units')} onClick={() => navigate('units')} icon={<Building2 />} className="motion-stage" style={motionStyle(1)} />
-        <NavButton active={activeView === 'create'} label={t('nav.create')} onClick={() => navigate('create')} icon={<Plus />} className="motion-stage" style={motionStyle(2)} />
-        <NavButton active={activeView === 'notifications'} label={t('nav.alerts', { count: unreadCount })} onClick={() => navigate('notifications')} icon={<Bell />} className="motion-stage" style={motionStyle(3)} />
+        <NavButton active={activeView === 'dashboard'} label={t('nav.dashboard')} to={pathForView('dashboard')} onClick={closeNavigation} icon={<Home />} className="motion-stage" style={motionStyle(0)} />
+        <NavButton active={activeView === 'units'} label={t('nav.units')} to={pathForView('units')} onClick={closeNavigation} icon={<Building2 />} className="motion-stage" style={motionStyle(1)} />
+        <NavButton active={activeView === 'create'} label={t('nav.create')} to={pathForView('create')} onClick={closeNavigation} icon={<Plus />} className="motion-stage" style={motionStyle(2)} />
+        <NavButton active={activeView === 'notifications'} label={t('nav.alerts', { count: unreadCount })} to={pathForView('notifications')} onClick={closeNavigation} icon={<Bell />} className="motion-stage" style={motionStyle(3)} />
         {canUseAnalytics && (
-          <NavButton active={activeView === 'analytics'} label={t('nav.analytics')} onClick={() => navigate('analytics')} icon={<BarChart3 />} className="motion-stage" style={motionStyle(4)} />
+          <NavButton active={activeView === 'analytics'} label={t('nav.analytics')} to={pathForView('analytics')} onClick={closeNavigation} icon={<BarChart3 />} className="motion-stage" style={motionStyle(4)} />
         )}
         {canUseAdmin && (
-          <NavButton active={activeView === 'admin'} label={t('nav.admin')} onClick={() => navigate('admin')} icon={<Settings />} className="motion-stage" style={motionStyle(5)} />
+          <NavButton active={activeView === 'admin'} label={t('nav.admin')} to={pathForView('admin')} onClick={closeNavigation} icon={<Settings />} className="motion-stage" style={motionStyle(5)} />
         )}
-        <NavButton active={activeView === 'palette'} label="Palette" onClick={() => navigate('palette')} icon={<Share2 />} className="motion-stage" style={motionStyle(6)} />
+        <NavButton active={activeView === 'palette'} label="Palette" to={pathForView('palette')} onClick={closeNavigation} icon={<Share2 />} className="motion-stage" style={motionStyle(6)} />
       </aside>
 
       <main className="main-panel">
@@ -676,10 +1025,10 @@ function App() {
             <h1>{getViewTitle(activeView, user, locale)}</h1>
           </div>
           <div className="topbar-actions">
-            <button className="user-chip" type="button" onClick={() => navigate('profile')}>
+            <Link className="user-chip" to={pathForView('profile')} onClick={closeNavigation}>
               <span>{getUserInitials(user.fullName)}</span>
               <strong>{getRoleLabel(locale, user.role)}</strong>
-            </button>
+            </Link>
             <button
               className="ghost-button"
               type="button"
@@ -688,7 +1037,7 @@ function App() {
                 if (supabase) void supabase.auth.signOut()
                 setCurrentUser(null)
                 setView('dashboard')
-                writeHashView('dashboard')
+                routerNavigate('/dashboard', { replace: true })
                 setFlash(null)
               }}
             >
@@ -707,9 +1056,8 @@ function App() {
               onNavigate={navigate}
               onOpenUnit={(unitId) => {
                 runPageTransition(() => {
-                  setSelectedUnitId(unitId)
                   setView('details')
-                  window.history.replaceState(null, '', `${window.location.pathname}#details/${unitId}`)
+                  routerNavigate(unitDetailsPath(unitId))
                 })
               }}
             />
@@ -729,30 +1077,38 @@ function App() {
               projects={projectSummaries}
               selectedDestinationId={activeSelectedDestinationId}
               selectedProjectId={activeSelectedProjectId}
+              stage={unitsBrowserStage}
+              currentDestination={destinationSummaries.find((destination) => destination.destinationId === activeSelectedDestinationId) ?? null}
+              currentProject={projectSummaries.find((project) => project.projectId === activeSelectedProjectId) ?? null}
               units={displayedUnits}
               filters={unitFilters}
               onDestinationSelect={(id) => {
-                setSelectedDestinationId(id)
-                const destinationProjects = summarizeProjects(visibleUnits, locale, id)
-                const nextProjectId = destinationProjects[0]?.projectId ?? null
-                setSelectedProjectId(nextProjectId)
                 const nextFilters = { ...unitFilters, destinationId: undefined, projectId: undefined }
                 setUnitFilters(nextFilters)
-                void loadRemoteUnitSearch(nextFilters, id, nextProjectId)
+                setRemoteSearchUnits(null)
+                navigateToPath(destinationPath(id))
               }}
               onProjectSelect={(id) => {
-                setSelectedProjectId(id)
                 const nextFilters = { ...unitFilters, projectId: undefined }
                 setUnitFilters(nextFilters)
                 void loadRemoteUnitSearch(nextFilters, activeSelectedDestinationId, id)
+                if (activeSelectedDestinationId) navigateToPath(projectPath(activeSelectedDestinationId, id))
+              }}
+              onBackToDestinations={() => {
+                resetUnitFilters()
+                navigateToPath('/units')
+              }}
+              onBackToProjects={() => {
+                const destinationId = activeSelectedDestinationId
+                setRemoteSearchUnits(null)
+                if (destinationId) navigateToPath(destinationPath(destinationId))
               }}
               onFilterChange={updateUnitFilter}
               onResetFilters={resetUnitFilters}
               onOpenUnit={(id) => {
                 runPageTransition(() => {
-                  setSelectedUnitId(id)
                   setView('details')
-                  window.history.replaceState(null, '', `${window.location.pathname}#details/${id}`)
+                  routerNavigate(unitDetailsPath(id))
                 })
               }}
             />
@@ -760,16 +1116,24 @@ function App() {
         )}
         {activeView === 'create' && (
           <div className="page-transition-frame" key={activeView}>
-            <CreateUnitPage lookupValues={activeLookupValues} onSubmit={handleCreateUnit} settings={appState.settings} />
+            <CreateUnitPage
+              lookupValues={activeLookupValues}
+              activeStep={activeCreateStep}
+              onStepChange={(step) => navigateToPath(createStepPath(createStepToSlug[step]))}
+              onSubmit={handleCreateUnit}
+              settings={appState.settings}
+            />
           </div>
         )}
         {activeView === 'details' && selectedUnit && (
           <div className="page-transition-frame" key={activeView}>
             <UnitDetailsPage
-              key={`${selectedUnit.id}:${selectedUnit.updatedAt}`}
+              key={selectedUnit.id}
               user={user}
               unit={selectedUnit}
+              lookupValues={activeLookupValues}
               onArchive={() => archiveUnit(selectedUnit)}
+              onUpdateUnit={(event) => handleUpdateUnit(selectedUnit, event)}
               onStatusChange={(status) => updateUnitStatus(selectedUnit, status)}
               onGeneratePdf={() => generatePdf(selectedUnit)}
               onSharePdf={() => sharePdf(selectedUnit)}
@@ -778,8 +1142,14 @@ function App() {
               pdfSharing={sharingPdfUnitId === selectedUnit.id}
               pdfReady={Boolean(generatedPdfs[selectedUnit.id])}
               statusUpdating={updatingStatusUnitId === selectedUnit.id}
+              statusActionFeedback={statusActionFeedback?.unitId === selectedUnit.id ? statusActionFeedback : null}
               onSaveNote={(content) => saveSharedNote(selectedUnit, content)}
               onDeleteNote={() => deleteSharedNote(selectedUnit)}
+              onRemoveMedia={(mediaId) => removeUnitMedia(selectedUnit, mediaId)}
+              onMediaPdfVisibilityChange={(mediaId, includeInPdf) => setUnitMediaPdfVisibility(selectedUnit.id, mediaId, includeInPdf)}
+              onMediaDownload={downloadUnitMedia}
+              removingMediaId={removingMediaId}
+              downloadingMediaId={downloadingMediaId}
             />
           </div>
         )}
@@ -802,7 +1172,12 @@ function App() {
         )}
         {activeView === 'analytics' && canUseAnalytics && (
           <div className="page-transition-frame" key={activeView}>
-            <AnalyticsPage appState={appState} user={user} />
+            <AnalyticsPage
+              appState={appState}
+              user={user}
+              route={route}
+              onRouteChange={(path, options) => navigateToPath(path, options)}
+            />
           </div>
         )}
         {activeView === 'admin' && canUseAdmin && (
@@ -814,6 +1189,10 @@ function App() {
               auditLogs={appState.auditLogs}
               lookupValues={activeLookupValues}
               lookupCount={activeLookupValues.length}
+              activeSection={activeAdminSection}
+              activeDirectory={activeMasterDataDirectory}
+              onSectionChange={(section) => navigateToPath(adminSectionPath(adminSectionToSlug[section]))}
+              onDirectoryChange={(directory) => navigateToPath(masterDataPath(masterDataDirectoryToSlug[directory]))}
               defaultBranchId={user.branchId}
               branches={appState.branches}
               teams={appState.teams}
@@ -1166,22 +1545,22 @@ function App() {
 
       {mobileMenuOpen && (
         <div className="mobile-more-sheet" role="menu" aria-label={t('nav.mobileMore')}>
-          <NavButton active={activeView === 'notifications'} label={t('nav.alerts', { count: unreadCount })} onClick={() => navigate('notifications')} icon={<Bell />} className="motion-stage" style={motionStyle(0)} />
+          <NavButton active={activeView === 'notifications'} label={t('nav.alerts', { count: unreadCount })} to={pathForView('notifications')} onClick={closeNavigation} icon={<Bell />} className="motion-stage" style={motionStyle(0)} />
           {canUseAnalytics && (
-            <NavButton active={activeView === 'analytics'} label={t('nav.analytics')} onClick={() => navigate('analytics')} icon={<BarChart3 />} className="motion-stage" style={motionStyle(1)} />
+            <NavButton active={activeView === 'analytics'} label={t('nav.analytics')} to={pathForView('analytics')} onClick={closeNavigation} icon={<BarChart3 />} className="motion-stage" style={motionStyle(1)} />
           )}
-          <NavButton active={activeView === 'profile'} label={t('nav.profile')} onClick={() => navigate('profile')} icon={<SlidersHorizontal />} className="motion-stage" style={motionStyle(2)} />
+          <NavButton active={activeView === 'profile'} label={t('nav.profile')} to={pathForView('profile')} onClick={closeNavigation} icon={<SlidersHorizontal />} className="motion-stage" style={motionStyle(2)} />
           {canUseAdmin && (
-            <NavButton active={activeView === 'admin'} label={t('nav.admin')} onClick={() => navigate('admin')} icon={<Settings />} className="motion-stage" style={motionStyle(3)} />
+            <NavButton active={activeView === 'admin'} label={t('nav.admin')} to={pathForView('admin')} onClick={closeNavigation} icon={<Settings />} className="motion-stage" style={motionStyle(3)} />
           )}
-          <NavButton active={activeView === 'palette'} label="Palette" onClick={() => navigate('palette')} icon={<Share2 />} className="motion-stage" style={motionStyle(4)} />
+          <NavButton active={activeView === 'palette'} label="Palette" to={pathForView('palette')} onClick={closeNavigation} icon={<Share2 />} className="motion-stage" style={motionStyle(4)} />
         </div>
       )}
 
       <nav className="bottom-nav" aria-label={t('nav.mobile')}>
-        <NavButton active={activeView === 'dashboard'} label={t('nav.home')} onClick={() => navigate('dashboard')} icon={<Home />} className="motion-stage" style={motionStyle(0)} />
-        <NavButton active={activeView === 'units'} label={t('nav.units')} onClick={() => navigate('units')} icon={<Building2 />} className="motion-stage" style={motionStyle(1)} />
-        <NavButton active={activeView === 'create'} label={t('nav.add')} onClick={() => navigate('create')} icon={<Plus />} className="motion-stage" style={motionStyle(2)} />
+        <NavButton active={activeView === 'dashboard'} label={t('nav.home')} to={pathForView('dashboard')} onClick={closeNavigation} icon={<Home />} className="motion-stage" style={motionStyle(0)} />
+        <NavButton active={activeView === 'units'} label={t('nav.units')} to={pathForView('units')} onClick={closeNavigation} icon={<Building2 />} className="motion-stage" style={motionStyle(1)} />
+        <NavButton active={activeView === 'create'} label={t('nav.add')} to={pathForView('create')} onClick={closeNavigation} icon={<Plus />} className="motion-stage" style={motionStyle(2)} />
         <NavButton
           active={mobileMenuOpen || activeView === 'notifications' || activeView === 'analytics' || activeView === 'profile' || activeView === 'admin'}
           label={t('nav.more')}
@@ -1470,7 +1849,7 @@ function Dashboard({
   const metricUnits = isSalesDashboard ? salesUploads : units
   const available = metricUnits.filter((unit) => unit.status === 'available').length
   const hold = metricUnits.filter((unit) => unit.status === 'hold').length
-  const sold = metricUnits.filter((unit) => unit.status === 'sold').length
+  const sold = metricUnits.filter((unit) => isSoldStatus(unit.status)).length
   const latestSalesUploadAt = salesUploads[0]?.createdAt ?? null
   const salesUploadInactive = isSalesDashboard && (!latestSalesUploadAt || now - new Date(latestSalesUploadAt).getTime() > 72 * 60 * 60 * 1000)
 
@@ -1494,7 +1873,7 @@ function Dashboard({
           </button>
           <a
             className="secondary-link"
-            href="#units"
+            href="/units"
             onClick={(event) => {
               event.preventDefault()
               onNavigate('units')
@@ -1583,7 +1962,7 @@ function AdminDashboard({
   const latestUnits = [...activeUnits].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).slice(0, 4)
   const available = activeUnits.filter((unit) => unit.status === 'available').length
   const hold = activeUnits.filter((unit) => unit.status === 'hold').length
-  const sold = activeUnits.filter((unit) => unit.status === 'sold').length
+  const sold = activeUnits.filter((unit) => isSoldStatus(unit.status)).length
   const duplicateAttempts = appState.analyticsEvents.filter((event) => event.eventType === 'duplicate_phone_blocked').length
   const pdfExports = appState.analyticsEvents.filter((event) => event.eventType === 'pdf_generated' || event.eventType === 'pdf_shared_or_downloaded').length
   const teamRollups = buildTeamDashboardRollups(activeUnits, appState, locale)
@@ -1603,7 +1982,7 @@ function AdminDashboard({
           </button>
           <a
             className="secondary-link"
-            href="#units"
+            href="/units"
             onClick={(event) => {
               event.preventDefault()
               onNavigate('units')
@@ -1724,7 +2103,7 @@ function summarizeDashboardRollup(id: string, label: string, units: LeadraUnit[]
     totalUnits: units.length,
     availableUnits: units.filter((unit) => unit.status === 'available').length,
     holdUnits: units.filter((unit) => unit.status === 'hold').length,
-    soldUnits: units.filter((unit) => unit.status === 'sold').length,
+    soldUnits: units.filter((unit) => isSoldStatus(unit.status)).length,
     meta,
   }
 }
@@ -1840,10 +2219,15 @@ function UnitsPage({
   projects,
   selectedDestinationId,
   selectedProjectId,
+  stage,
+  currentDestination,
+  currentProject,
   units,
   filters,
   onDestinationSelect,
   onProjectSelect,
+  onBackToDestinations,
+  onBackToProjects,
   onFilterChange,
   onResetFilters,
   onOpenUnit,
@@ -1854,16 +2238,23 @@ function UnitsPage({
   projects: ReturnType<typeof summarizeProjects>
   selectedDestinationId: string | null
   selectedProjectId: string | null
+  stage: UnitsBrowserStage
+  currentDestination: ReturnType<typeof summarizeDestinations>[number] | null
+  currentProject: ReturnType<typeof summarizeProjects>[number] | null
   units: LeadraUnit[]
   filters: UnitFilters
   onDestinationSelect: (id: string) => void
   onProjectSelect: (id: string) => void
+  onBackToDestinations: () => void
+  onBackToProjects: () => void
   onFilterChange: <K extends keyof UnitFilters>(key: K, value: UnitFilters[K]) => void
   onResetFilters: () => void
   onOpenUnit: (id: number) => void
 }) {
   const { locale, t } = useLocale()
-  const [visibleCount, setVisibleCount] = useState(unitListPageSize)
+  const visibleScopeKey = JSON.stringify([selectedDestinationId, selectedProjectId, filters])
+  const [visibleState, setVisibleState] = useState({ scopeKey: visibleScopeKey, count: unitListPageSize })
+  const visibleCount = visibleState.scopeKey === visibleScopeKey ? visibleState.count : unitListPageSize
   const [filtersOpen, setFiltersOpen] = useState(false)
   const visibleUnits = units.slice(0, visibleCount)
   const developerOptions = lookupValues.filter((item) => item.kind === 'developer')
@@ -1872,6 +2263,8 @@ function UnitsPage({
   const unitTypeOptions = Array.from(new Set(units.map((unit) => unit.unitType))).sort((a, b) => compareText(locale, a, b))
   const canUseOwnerPhoneSearch = user.role === 'admin' || user.role === 'sub_admin'
   const activeFilterCount = countActiveUnitFilters(filters)
+  const invalidDestination = stage !== 'destinations' && !currentDestination
+  const invalidProject = stage === 'units' && (!currentDestination || !currentProject)
 
   return (
     <section className="page-stack page-entrance units-page">
@@ -1882,36 +2275,71 @@ function UnitsPage({
         </div>
         <Search size={22} />
       </div>
-      <div className="project-grid motion-stage" style={motionStyle(1, 30)}>
-        {destinations.map((destination, index) => (
-          <button
-            key={destination.destinationId}
-            className={`project-card motion-stage ${selectedDestinationId === destination.destinationId ? 'active' : ''}`}
-            type="button"
-            style={motionStyle(index, 110)}
-            onClick={() => onDestinationSelect(destination.destinationId)}
-          >
-            <strong dir="auto">{destination.destinationName}</strong>
-            <span>{t('units.totalUnits', { count: formatCount(locale, destination.totalUnits) })}</span>
-            <small>{t('units.summary', { available: formatCount(locale, destination.availableUnits), hold: formatCount(locale, destination.holdUnits), sold: formatCount(locale, destination.soldUnits) })}</small>
-          </button>
-        ))}
-      </div>
-      <div className="project-grid compact motion-stage" style={motionStyle(2, 45)}>
-        {projects.map((project, index) => (
-          <button
-            key={project.projectId}
-            className={`project-card motion-stage ${selectedProjectId === project.projectId ? 'active' : ''}`}
-            type="button"
-            style={motionStyle(index, 130)}
-            onClick={() => onProjectSelect(project.projectId)}
-          >
-            <strong dir="auto">{project.projectName}</strong>
-            <span>{t('units.totalUnits', { count: formatCount(locale, project.totalUnits) })}</span>
-            <small>{t('units.summary', { available: formatCount(locale, project.availableUnits), hold: formatCount(locale, project.holdUnits), sold: formatCount(locale, project.soldUnits) })}</small>
-          </button>
-        ))}
-      </div>
+
+      {stage === 'destinations' && (
+        <div className="project-grid motion-stage" style={motionStyle(1, 30)}>
+          {destinations.map((destination, index) => (
+            <button
+              key={destination.destinationId}
+              className="project-card motion-stage"
+              type="button"
+              style={motionStyle(index, 110)}
+              onClick={() => onDestinationSelect(destination.destinationId)}
+            >
+              <strong dir="auto">{destination.destinationName}</strong>
+              <span>{t('units.totalUnits', { count: formatCount(locale, destination.totalUnits) })}</span>
+              <small>{t('units.summary', { available: formatCount(locale, destination.availableUnits), hold: formatCount(locale, destination.holdUnits), sold: formatCount(locale, destination.soldUnits) })}</small>
+            </button>
+          ))}
+          {destinations.length === 0 && <EmptyState title={t('units.noMatchesTitle')} body={t('units.noMatchesBody')} />}
+        </div>
+      )}
+
+      {invalidDestination && (
+        <section className="content-card motion-stage" style={motionStyle(1, 30)}>
+          <EmptyState title="Destination unavailable" body="This destination does not have visible units or no longer exists." />
+          <button className="secondary-button" type="button" onClick={onBackToDestinations}>Back to destinations</button>
+        </section>
+      )}
+
+      {stage === 'projects' && currentDestination && (
+        <>
+          <div className="action-row motion-stage" style={motionStyle(1, 30)}>
+            <button className="secondary-button" type="button" onClick={onBackToDestinations}>Back to destinations</button>
+            <span className="integration-badge" dir="auto">{currentDestination.destinationName}</span>
+          </div>
+          <div className="project-grid compact motion-stage" style={motionStyle(2, 45)}>
+            {projects.map((project, index) => (
+              <button
+                key={project.projectId}
+                className={`project-card motion-stage ${selectedProjectId === project.projectId ? 'active' : ''}`}
+                type="button"
+                style={motionStyle(index, 130)}
+                onClick={() => onProjectSelect(project.projectId)}
+              >
+                <strong dir="auto">{project.projectName}</strong>
+                <span>{t('units.totalUnits', { count: formatCount(locale, project.totalUnits) })}</span>
+                <small>{t('units.summary', { available: formatCount(locale, project.availableUnits), hold: formatCount(locale, project.holdUnits), sold: formatCount(locale, project.soldUnits) })}</small>
+              </button>
+            ))}
+            {projects.length === 0 && <EmptyState title={t('units.noMatchesTitle')} body={t('units.noMatchesBody')} />}
+          </div>
+        </>
+      )}
+
+      {invalidProject && (
+        <section className="content-card motion-stage" style={motionStyle(1, 30)}>
+          <EmptyState title="Project unavailable" body="This project does not belong to the selected destination or no longer has visible units." />
+          <button className="secondary-button" type="button" onClick={currentDestination ? onBackToProjects : onBackToDestinations}>Back to projects</button>
+        </section>
+      )}
+
+      {stage === 'units' && currentDestination && currentProject && (
+        <>
+          <div className="action-row motion-stage" style={motionStyle(1, 30)}>
+            <button className="secondary-button" type="button" onClick={onBackToProjects}>Back to projects</button>
+            <span className="integration-badge" dir="auto">{currentDestination.destinationName} / {currentProject.projectName}</span>
+          </div>
 
       <section className={`units-filter-shell motion-stage ${filtersOpen ? 'is-open' : ''}`} style={motionStyle(3, 60)}>
         <div className="units-filter-summary">
@@ -1955,7 +2383,8 @@ function UnitsPage({
             { value: 'all', label: t('common.all') },
             { value: 'available', label: getStatusLabel(locale, 'available') },
             { value: 'hold', label: getStatusLabel(locale, 'hold') },
-            { value: 'sold', label: getStatusLabel(locale, 'sold') },
+            { value: 'sold_by_us', label: getStatusLabel(locale, 'sold_by_us') },
+            { value: 'sold_by_others', label: getStatusLabel(locale, 'sold_by_others') },
           ]}
           value={filters.status ?? 'all'}
           onValueChange={(value) => onFilterChange('status', value as UnitStatus | 'all')}
@@ -2036,11 +2465,22 @@ function UnitsPage({
           <UnitListRow key={unit.id} user={user} unit={unit} index={index} onOpen={() => onOpenUnit(unit.id)} />
         ))}
         {visibleUnits.length < units.length && (
-          <button className="secondary-button list-load-more" type="button" onClick={() => setVisibleCount((count) => Math.min(count + unitListPageSize, units.length))}>
+          <button
+            className="secondary-button list-load-more"
+            type="button"
+            onClick={() =>
+              setVisibleState((current) => ({
+                scopeKey: visibleScopeKey,
+                count: Math.min((current.scopeKey === visibleScopeKey ? current.count : unitListPageSize) + unitListPageSize, units.length),
+              }))
+            }
+          >
             Show {formatCount(locale, Math.min(unitListPageSize, units.length - visibleUnits.length))} more of {formatCount(locale, units.length)}
           </button>
         )}
       </section>
+        </>
+      )}
     </section>
   )
 }
@@ -2150,15 +2590,18 @@ const UnitListRow = memo(function UnitListRow({ user, unit, onOpen, index = 0 }:
 
 function CreateUnitPage({
   lookupValues,
+  activeStep,
+  onStepChange,
   onSubmit,
   settings,
 }: {
   lookupValues: LookupValue[]
+  activeStep: CreateUnitStep
+  onStepChange: (step: CreateUnitStep) => void
   onSubmit: (event: FormEvent<HTMLFormElement>, uploadedMedia: LeadraMediaFile[]) => void
   settings: AppSettings
 }) {
   const { locale, t } = useLocale()
-  const [activeStep, setActiveStep] = useState<(typeof createUnitSteps)[number]>('Property')
   const [selectedMedia, setSelectedMedia] = useState<LeadraMediaFile[]>([])
   const [mediaError, setMediaError] = useState<UiMessage | null>(null)
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('installment')
@@ -2199,7 +2642,7 @@ function CreateUnitPage({
 
   function goToRelativeStep(offset: number) {
     const nextIndex = Math.min(createUnitSteps.length - 1, Math.max(0, activeStepIndex + offset))
-    setActiveStep(createUnitSteps[nextIndex])
+    onStepChange(createUnitSteps[nextIndex])
   }
 
   return (
@@ -2235,7 +2678,7 @@ function CreateUnitPage({
               className={`wizard-step ${step === activeStep ? 'active' : ''}`}
               type="button"
               aria-current={step === activeStep ? 'step' : undefined}
-              onClick={() => setActiveStep(step)}
+              onClick={() => onStepChange(step)}
             >
               <span>{formatCount(locale, index + 1)}</span>
               {translateCreateStep(step, locale)}
@@ -2432,6 +2875,19 @@ function CreateUnitPage({
                     <strong dir="auto">{file.name}</strong>
                     <small>{(file.sizeBytes / (1024 * 1024)).toFixed(2)} MB</small>
                   </div>
+                  <label className="pdf-visibility-toggle">
+                    <input
+                      type="checkbox"
+                      checked={file.includeInPdf !== false}
+                      onChange={(event) => {
+                        const includeInPdf = event.target.checked
+                        setSelectedMedia((items) =>
+                          items.map((item) => item.id === file.id ? { ...item, includeInPdf } : item),
+                        )
+                      }}
+                    />
+                    <span>{file.includeInPdf !== false ? t('media.includeInPdf') : t('media.excludeFromPdf')}</span>
+                  </label>
                   <button
                     className="secondary-button"
                     type="button"
@@ -2479,7 +2935,9 @@ function CreateUnitPage({
 function UnitDetailsPage({
   user,
   unit,
+  lookupValues,
   onArchive,
+  onUpdateUnit,
   onStatusChange,
   onGeneratePdf,
   onSharePdf,
@@ -2488,12 +2946,20 @@ function UnitDetailsPage({
   pdfSharing,
   pdfReady,
   statusUpdating,
+  statusActionFeedback,
   onSaveNote,
   onDeleteNote,
+  onRemoveMedia,
+  onMediaPdfVisibilityChange,
+  onMediaDownload,
+  removingMediaId,
+  downloadingMediaId,
 }: {
   user: LeadraUser
   unit: LeadraUnit
+  lookupValues: LookupValue[]
   onArchive: () => void
+  onUpdateUnit: (event: FormEvent<HTMLFormElement>) => Promise<boolean>
   onStatusChange: (status: UnitStatus) => void
   onGeneratePdf: () => void
   onSharePdf: () => void
@@ -2502,19 +2968,47 @@ function UnitDetailsPage({
   pdfSharing: boolean
   pdfReady: boolean
   statusUpdating: boolean
+  statusActionFeedback: { status: UnitStatus; state: 'saving' | 'saved' } | null
   onSaveNote: (content: string) => void
   onDeleteNote: () => void
+  onRemoveMedia: (mediaId: string) => void
+  onMediaPdfVisibilityChange: (mediaId: string, includeInPdf: boolean) => void
+  onMediaDownload: (file: LeadraMediaFile) => void
+  removingMediaId: string | null
+  downloadingMediaId: string | null
 }) {
   const { locale, t } = useLocale()
   const ownerAllowed = canViewOwnerData(user, unit)
-  const [sharedNote, setSharedNote] = useState(unit.adminManagerNotes[0]?.content ?? '')
+  const canEditUnit = canEditAnyUnitDetails(user, unit)
+  const [sharedNoteState, setSharedNoteState] = useState({ unitId: unit.id, value: unit.adminManagerNotes[0]?.content ?? '' })
+  const sharedNote = sharedNoteState.unitId === unit.id ? sharedNoteState.value : unit.adminManagerNotes[0]?.content ?? ''
+  const setSharedNote = (value: string) => setSharedNoteState({ unitId: unit.id, value })
+  const [editMode, setEditMode] = useState(false)
+  const [editSaving, setEditSaving] = useState(false)
   const [showDetailDepth, setShowDetailDepth] = useState(false)
   const thumbnail = getThumbnailMedia(unit.media)
+  const statusFeedbackText = statusActionFeedback
+    ? t(statusActionFeedback.state === 'saving' ? 'details.statusSaving' : 'details.statusSaved', {
+        status: getStatusLabel(locale, statusActionFeedback.status),
+      })
+    : null
+  const heroFacts: [string, string][] = [
+    [t('create.bua'), `${formatCount(locale, unit.bua)} m²`],
+    [t('details.totalAmount'), formatCurrency(unit.totalAmount, locale)],
+    [t('details.expectedDelivery'), formatDeliveryExpectancy(unit, locale)],
+  ]
 
   useEffect(() => {
     const timeout = window.setTimeout(() => setShowDetailDepth(true), 1800)
     return () => window.clearTimeout(timeout)
   }, [unit.id])
+
+  async function submitEdit(event: FormEvent<HTMLFormElement>) {
+    setEditSaving(true)
+    const saved = await onUpdateUnit(event)
+    setEditSaving(false)
+    if (saved) setEditMode(false)
+  }
 
   return (
     <section className="page-stack page-entrance details-page">
@@ -2524,15 +3018,34 @@ function UnitDetailsPage({
           <h2>{unit.unitCode}</h2>
           <p dir="auto">{unit.projectName} / {unit.destinationName} / {unit.unitType}</p>
         </div>
-        <span className={`status-pill motion-status-pill ${unit.status}`}>{getStatusLabel(locale, unit.status)}</span>
+        <div className="details-hero-summary">
+          <span className={`status-pill motion-status-pill ${unit.status} ${statusActionFeedback ? 'status-pill-live' : ''}`}>
+            {getStatusLabel(locale, unit.status)}
+          </span>
+          <dl className="details-hero-facts">
+            {heroFacts.map(([label, value]) => (
+              <div key={label}>
+                <dt>{label}</dt>
+                <dd>{value}</dd>
+              </div>
+            ))}
+          </dl>
+        </div>
       </div>
       <div className="details-actions motion-stage" style={motionStyle(1, 40)}>
-        <div className="action-row wrap">
-          <button className="secondary-button" type="button" disabled={statusUpdating || unit.status === 'hold'} onClick={() => onStatusChange('hold')}>{statusUpdating ? 'Saving...' : t('details.markHold')}</button>
-          <button className="secondary-button" type="button" disabled={statusUpdating || unit.status === 'sold'} onClick={() => onStatusChange('sold')}>{statusUpdating ? 'Saving...' : t('details.markSold')}</button>
-          {unit.status !== 'available' && <button className="secondary-button" type="button" disabled={statusUpdating} onClick={() => onStatusChange('available')}>{statusUpdating ? 'Saving...' : t('details.clearStatus')}</button>}
+        <div className="details-action-group">
+          <span>{t('details.status')}</span>
+          <div className="action-row wrap">
+          <button className={`secondary-button status-action-button hold ${statusActionFeedback?.status === 'hold' ? 'is-active' : ''}`} type="button" disabled={statusUpdating || unit.status === 'hold'} onClick={() => onStatusChange('hold')}>{statusActionFeedback?.status === 'hold' && statusActionFeedback.state === 'saving' ? t('details.statusMarking', { status: getStatusLabel(locale, 'hold') }) : t('details.markHold')}</button>
+          <button className={`secondary-button status-action-button sold ${statusActionFeedback?.status === 'sold_by_us' ? 'is-active' : ''}`} type="button" disabled={statusUpdating || unit.status === 'sold_by_us'} onClick={() => onStatusChange('sold_by_us')}>{statusActionFeedback?.status === 'sold_by_us' && statusActionFeedback.state === 'saving' ? t('details.statusMarking', { status: getStatusLabel(locale, 'sold_by_us') }) : t('details.markSoldByUs')}</button>
+          <button className={`secondary-button status-action-button sold ${statusActionFeedback?.status === 'sold_by_others' ? 'is-active' : ''}`} type="button" disabled={statusUpdating || unit.status === 'sold_by_others'} onClick={() => onStatusChange('sold_by_others')}>{statusActionFeedback?.status === 'sold_by_others' && statusActionFeedback.state === 'saving' ? t('details.statusMarking', { status: getStatusLabel(locale, 'sold_by_others') }) : t('details.markSoldByOthers')}</button>
+          {unit.status !== 'available' && <button className={`secondary-button status-action-button available ${statusActionFeedback?.status === 'available' ? 'is-active' : ''}`} type="button" disabled={statusUpdating} onClick={() => onStatusChange('available')}>{statusActionFeedback?.status === 'available' && statusActionFeedback.state === 'saving' ? t('details.statusMarking', { status: getStatusLabel(locale, 'available') }) : t('details.clearStatus')}</button>}
+          </div>
+          {statusFeedbackText && <p className={`status-action-feedback ${statusActionFeedback?.state === 'saving' ? 'is-saving' : 'is-saved'}`} role="status" aria-live="polite">{statusFeedbackText}</p>}
         </div>
-        <div className="action-row wrap">
+        <div className="details-action-group">
+          <span>{t('details.generateBrief')}</span>
+          <div className="action-row wrap">
           <button className="primary-button" type="button" onClick={onGeneratePdf} disabled={pdfGenerating || pdfSharing}>
             <FileText size={18} /> {pdfGenerating ? 'Preparing PDF...' : t('details.generateBrief')}
           </button>
@@ -2542,9 +3055,25 @@ function UnitDetailsPage({
           <button className="secondary-button" type="button" onClick={onCopyShareLink}>
             <Share2 size={18} /> {t('details.shareLink')}
           </button>
+          {canEditUnit && (
+            <button className="secondary-button" type="button" onClick={() => setEditMode((value) => !value)}>
+              {editMode ? t('details.cancelEdit') : t('details.editUnit')}
+            </button>
+          )}
           {canArchiveUnit(user, unit) && <button className="danger-button" type="button" onClick={onArchive}><Archive size={18} /> {t('details.archive')}</button>}
+          </div>
         </div>
       </div>
+      {editMode && (
+        <UnitDetailsEditForm
+          lookupValues={lookupValues}
+          saving={editSaving}
+          unit={unit}
+          user={user}
+          onCancel={() => setEditMode(false)}
+          onSubmit={submitEdit}
+        />
+      )}
       {showDetailDepth ? (
         <UnitDetailsDeepSections
           locale={locale}
@@ -2557,6 +3086,11 @@ function UnitDetailsPage({
           thumbnail={thumbnail}
           onSaveNote={onSaveNote}
           onDeleteNote={onDeleteNote}
+          onRemoveMedia={onRemoveMedia}
+          onMediaPdfVisibilityChange={onMediaPdfVisibilityChange}
+          onMediaDownload={onMediaDownload}
+          removingMediaId={removingMediaId}
+          downloadingMediaId={downloadingMediaId}
         />
       ) : (
         <section className="content-card motion-stage details-deferred-card" style={motionStyle(2, 70)}>
@@ -2566,6 +3100,187 @@ function UnitDetailsPage({
         </section>
       )}
     </section>
+  )
+}
+
+function UnitDetailsEditForm({
+  lookupValues,
+  saving,
+  unit,
+  user,
+  onCancel,
+  onSubmit,
+}: {
+  lookupValues: LookupValue[]
+  saving: boolean
+  unit: LeadraUnit
+  user: LeadraUser
+  onCancel: () => void
+  onSubmit: (event: FormEvent<HTMLFormElement>) => void
+}) {
+  const { locale, t } = useLocale()
+  const canEditNonOwner = canEditNonOwnerUnitDetails(user, unit)
+  const canEditOwner = canEditOwnerFields(user, unit)
+  const canEditPricing = canEditUnitPricing(user, unit)
+  const canEditCommission = canEditUnitCommission(user, unit)
+  const [unitType, setUnitType] = useState(unit.unitType)
+  const [floor, setFloor] = useState(unit.floor || 'Ground')
+  const [ownerCountryCode, setOwnerCountryCode] = useState(unit.countryCode ?? '+20')
+  const [ownerPhone, setOwnerPhone] = useState(unit.originalOwnerPhone ?? '')
+  const areaFields = getApplicableUnitAreaFields(unitType, floor)
+  const ownerPhoneCountryOptions = getOwnerPhoneCountryOptions(locale)
+  const selectedOwnerPhoneCountry = getOwnerPhoneCountryMeta(ownerCountryCode, locale)
+  const deliveryYearOptions = Array.from({ length: 10 }, (_, index) => String(2026 + index))
+
+  return (
+    <section className="content-card motion-stage details-edit-card" style={motionStyle(2, 70)} aria-labelledby="unit-edit-heading">
+      <div className="section-heading details-compact-heading">
+        <div>
+          <p className="eyebrow">{t('details.editMode')}</p>
+          <h2 id="unit-edit-heading">{t('details.editUnit')}</h2>
+        </div>
+      </div>
+      <form className="unit-form details-edit-form" onSubmit={onSubmit}>
+        <fieldset disabled={!canEditNonOwner || saving}>
+          <legend>{t('create.legend.property')}</legend>
+          <NativeLookupSelect name="destinationId" label={t('create.destination')} values={lookupValues.filter((item) => item.kind === 'destination')} defaultValue={unit.destinationId} required />
+          <NativeLookupSelect name="developerId" label={t('create.developer')} values={lookupValues.filter((item) => item.kind === 'developer')} defaultValue={unit.developerId} required />
+          <NativeLookupSelect name="projectId" label={t('create.project')} values={lookupValues.filter((item) => item.kind === 'project')} defaultValue={unit.projectId} required />
+          <label>
+            <RequiredLabel label={t('create.unitType')} required />
+            <select name="unitType" value={unitType} required onChange={(event) => {
+              const nextType = event.target.value
+              setUnitType(nextType)
+              if (!getApplicableUnitAreaFields(nextType, floor).showFloor) setFloor('Ground')
+            }}>
+              {PRD_UNIT_TYPES.map((item) => <option key={item} value={item}>{item}</option>)}
+            </select>
+          </label>
+          <NumberField name="bua" label={t('create.bua')} defaultValue={unit.bua} min={1} required />
+          {areaFields.showLandArea && <NumberField name="landArea" label={t('create.landArea')} defaultValue={unit.landArea ?? 0} min={0} required />}
+          {areaFields.showFloor && (
+            <label>
+              <RequiredLabel label={t('create.floor')} required />
+              <select name="floor" value={floor} required onChange={(event) => setFloor(event.target.value)}>
+                {PRD_FLOOR_OPTIONS.map((item) => <option key={item} value={item}>{item === 'Ground' ? t('create.ground') : item}</option>)}
+              </select>
+            </label>
+          )}
+          {areaFields.showGardenArea && <NumberField name="gardenArea" label={t('create.gardenArea')} defaultValue={unit.gardenArea ?? 0} min={0} />}
+          {areaFields.showTerraceArea && <NumberField name="terraceArea" label={t('create.terraceArea')} defaultValue={unit.terraceArea ?? 0} min={0} required />}
+          <NativeLookupSelect name="viewId" label={t('create.view')} values={lookupValues.filter((item) => item.kind === 'view')} defaultValue={unit.viewId} />
+          <NumberField name="bedrooms" label={t('create.bedrooms')} defaultValue={unit.bedrooms} min={1} max={10} required />
+          <NumberField name="bathrooms" label={t('create.bathrooms')} defaultValue={unit.bathrooms} min={1} max={10} required />
+          <label className="toggle-line"><input name="elevator" type="checkbox" defaultChecked={unit.elevator} /> {t('create.elevator')}</label>
+          <label>
+            {t('create.furnished')}
+            <select name="furnished" defaultValue={String(unit.furnished)}>
+              <option value="true">{t('create.furnishedOption')}</option>
+              <option value="false">{t('create.unfurnishedOption')}</option>
+            </select>
+          </label>
+          <label>
+            <RequiredLabel label={t('create.finish')} required />
+            <select name="finish" defaultValue={unit.finish} required>
+              <option value="Fully Finished">{t('create.fullyFinished')}</option>
+              <option value="Semi Finished">{t('create.semiFinished')}</option>
+              <option value="Core & Shell">{t('create.coreAndShell')}</option>
+            </select>
+          </label>
+          <label>
+            <RequiredLabel label={t('create.deliveryDate')} required />
+            <select name="deliveryYear" defaultValue={String(unit.deliveryExpectancy.year)} required>
+              {deliveryYearOptions.map((year) => <option key={year} value={year}>{year}</option>)}
+            </select>
+          </label>
+          <label className="wide-field">
+            {t('create.salesNotes')}
+            <textarea name="salesNotes" defaultValue={unit.salesNotes} dir="auto" />
+          </label>
+        </fieldset>
+
+        <fieldset>
+          <legend>{t('create.legend.payment')}</legend>
+          <ReadOnlyField label={t('create.paymentMethod')} value={getPaymentMethodLabel(locale, unit.paymentMethod)} />
+          <label>
+            <RequiredLabel label={t('create.totalAmount')} required />
+            <input name="totalAmount" type="number" min={0} defaultValue={unit.totalAmount} disabled={!canEditPricing || saving} required={canEditPricing} />
+          </label>
+          <ReadOnlyField label={t('create.downPayment')} value={formatCurrency(unit.downPayment, locale)} />
+          <ReadOnlyField label={t('details.remainingPayment')} value={formatCurrency(unit.remainingPayment, locale)} />
+          <ReadOnlyField label={t('details.installmentAmount')} value={formatCurrency(unit.installmentAmount, locale)} />
+          <label>
+            <RequiredLabel label={t('details.commission')} required />
+            <input name="commissionPercentage" type="number" min={0} step="0.01" defaultValue={unit.commissionPercentage} disabled={!canEditCommission || saving} required={canEditCommission} />
+          </label>
+        </fieldset>
+
+        <fieldset disabled={!canEditOwner || saving}>
+          <legend>{t('details.ownerData')}</legend>
+          <label>
+            <RequiredLabel label={t('create.ownerName')} required />
+            <input name="ownerName" defaultValue={unit.originalOwnerName ?? ''} required={canEditOwner} dir="auto" />
+          </label>
+          {canEditOwner ? (
+            <OwnerPhoneField
+              countryCode={ownerCountryCode}
+              countryOptions={ownerPhoneCountryOptions}
+              hint={t('create.ownerPhoneHint', { country: selectedOwnerPhoneCountry.label, example: selectedOwnerPhoneCountry.placeholder })}
+              ownerPhone={ownerPhone}
+              placeholder={selectedOwnerPhoneCountry.placeholder}
+              onCountryCodeChange={setOwnerCountryCode}
+              onOwnerPhoneChange={setOwnerPhone}
+            />
+          ) : (
+            <>
+              <ReadOnlyField label={t('create.countryCode')} value={unit.countryCode ?? t('common.notSet')} />
+              <ReadOnlyField label={t('create.ownerPhone')} value={unit.originalOwnerPhone ?? t('common.notSet')} />
+            </>
+          )}
+        </fieldset>
+
+        <p className="status-action-feedback is-saving" role="status" aria-live="polite">
+          {saving ? t('details.editSaving') : t('details.editReady')}
+        </p>
+        <div className="note-editor-actions">
+          <button className="primary-button" type="submit" disabled={saving}>{saving ? t('common.saving') : t('details.saveUnitChanges')}</button>
+          <button className="secondary-button" type="button" disabled={saving} onClick={onCancel}>{t('common.cancel')}</button>
+        </div>
+      </form>
+    </section>
+  )
+}
+
+function NativeLookupSelect({
+  name,
+  label,
+  values,
+  defaultValue,
+  required = false,
+}: {
+  name: string
+  label: string
+  values: { id: string; label: string }[]
+  defaultValue: string
+  required?: boolean
+}) {
+  return (
+    <label>
+      <RequiredLabel label={label} required={required} />
+      <select name={name} defaultValue={defaultValue} required={required}>
+        {values.map((item) => <option key={item.id} value={item.id}>{item.label}</option>)}
+      </select>
+    </label>
+  )
+}
+
+function ReadOnlyField({ label, value }: { label: string; value: string | number | null }) {
+  const { t } = useLocale()
+  return (
+    <label>
+      {label}
+      <input readOnly disabled value={value ?? t('common.notSet')} />
+    </label>
   )
 }
 
@@ -2580,6 +3295,11 @@ function UnitDetailsDeepSections({
   thumbnail,
   onSaveNote,
   onDeleteNote,
+  onRemoveMedia,
+  onMediaPdfVisibilityChange,
+  onMediaDownload,
+  removingMediaId,
+  downloadingMediaId,
 }: {
   locale: LocaleCode
   t: ReturnType<typeof useLocale>['t']
@@ -2591,9 +3311,27 @@ function UnitDetailsDeepSections({
   thumbnail: LeadraMediaFile | null
   onSaveNote: (content: string) => void
   onDeleteNote: () => void
+  onRemoveMedia: (mediaId: string) => void
+  onMediaPdfVisibilityChange: (mediaId: string, includeInPdf: boolean) => void
+  onMediaDownload: (file: LeadraMediaFile) => void
+  removingMediaId: string | null
+  downloadingMediaId: string | null
 }) {
   const installmentSchedule = buildInstallmentSchedule(unit, locale)
+  const scheduledInstallmentTotal = installmentSchedule.reduce((total, row) => total + row.amount, 0)
+  const paidInstallmentTotal = Math.max(
+    scheduledInstallmentTotal - (unit.remainingPayment ?? scheduledInstallmentTotal),
+    0,
+  )
+  const timetableRemaining = Math.max(scheduledInstallmentTotal - paidInstallmentTotal, 0)
+  const isInstallmentPaid = (rowIndex: number) => {
+    const paidThroughRow = installmentSchedule
+      .slice(0, rowIndex + 1)
+      .reduce((total, row) => total + row.amount, 0)
+    return paidInstallmentTotal >= paidThroughRow - 0.01
+  }
   const areaFields = getApplicableUnitAreaFields(unit.unitType, unit.floor)
+  const canRemoveMedia = canEditNonOwnerUnitDetails(user, unit)
   const mainInfoRows: [string, string | number | null][] = [
     [t('details.unitCode'), unit.unitCode],
     [t('details.status'), getStatusLabel(locale, unit.status)],
@@ -2615,107 +3353,165 @@ function UnitDetailsDeepSections({
     [t('details.furnishingStatus'), unit.furnished ? t('create.furnishedOption') : t('common.notSet')],
     [t('details.finishType'), unit.finish],
   )
+  const pricingRows: [string, string | number | null][] = [
+    [t('details.paymentMethod'), getPaymentMethodLabel(locale, unit.paymentMethod)],
+    [t('details.totalAmount'), formatCurrency(unit.totalAmount, locale)],
+    [t('create.downPayment'), formatCurrency(unit.downPayment, locale)],
+    [t('details.remainingPayment'), formatCurrency(unit.remainingPayment, locale)],
+    [t('details.commission'), `${formatCurrency(unit.commissionAmount, locale)} (${unit.commissionPercentage}%)`],
+    [t('details.installmentAmount'), formatCurrency(unit.installmentAmount, locale)],
+    [t('details.installmentYears'), unit.installmentYears ? formatCount(locale, unit.installmentYears) : t('common.notSet')],
+  ]
+  const ownerRows: [string, string | number | null][] = [
+    [t('details.ownerName'), unit.originalOwnerName ?? t('common.notSet')],
+    [t('details.ownerPhone'), unit.originalOwnerPhone ?? t('common.notSet')],
+    [t('details.normalizedPhone'), unit.normalizedOwnerPhone ?? t('common.notSet')],
+  ]
   return (
     <>
-      <InfoSection
-        style={motionStyle(2, 70)}
-        title={t('details.mainInfo')}
-        rows={mainInfoRows}
-      />
-      <InfoSection
-        style={motionStyle(3, 100)}
-        title={t('details.pricing')}
-        rows={[
-          [t('details.paymentMethod'), getPaymentMethodLabel(locale, unit.paymentMethod)],
-          [t('details.totalAmount'), formatCurrency(unit.totalAmount, locale)],
-          [t('create.downPayment'), formatCurrency(unit.downPayment, locale)],
-          [t('details.remainingPayment'), formatCurrency(unit.remainingPayment, locale)],
-          [t('details.commission'), `${formatCurrency(unit.commissionAmount, locale)} (${unit.commissionPercentage}%)`],
-          [t('details.installmentAmount'), formatCurrency(unit.installmentAmount, locale)],
-          [t('details.installmentYears'), unit.installmentYears ? formatCount(locale, unit.installmentYears) : t('common.notSet')],
-        ]}
-      />
-      <section className="content-card motion-stage" style={motionStyle(4, 130)}>
+      <section className="content-card motion-stage details-overview-card" style={motionStyle(2, 70)}>
+        <div className="section-heading details-compact-heading">
+          <div>
+            <p className="eyebrow">{t('details.unitCode')}</p>
+            <h2>{t('details.mainInfo')}</h2>
+          </div>
+        </div>
+        <div className="details-overview-grid">
+          <InfoPanel title={t('details.mainInfo')} rows={mainInfoRows} />
+          <InfoPanel title={t('details.pricing')} rows={pricingRows} />
+          <InfoPanel title={t('details.delivery')} rows={[[t('details.expectedDelivery'), formatDeliveryExpectancy(unit, locale)]]} />
+          {ownerAllowed && <InfoPanel title={t('details.ownerData')} rows={ownerRows} />}
+        </div>
+      </section>
+      <section className="content-card motion-stage details-installments-card" style={motionStyle(3, 100)}>
         <h2>{t('details.installmentsTable')}</h2>
         {unit.paymentMethod !== 'installment' && <EmptyState title={t('common.notSet')} body={t('payment.cash')} />}
         {unit.paymentMethod === 'installment' && unit.installmentType === 'custom' && <p className="media-empty-note">{t('details.customInstallmentMessage')}</p>}
         {installmentSchedule.length > 0 && (
           <div className="installment-schedule" role="table" aria-label={t('details.installmentsTable')}>
-            {installmentSchedule.slice(0, 12).map((row) => (
+            <div className="installment-summary" aria-live="polite">
+              <span>Paid from timetable: {formatCurrency(paidInstallmentTotal, locale)}</span>
+              <strong>Remaining from timetable: {formatCurrency(timetableRemaining, locale)}</strong>
+            </div>
+            {installmentSchedule.slice(0, 12).map((row, rowIndex) => {
+              const rowPaid = isInstallmentPaid(rowIndex)
+              return (
               <div className="installment-row" role="row" key={row.paymentNumber}>
                 <span>{formatCount(locale, row.paymentNumber)}</span>
                 <span>{row.periodLabel}</span>
                 <strong>{formatCurrency(row.amount, locale)}</strong>
+                <span className={rowPaid ? 'installment-status paid' : 'installment-status'}>{rowPaid ? 'Paid' : 'Unpaid'}</span>
               </div>
-            ))}
+              )
+            })}
             {installmentSchedule.length > 12 && <small>{t('details.scheduleTruncated', { count: formatCount(locale, installmentSchedule.length) })}</small>}
           </div>
         )}
       </section>
-      <InfoSection style={motionStyle(5, 160)} title={t('details.delivery')} rows={[[t('details.expectedDelivery'), formatDeliveryExpectancy(unit, locale)]]} />
-      <section className="content-card motion-stage" style={motionStyle(6, 190)}>
-        <h2>{t('details.unitThumbnail')}</h2>
-        {thumbnail ? (
-          <div className="media-grid">
-            <div className="media-card">
-              <img src={thumbnail.url} alt={thumbnail.name} loading="lazy" decoding="async" />
+      <div className="details-secondary-grid">
+        <section className="content-card motion-stage details-thumbnail-card" style={motionStyle(4, 130)}>
+          <h2>{t('details.unitThumbnail')}</h2>
+          {thumbnail ? (
+            <div className="media-grid">
+              <div className="media-card">
+                <div className="media-preview">
+                  <img src={thumbnail.url} alt={thumbnail.name} loading="lazy" decoding="async" />
+                </div>
+              </div>
             </div>
-          </div>
-        ) : (
-          <EmptyState title={t('details.noThumbnailTitle')} body={t('details.noThumbnailBody')} />
-        )}
-      </section>
-      <section className="content-card motion-stage" style={motionStyle(7, 220)}>
-        <h2>{t('details.notes')}</h2>
-        <p dir="auto">{canViewSalesSensitiveData(user, unit) ? unit.salesNotes : t('details.salesSensitiveHidden')}</p>
-        {unit.adminManagerNotes.map((note, index) => (
-          <div className="note-card motion-stage" key={note.id} style={motionStyle(index, 210)}>
-            <strong>{note.createdByName} / {getRoleLabel(locale, note.role)}</strong>
-            <p dir="auto">{note.content}</p>
-            <small>{formatDateTime(locale, note.createdAt)}</small>
-          </div>
-        ))}
-        {!canAddAdminManagerNote(user) && <small>{t('details.salesCannotAddNotes')}</small>}
-        {canAddAdminManagerNote(user) && (
-          <form
-            className="note-editor"
-            onSubmit={(event) => {
-              event.preventDefault()
-              onSaveNote(sharedNote)
-            }}
-          >
-            <label className="wide-field">
-              {t('details.editSharedNote')}
-              <textarea value={sharedNote} onChange={(event) => setSharedNote(event.target.value)} dir="auto" />
-            </label>
-            <div className="note-editor-actions">
-              <button className="secondary-button" type="submit">{t('details.saveNote')}</button>
-              <button className="danger-button" type="button" onClick={onDeleteNote}>{t('details.deleteNote')}</button>
-            </div>
-          </form>
-        )}
-      </section>
-      <section className="content-card motion-stage" style={motionStyle(8, 250)}>
-        <h2>{t('details.mediaGallery')}</h2>
-        <div className="media-grid">
-          {unit.media.map((file, index) => (
-            <div className="media-card motion-stage" key={file.id} style={motionStyle(index, 290)}>
-              {file.type === 'image' ? <img src={file.url} alt={file.name} loading="lazy" decoding="async" /> : <div className="video-placeholder">{t('details.videoIgnored')}</div>}
+          ) : (
+            <EmptyState title={t('details.noThumbnailTitle')} body={t('details.noThumbnailBody')} />
+          )}
+        </section>
+        <section className="content-card motion-stage details-notes-card" style={motionStyle(5, 160)}>
+          <h2>{t('details.notes')}</h2>
+          <p dir="auto">{canViewSalesSensitiveData(user, unit) ? unit.salesNotes : t('details.salesSensitiveHidden')}</p>
+          {unit.adminManagerNotes.map((note, index) => (
+            <div className="note-card motion-stage" key={note.id} style={motionStyle(index, 210)}>
+              <strong>{note.createdByName} / {getRoleLabel(locale, note.role)}</strong>
+              <p dir="auto">{note.content}</p>
+              <small>{formatDateTime(locale, note.createdAt)}</small>
             </div>
           ))}
-        </div>
+          {!canAddAdminManagerNote(user) && <small>{t('details.salesCannotAddNotes')}</small>}
+          {canAddAdminManagerNote(user) && (
+            <form
+              className="note-editor"
+              onSubmit={(event) => {
+                event.preventDefault()
+                onSaveNote(sharedNote)
+              }}
+            >
+              <label className="wide-field">
+                {t('details.editSharedNote')}
+                <textarea value={sharedNote} onChange={(event) => setSharedNote(event.target.value)} dir="auto" />
+              </label>
+              <div className="note-editor-actions">
+                <button className="secondary-button" type="submit">{t('details.saveNote')}</button>
+                <button
+                  className="danger-button"
+                  type="button"
+                  onClick={() => {
+                    setSharedNote('')
+                    onDeleteNote()
+                  }}
+                >
+                  {t('details.deleteNote')}
+                </button>
+              </div>
+            </form>
+          )}
+        </section>
+      </div>
+      <section className="content-card motion-stage details-gallery-card" style={motionStyle(6, 190)}>
+        <h2>{t('details.mediaGallery')}</h2>
+        {unit.media.length === 0 ? (
+          <EmptyState title={t('details.noMediaTitle')} body={t('details.noMediaBody')} />
+        ) : (
+          <div className="media-grid">
+            {unit.media.map((file, index) => (
+              <div className="media-card motion-stage" key={file.id} style={motionStyle(index, 290)}>
+                <div className="media-preview">
+                  <img src={file.url} alt={file.name} loading="lazy" decoding="async" />
+                </div>
+                <div className="media-card-actions">
+                  {canRemoveMedia && (
+                    <button
+                      className="pdf-visibility-toggle media-pdf-toggle"
+                      type="button"
+                      aria-pressed={file.includeInPdf !== false}
+                      onClick={() => onMediaPdfVisibilityChange(file.id, file.includeInPdf === false)}
+                    >
+                      <span className="pdf-visibility-indicator" aria-hidden="true" />
+                      <span>{file.includeInPdf !== false ? t('media.includeInPdf') : t('media.excludeFromPdf')}</span>
+                    </button>
+                  )}
+                  <button
+                    className="media-download-button secondary-button"
+                    type="button"
+                    aria-label={t('details.downloadMedia', { name: file.name })}
+                    disabled={downloadingMediaId === file.id}
+                    onClick={() => onMediaDownload(file)}
+                  >
+                    <Download size={17} /> {downloadingMediaId === file.id ? t('common.saving') : t('common.download')}
+                  </button>
+                  {canRemoveMedia && (
+                    <button
+                      className="media-remove-button danger-button"
+                      type="button"
+                      aria-label={t('details.removeMediaNamed', { name: file.name })}
+                      disabled={removingMediaId === file.id}
+                      onClick={() => onRemoveMedia(file.id)}
+                    >
+                      <Trash2 size={17} /> {removingMediaId === file.id ? t('common.saving') : t('details.removeMedia')}
+                    </button>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        )}
       </section>
-      {ownerAllowed && (
-        <InfoSection
-          style={motionStyle(9, 320)}
-          title={t('details.ownerData')}
-          rows={[
-            [t('details.ownerName'), unit.originalOwnerName ?? t('common.notSet')],
-            [t('details.ownerPhone'), unit.originalOwnerPhone ?? t('common.notSet')],
-            [t('details.normalizedPhone'), unit.normalizedOwnerPhone ?? t('common.notSet')],
-          ]}
-        />
-      )}
     </>
   )
 }
@@ -2751,11 +3547,28 @@ function NotificationsPage({ notifications, user }: { notifications: Notificatio
   )
 }
 
-function AnalyticsPage({ appState, user }: { appState: AppDataState; user: LeadraUser }) {
+function AnalyticsPage({
+  appState,
+  user,
+  route,
+  onRouteChange,
+}: {
+  appState: AppDataState
+  user: LeadraUser
+  route: AppRoute
+  onRouteChange: (path: string, options?: { replace?: boolean }) => void
+}) {
   const { locale, t } = useLocale()
-  const [filters, setFilters] = useState<AnalyticsFilters>(defaultAnalyticsFilters)
+  const routeFilterKey = JSON.stringify(route.analyticsFilters)
+  const routeStateKey = `${route.analyticsWindow}:${routeFilterKey}`
+  const routeFilters = analyticsFiltersFromRoute(route)
+  const [filterState, setFilterState] = useState<{ routeKey: string; filters: LeadraAnalyticsFilters }>(() => ({
+    routeKey: routeStateKey,
+    filters: routeFilters,
+  }))
+  const filters = filterState.routeKey === routeStateKey ? filterState.filters : routeFilters
   const deferredFilters = useDeferredValue(filters)
-  const [filterOpen, setFilterOpen] = useState(false)
+  const filterOpen = route.analyticsFiltersOpen
   const [showAnalyticsDepth] = useState(true)
   const [rpcDashboard, setRpcDashboard] = useState<AnalyticsDashboard | null>(null)
   const [analyticsLoading, setAnalyticsLoading] = useState(false)
@@ -2821,8 +3634,35 @@ function AnalyticsPage({ appState, user }: { appState: AppDataState; user: Leadr
     }
   }, [filters])
 
-  function updateSingleFilter<Key extends keyof AnalyticsFilters>(key: Key, value: string) {
-    setFilters((current) => ({ ...current, [key]: value ? [value] : [] }))
+  function updateAnalyticsRoute(nextFilters: LeadraAnalyticsFilters, options: { replace?: boolean; filtersOpen?: boolean } = {}) {
+    setFilterState({ routeKey: routeStateKey, filters: nextFilters })
+    onRouteChange(analyticsRouteForFilters(nextFilters, options.filtersOpen ?? filterOpen), { replace: options.replace })
+  }
+
+  function updateDateWindow(dateWindow: AnalyticsDateWindow) {
+    updateAnalyticsRoute({ ...filters, dateWindow }, { replace: false })
+  }
+
+  function updateSingleFilter(key: keyof LeadraAnalyticsFilters, value: string) {
+    if (key === 'statuses') {
+      const statuses = unitStatusValues.includes(value as UnitStatus) ? [value as UnitStatus] : []
+      updateAnalyticsRoute({ ...filters, statuses }, { replace: true })
+      return
+    }
+    if (key === 'paymentMethods') {
+      const paymentMethods = paymentMethodValues.includes(value as PaymentMethod) ? [value as PaymentMethod] : []
+      updateAnalyticsRoute({ ...filters, paymentMethods }, { replace: true })
+      return
+    }
+    if (key === 'dateWindow') {
+      updateDateWindow((value || 'live') as AnalyticsDateWindow)
+      return
+    }
+    if (key === 'startDate' || key === 'endDate') {
+      updateAnalyticsRoute({ ...filters, [key]: value || undefined }, { replace: true })
+      return
+    }
+    updateAnalyticsRoute({ ...filters, [key]: value ? [value] : [] }, { replace: true })
   }
 
   function exportCsv() {
@@ -2853,7 +3693,7 @@ function AnalyticsPage({ appState, user }: { appState: AppDataState; user: Leadr
                 key={option.value}
                 className={filters.dateWindow === option.value ? 'active' : ''}
                 type="button"
-                onClick={() => setFilters((current) => ({ ...current, dateWindow: option.value }))}
+                onClick={() => updateDateWindow(option.value)}
               >
                 {option.label}
               </button>
@@ -2876,8 +3716,8 @@ function AnalyticsPage({ appState, user }: { appState: AppDataState; user: Leadr
           </div>
           <div className="analytics-control-actions">
             {analyticsLoading && <span className="analytics-chip">Refreshing</span>}
-            <button className="secondary-link" type="button" onClick={() => setFilters(defaultAnalyticsFilters)}>Reset</button>
-            <button className="ghost-button analytics-filter-toggle" type="button" aria-expanded={filterOpen} onClick={() => setFilterOpen((open) => !open)}>
+            <button className="secondary-link" type="button" onClick={() => updateAnalyticsRoute(defaultAnalyticsFilters, { replace: true })}>Reset</button>
+            <button className="ghost-button analytics-filter-toggle" type="button" aria-expanded={filterOpen} onClick={() => onRouteChange(analyticsRouteForFilters(filters, !filterOpen))}>
               <SlidersHorizontal size={17} /> {filterOpen ? 'Close filters' : 'Filters'}
               {activeFilterCount > 0 && <span>{activeFilterCount}</span>}
             </button>
@@ -2890,11 +3730,11 @@ function AnalyticsPage({ appState, user }: { appState: AppDataState; user: Leadr
           <div className="analytics-custom-range">
             <label>
               Start
-              <input type="date" value={filters.startDate ?? ''} onChange={(event) => setFilters((current) => ({ ...current, startDate: event.target.value }))} />
+              <input type="date" value={filters.startDate ?? ''} onChange={(event) => updateAnalyticsRoute({ ...filters, startDate: event.target.value || undefined }, { replace: true })} />
             </label>
             <label>
               End
-              <input type="date" value={filters.endDate ?? ''} onChange={(event) => setFilters((current) => ({ ...current, endDate: event.target.value }))} />
+              <input type="date" value={filters.endDate ?? ''} onChange={(event) => updateAnalyticsRoute({ ...filters, endDate: event.target.value || undefined }, { replace: true })} />
             </label>
           </div>
         )}
@@ -3083,10 +3923,10 @@ function AnalyticsFiltersPanel({
   onChange,
 }: {
   dashboard: AnalyticsDashboard
-  filters: AnalyticsFilters
+  filters: LeadraAnalyticsFilters
   open: boolean
   managerMode: boolean
-  onChange: (key: keyof AnalyticsFilters, value: string) => void
+  onChange: (key: keyof LeadraAnalyticsFilters, value: string) => void
 }) {
   return (
     <div className={`analytics-filter-panel ${open ? 'open' : ''}`}>
@@ -3101,7 +3941,8 @@ function AnalyticsFiltersPanel({
         options={[
           { id: 'available', label: 'Available' },
           { id: 'hold', label: 'Hold' },
-          { id: 'sold', label: 'Sold' },
+          { id: 'sold_by_us', label: 'Sold by Us' },
+          { id: 'sold_by_others', label: 'Sold by Others' },
         ]}
         onChange={(value) => onChange('statuses', value)}
       />
@@ -3267,6 +4108,10 @@ function AdminPage({
   auditLogs,
   lookupValues,
   lookupCount,
+  activeSection,
+  activeDirectory,
+  onSectionChange,
+  onDirectoryChange,
   defaultBranchId,
   branches,
   teams,
@@ -3292,6 +4137,10 @@ function AdminPage({
   auditLogs: AuditLogItem[]
   lookupValues: LookupValue[]
   lookupCount: number
+  activeSection: AdminSection
+  activeDirectory: MasterDataDirectory
+  onSectionChange: (section: AdminSection) => void
+  onDirectoryChange: (directory: MasterDataDirectory) => void
   defaultBranchId: string
   branches: BranchDirectoryItem[]
   teams: TeamDirectoryItem[]
@@ -3312,7 +4161,6 @@ function AdminPage({
   onSettingsUpdate: (settings: Partial<AppSettings>) => Promise<void>
 }) {
   const { locale, t } = useLocale()
-  const [activeSection, setActiveSection] = useState<(typeof adminSections)[number]>('Users')
   const [userQuery, setUserQuery] = useState('')
   const [roleFilter, setRoleFilter] = useState<LeadraUser['role'] | 'all'>('all')
   const [statusFilter, setStatusFilter] = useState<LeadraUser['status'] | 'all'>('all')
@@ -3406,7 +4254,7 @@ function AdminPage({
             className={`wizard-step ${section === activeSection ? 'active' : ''}`}
             type="button"
             aria-current={section === activeSection ? 'step' : undefined}
-            onClick={() => setActiveSection(section)}
+            onClick={() => onSectionChange(section)}
           >
             {translateAdminSection(section, locale)}
           </button>
@@ -3610,6 +4458,8 @@ function AdminPage({
           lookupValues={lookupValues}
           branches={branches}
           teams={teams}
+          activeDirectory={activeDirectory}
+          onDirectoryChange={onDirectoryChange}
           userCounts={users.reduce<Record<string, number>>((counts, item) => ({
             ...counts,
             [item.teamId]: (counts[item.teamId] ?? 0) + 1,
@@ -3719,6 +4569,8 @@ function MasterDataPanel({
   lookupValues,
   branches,
   teams,
+  activeDirectory,
+  onDirectoryChange,
   userCounts,
   onCreateLookupValue,
   onUpdateLookupValue,
@@ -3733,6 +4585,8 @@ function MasterDataPanel({
   lookupValues: LookupValue[]
   branches: BranchDirectoryItem[]
   teams: TeamDirectoryItem[]
+  activeDirectory: MasterDataDirectory
+  onDirectoryChange: (directory: MasterDataDirectory) => void
   userCounts: Record<string, number>
   onCreateLookupValue: (kind: LookupKind, label: string) => Promise<void>
   onUpdateLookupValue: (lookupId: string, label: string) => Promise<void>
@@ -3745,7 +4599,6 @@ function MasterDataPanel({
   onArchiveTeam: (teamId: string) => Promise<void>
 }) {
   const { locale, t } = useLocale()
-  const [activeDirectory, setActiveDirectory] = useState<LookupKind | 'branches' | 'teams'>('developer')
   const [directoryQuery, setDirectoryQuery] = useState('')
   const directoryOptions = [
     ...lookupKindOptions.map((kind) => ({
@@ -3840,7 +4693,7 @@ function MasterDataPanel({
               type="button"
               aria-current={option.id === activeDirectory ? 'page' : undefined}
               onClick={() => {
-                setActiveDirectory(option.id)
+                onDirectoryChange(option.id)
                 setDirectoryQuery('')
               }}
             >
@@ -4370,6 +5223,7 @@ function fileToMedia(file: File): Promise<LeadraMediaFile> {
         url: String(reader.result),
         name: file.name,
         sizeBytes: file.size,
+        includeInPdf: true,
       })
     }
     reader.onerror = () => reject(new Error('Unable to read image file.'))
@@ -4558,10 +5412,10 @@ function BrandedSelect({
 
 function RequiredLabel({ label, required = false }: { label: string; required?: boolean }) {
   return (
-    <>
+    <span className="required-label-text">
       {label}
       {required && <span className="required-marker" aria-hidden="true"> *</span>}
-    </>
+    </span>
   )
 }
 
@@ -4718,6 +5572,23 @@ function InfoSection({ title, rows, style }: { title: string; rows: [string, str
   )
 }
 
+function InfoPanel({ title, rows }: { title: string; rows: [string, string | number | null][] }) {
+  const { t } = useLocale()
+  return (
+    <section className="details-info-panel">
+      <h3>{title}</h3>
+      <dl className="info-grid">
+        {rows.map(([label, value]) => (
+          <div key={label}>
+            <dt>{label}</dt>
+            <dd dir="auto">{value ?? t('common.notSet')}</dd>
+          </div>
+        ))}
+      </dl>
+    </section>
+  )
+}
+
 function Metric({ label, value, style }: { label: string; value: string | number; style?: CSSProperties }) {
   return (
     <div className="metric-card motion-stage" style={style}>
@@ -4757,19 +5628,31 @@ function NavButton({
   active,
   label,
   onClick,
+  to,
   icon,
   className = '',
   style,
 }: {
   active: boolean
   label: string
-  onClick: () => void
+  onClick?: () => void
+  to?: string
   icon: ReactNode
   className?: string
   style?: CSSProperties
 }) {
+  const classNameValue = `nav-button ${active ? 'active' : ''} ${className}`.trim()
+  if (to) {
+    return (
+      <Link className={classNameValue} style={style} to={to} onClick={onClick}>
+        {icon}
+        <span>{label}</span>
+      </Link>
+    )
+  }
+
   return (
-    <button className={`nav-button ${active ? 'active' : ''} ${className}`.trim()} type="button" style={style} onClick={onClick}>
+    <button className={classNameValue} type="button" style={style} onClick={onClick}>
       {icon}
       <span>{label}</span>
     </button>
@@ -4807,28 +5690,6 @@ function isViewAllowedForUser(view: View, user: LeadraUser): boolean {
   if (view === 'admin') return canAccessAdmin(user)
   if (view === 'analytics') return canAccessAnalytics(user)
   return true
-}
-
-function readHashView(): HashView {
-  const value = window.location.hash.replace('#', '')
-  if (value.startsWith('details/')) return 'details'
-  if (value === 'units' || value === 'create' || value === 'notifications' || value === 'profile' || value === 'analytics' || value === 'admin' || value === 'palette') {
-    return value
-  }
-  return 'dashboard'
-}
-
-function readHashUnitId(): number | null {
-  const value = window.location.hash.replace('#', '')
-  if (!value.startsWith('details/')) return null
-  const id = Number(value.replace('details/', ''))
-  return Number.isFinite(id) ? id : null
-}
-
-function writeHashView(view: HashView) {
-  if (view === 'details') return
-  const nextHash = view === 'dashboard' ? '' : `#${view}`
-  window.history.replaceState(null, '', `${window.location.pathname}${nextHash}`)
 }
 
 function translateCreateStep(step: (typeof createUnitSteps)[number], locale: LocaleCode) {
@@ -4883,4 +5744,3 @@ function translateForLocale(locale: LocaleCode, key: string, params?: MessagePar
   return translate(locale, key, params)
 }
 
-export default App

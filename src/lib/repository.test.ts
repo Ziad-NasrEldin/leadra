@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { LeadraRepository } from './repository'
-import type { LeadraUser } from './types'
+import type { LeadraUser, UnitEditInput } from './types'
 
 function salesUser(overrides: Partial<LeadraUser> = {}): LeadraUser {
   return {
@@ -18,6 +18,173 @@ function salesUser(overrides: Partial<LeadraUser> = {}): LeadraUser {
 }
 
 describe('LeadraRepository', () => {
+  it('persists unit detail updates through the protected update payload', async () => {
+    const updates: unknown[] = []
+    const input: UnitEditInput = {
+      developerId: 'dev-1',
+      developerName: 'Palm Hills',
+      projectId: 'project-1',
+      projectName: 'New Cairo Estates',
+      destinationId: 'dest-1',
+      destinationName: 'New Cairo',
+      unitType: 'Apartment',
+      floor: '3rd',
+      bua: 188,
+      roofGardenArea: null,
+      gardenArea: null,
+      terraceArea: null,
+      viewId: 'view-1',
+      viewName: 'Garden',
+      bedrooms: 3,
+      bathrooms: 2,
+      elevator: true,
+      landArea: null,
+      furnished: false,
+      finish: 'Fully Finished',
+      deliveryExpectancy: { mode: 'year', year: 2029 },
+      originalOwnerName: 'Updated Owner',
+      countryCode: '+20',
+      originalOwnerPhone: '01033334444',
+      salesNotes: 'Updated notes.',
+      totalAmount: 5_500_000,
+      commissionPercentage: 1.5,
+    }
+    const client = {
+      from(table: string) {
+        expect(table).toBe('units')
+        return {
+          update(payload: unknown) {
+            updates.push(payload)
+            return {
+              eq(column: string, value: number) {
+                expect(column).toBe('id')
+                expect(value).toBe(105)
+                return {
+                  select() {
+                    return {
+                      single() {
+                        return Promise.resolve({
+                          error: null,
+                          data: {
+                            id: 105,
+                            unit_code: 'NC3BR',
+                            developer_id: 'dev-1',
+                            developer: { label: 'Palm Hills' },
+                            project_id: 'project-1',
+                            project: { label: 'New Cairo Estates' },
+                            destination_id: 'dest-1',
+                            destination: { label: 'New Cairo' },
+                            unit_type: 'Apartment',
+                            floor: '3rd',
+                            bua: 188,
+                            roof_garden_area: null,
+                            garden_area: null,
+                            terrace_area: null,
+                            view_id: 'view-1',
+                            view: { label: 'Garden' },
+                            bedrooms: 3,
+                            bathrooms: 2,
+                            elevator: true,
+                            land_area: null,
+                            furnished: false,
+                            finish: 'Fully Finished',
+                            payment_method: 'installment',
+                            total_amount: 5_500_000,
+                            down_payment: 1_000_000,
+                            remaining_payment: 4_000_000,
+                            commission_percentage: 1.5,
+                            commission_amount: 82_500,
+                            installment_type: 'quarterly',
+                            installment_years: 5,
+                            installment_amount: 200_000,
+                            delivery_month: null,
+                            delivery_year: 2029,
+                            original_owner_name: 'Updated Owner',
+                            country_code: '+20',
+                            original_owner_phone: '01033334444',
+                            normalized_owner_phone: '+201033334444',
+                            sales_notes: 'Updated notes.',
+                            status: 'available',
+                            archived: false,
+                            created_by: 'sales-1',
+                            creator: { full_name: 'Sales User' },
+                            team_id: 'team-1',
+                            branch_id: 'branch-1',
+                            created_at: '2026-05-04T00:00:00.000Z',
+                            updated_at: '2026-05-04T01:00:00.000Z',
+                            unit_media: [],
+                            unit_notes: [],
+                          },
+                        })
+                      },
+                    }
+                  },
+                }
+              },
+            }
+          },
+        }
+      },
+    }
+
+    const result = await new LeadraRepository(client as never).updateUnitDetails(salesUser(), 105, input, {
+      canEditOwner: true,
+      canEditPricing: true,
+      canEditCommission: false,
+    })
+
+    expect(result.bua).toBe(188)
+    expect(updates[0]).toMatchObject({ bua: 188, total_amount: 5_500_000, original_owner_phone: '01033334444' })
+    expect(updates[0]).not.toHaveProperty('remaining_payment')
+    expect(updates[0]).not.toHaveProperty('payment_method')
+    expect(updates[0]).not.toHaveProperty('commission_percentage')
+  })
+
+  it('falls back to the legacy sold status when the database enum has not been migrated yet', async () => {
+    const updates: unknown[] = []
+    const client = {
+      from(table: string) {
+        expect(table).toBe('units')
+        return {
+          update(payload: unknown) {
+            updates.push(payload)
+            return {
+              eq() {
+                return Promise.resolve(
+                  updates.length === 1
+                    ? { error: { code: '22P02', message: 'invalid input value for enum public.unit_status: "sold_by_us"' } }
+                    : { error: null },
+                )
+              },
+            }
+          },
+        }
+      },
+    }
+
+    await new LeadraRepository(client as never).updateUnitStatus(5, 'sold_by_us')
+
+    expect(updates).toEqual([{ status: 'sold_by_us' }, { status: 'sold' }])
+  })
+
+  it('does not hide non-enum status persistence errors', async () => {
+    const client = {
+      from() {
+        return {
+          update() {
+            return {
+              eq() {
+                return Promise.resolve({ error: new Error('permission denied') })
+              },
+            }
+          },
+        }
+      },
+    }
+
+    await expect(new LeadraRepository(client as never).updateUnitStatus(5, 'hold')).rejects.toThrow('permission denied')
+  })
+
   it('delegates sales representative deactivation and reassignment to the durable history RPC', async () => {
     const calls: Array<{ fn: string; args: unknown }> = []
     const client = {

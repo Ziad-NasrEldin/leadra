@@ -1,9 +1,12 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { render, screen, waitFor, within } from '@testing-library/react'
+import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import App from './App'
 import { LocaleProvider } from './lib/i18n'
+
+const originalCreateObjectURL = URL.createObjectURL
+const originalRevokeObjectURL = URL.revokeObjectURL
 
 function renderApp() {
   const queryClient = new QueryClient({
@@ -34,9 +37,35 @@ async function chooseFromSelect(user: ReturnType<typeof userEvent.setup>, label:
   await user.click(screen.getByRole('option', { name: option }))
 }
 
+async function openNewCairoProject(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(screen.getByRole('button', { name: /^new cairo/i }))
+  await user.click(await screen.findByRole('button', { name: /new cairo estates/i }))
+}
+
+function navigateTestPath(path: string) {
+  act(() => {
+    window.history.pushState(null, '', path)
+    window.dispatchEvent(new PopStateEvent('popstate'))
+  })
+}
+
+async function openSeedUnitDetails(user: ReturnType<typeof userEvent.setup>) {
+  await openLoginPage(user)
+  await signInAs(user, /continue as admin/i)
+  await user.click(screen.getByRole('link', { name: /view all units/i }))
+  await openNewCairoProject(user)
+  await user.click(await screen.findByRole('button', { name: /open nc3br/i }))
+  expect(await screen.findByRole('heading', { name: /NC3BR/i })).toBeInTheDocument()
+  expect(await screen.findByRole('heading', { name: /media gallery/i }, { timeout: 4000 })).toBeInTheDocument()
+}
+
 describe('Leadra app shell', () => {
   afterEach(() => {
     window.history.replaceState(null, '', '/')
+    vi.restoreAllMocks()
+    vi.unstubAllGlobals()
+    Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: originalCreateObjectURL })
+    Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: originalRevokeObjectURL })
   })
 
   it('lets a demo user enter the destination-first unit browser', async () => {
@@ -55,8 +84,15 @@ describe('Leadra app shell', () => {
     await user.click(screen.getByRole('link', { name: /view all units/i }))
 
     expect(await screen.findByRole('heading', { name: /choose a destination/i })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /^new cairo\s/i })).toBeInTheDocument()
-    expect(screen.getByRole('button', { name: /new cairo estates/i })).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: /^new cairo/i }))
+    expect(window.location.pathname).toBe('/units/destinations/dest-new-cairo')
+    expect(await screen.findByRole('button', { name: /new cairo estates/i })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^sheikh zayed\s/i })).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: /new cairo estates/i }))
+    expect(window.location.pathname).toBe('/units/destinations/dest-new-cairo/projects/project-new-cairo')
+    expect(await screen.findByText(/NC3BR/i)).toBeInTheDocument()
+    expect(screen.queryByText(/ZE4BR/i)).not.toBeInTheDocument()
   })
 
   it('does not leave a sales user on the admin page after signing out from admin', async () => {
@@ -65,7 +101,7 @@ describe('Leadra app shell', () => {
 
     await openLoginPage(user)
     await signInAs(user, /continue as admin/i)
-    await user.click((await screen.findAllByRole('button', { name: /^admin$/i }))[0])
+    await user.click((await screen.findAllByRole('link', { name: /^admin$/i }))[0])
     expect(await screen.findByRole('heading', { name: /user management/i })).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: /sign out/i }))
@@ -76,7 +112,7 @@ describe('Leadra app shell', () => {
     expect(screen.queryByRole('heading', { name: /user management/i })).not.toBeInTheDocument()
   })
 
-  it('honors a units deep link after login and updates hash during navigation', async () => {
+  it('honors legacy units hash links after login and updates full routes during navigation', async () => {
     window.history.replaceState(null, '', '/#units')
     renderApp()
     const user = userEvent.setup()
@@ -85,8 +121,60 @@ describe('Leadra app shell', () => {
     await signInAs(user, /continue as admin/i)
 
     expect(await screen.findByRole('heading', { name: /choose a destination/i })).toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: /^create$/i }))
-    expect(window.location.hash).toBe('#create')
+    expect(window.location.pathname).toBe('/units')
+    expect(window.location.hash).toBe('')
+    await user.click(screen.getByRole('link', { name: /^create$/i }))
+    expect(window.location.pathname).toBe('/create')
+  })
+
+  it('hydrates create, admin, master-data, and analytics subroutes', async () => {
+    window.history.replaceState(null, '', '/create/payment')
+    renderApp()
+    const user = userEvent.setup()
+
+    await openLoginPage(user)
+    await signInAs(user, /continue as admin/i)
+
+    expect(await screen.findByRole('group', { name: /payment/i })).toHaveAttribute('data-active', 'true')
+    await user.click(screen.getByRole('button', { name: /owner/i }))
+    expect(window.location.pathname).toBe('/create/owner')
+
+    navigateTestPath('/admin/audit')
+    expect(await screen.findByRole('heading', { name: /audit log/i })).toBeInTheDocument()
+
+    navigateTestPath('/admin/master-data/branches')
+    expect((await screen.findAllByRole('heading', { name: /branch management/i })).length).toBeGreaterThan(0)
+
+    navigateTestPath('/analytics/custom?filters=open&status=available&start=2026-01-01&end=2026-01-31')
+    expect(await screen.findByRole('button', { name: /close filters/i })).toBeInTheDocument()
+    expect(screen.getByLabelText(/start/i)).toHaveValue('2026-01-01')
+    expect(screen.getAllByLabelText(/end/i)[0]).toHaveValue('2026-01-31')
+    expect(screen.getByRole('combobox', { name: /status/i })).toHaveTextContent(/available/i)
+  })
+
+  it('keeps unauthorized sales users out of deep admin routes', async () => {
+    window.history.replaceState(null, '', '/admin/audit')
+    renderApp()
+    const user = userEvent.setup()
+
+    await openLoginPage(user)
+    await signInAs(user, /continue as sara amin/i)
+
+    expect(await screen.findByRole('heading', { name: /sara command/i })).toBeInTheDocument()
+    expect(screen.queryByRole('heading', { name: /audit log/i })).not.toBeInTheDocument()
+  })
+
+  it('toggles media PDF visibility without remounting the details page', async () => {
+    renderApp()
+    const user = userEvent.setup()
+
+    await openSeedUnitDetails(user)
+    await user.click(screen.getAllByRole('button', { name: /show in pdf/i })[0])
+
+    expect(screen.getAllByRole('button', { name: /hide from pdf/i }).length).toBeGreaterThan(0)
+    expect(screen.queryByText(/preparing details/i)).not.toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: /media gallery/i })).toBeInTheDocument()
+    expect(window.location.pathname).toMatch(/^\/units\/details\/\d+$/)
   })
 
   it('shows analytics to managers but not sales users', async () => {
@@ -95,7 +183,7 @@ describe('Leadra app shell', () => {
 
     await openLoginPage(user)
     await signInAs(user, /continue as mona hafez/i)
-    await user.click((await screen.findAllByRole('button', { name: /^analytics$/i }))[0])
+    await user.click((await screen.findAllByRole('link', { name: /^analytics$/i }))[0])
 
     expect(await screen.findByRole('heading', { name: /company analytics/i })).toBeInTheDocument()
     expect(screen.getByText(/company-wide/i)).toBeInTheDocument()
@@ -129,7 +217,7 @@ describe('Leadra app shell', () => {
 
     await openLoginPage(user)
     await signInAs(user, /continue as admin/i)
-    await user.click((await screen.findAllByRole('button', { name: /^analytics$/i }))[0])
+    await user.click((await screen.findAllByRole('link', { name: /^analytics$/i }))[0])
 
     expect(await screen.findByRole('heading', { name: /company analytics/i })).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: /30 days/i }))
@@ -151,7 +239,7 @@ describe('Leadra app shell', () => {
 
     await openLoginPage(user)
     await signInAs(user, /continue as admin/i)
-    await user.click(screen.getByRole('button', { name: /^create$/i }))
+    await user.click(screen.getByRole('link', { name: /^create$/i }))
 
     expect(await screen.findByRole('button', { name: /property/i })).toBeInTheDocument()
     const destinationSelect = screen.getByRole('combobox', { name: /destination/i })
@@ -202,13 +290,69 @@ describe('Leadra app shell', () => {
     expect((await screen.findAllByAltText(/living-room.png/i, undefined, { timeout: 3000 })).length).toBeGreaterThan(0)
   })
 
+  it('lets admins edit property, owner, and PRD pricing fields inline from unit details', async () => {
+    renderApp()
+    const user = userEvent.setup()
+
+    await openSeedUnitDetails(user)
+    await user.click(screen.getByRole('button', { name: /edit unit/i }))
+    await user.clear(screen.getByRole('spinbutton', { name: /bua/i }))
+    await user.type(screen.getByRole('spinbutton', { name: /bua/i }), '188')
+    await user.clear(screen.getByRole('spinbutton', { name: /total amount/i }))
+    await user.type(screen.getByRole('spinbutton', { name: /total amount/i }), '5500000')
+    await user.clear(screen.getByRole('textbox', { name: /original owner name/i }))
+    await user.type(screen.getByRole('textbox', { name: /original owner name/i }), 'Updated Owner')
+    await user.clear(screen.getByRole('textbox', { name: /original owner phone/i }))
+    await user.type(screen.getByRole('textbox', { name: /original owner phone/i }), '0501234568')
+    await user.click(screen.getByRole('button', { name: /save unit changes/i }))
+
+    expect(await screen.findByText(/unit details updated/i)).toBeInTheDocument()
+    expect((await screen.findAllByText(/188 m²/i)).length).toBeGreaterThan(0)
+    expect(screen.getByText(/updated owner/i)).toBeInTheDocument()
+    expect(screen.getAllByText(/4,000,000/i).length).toBeGreaterThan(0)
+  })
+
+  it('lets managers edit team unit details while keeping owner and pricing fields locked', async () => {
+    renderApp()
+    const user = userEvent.setup()
+
+    await openLoginPage(user)
+    await signInAs(user, /continue as mona hafez/i)
+    await user.click(screen.getByRole('button', { name: /view all units/i }))
+    await openNewCairoProject(user)
+    await user.click(await screen.findByRole('button', { name: /open nc3br/i }))
+    expect(await screen.findByRole('heading', { name: /NC3BR/i })).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: /edit unit/i }))
+
+    expect(screen.getByRole('spinbutton', { name: /total amount/i })).toBeDisabled()
+    expect(screen.getByRole('textbox', { name: /original owner name/i })).toBeDisabled()
+    await user.clear(screen.getByRole('spinbutton', { name: /bua/i }))
+    await user.type(screen.getByRole('spinbutton', { name: /bua/i }), '172')
+    await user.click(screen.getByRole('button', { name: /save unit changes/i }))
+
+    expect(await screen.findByText(/unit details updated/i)).toBeInTheDocument()
+    expect(await screen.findByText(/172 m²/i)).toBeInTheDocument()
+  })
+
+  it('hides edit mode from sales users on units they did not upload', async () => {
+    navigateTestPath('/units/details/106')
+    renderApp()
+    const user = userEvent.setup()
+
+    await openLoginPage(user)
+    await signInAs(user, /continue as sara amin/i)
+
+    expect(await screen.findByRole('heading', { name: /ZE4BR/i })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /edit unit/i })).not.toBeInTheDocument()
+  })
+
   it('blocks create-unit image uploads over 40 MB', async () => {
     renderApp()
     const user = userEvent.setup()
 
     await openLoginPage(user)
     await signInAs(user, /continue as admin/i)
-    await user.click(screen.getByRole('button', { name: /^create$/i }))
+    await user.click(screen.getByRole('link', { name: /^create$/i }))
     await user.click(screen.getByRole('button', { name: /review/i }))
 
     const oversized = new File(['x'], 'oversized.jpg', { type: 'image/jpeg' })
@@ -218,13 +362,70 @@ describe('Leadra app shell', () => {
     expect(await screen.findByText(/total media size exceeds 40 mb/i)).toBeInTheDocument()
   })
 
+  it('downloads uploaded media through a Blob without navigating the current tab', async () => {
+    renderApp()
+    const user = userEvent.setup()
+    const fetchMock = vi.fn().mockResolvedValue(new Response(new Blob(['image-bytes'], { type: 'image/jpeg' })))
+    const createObjectUrl = vi.fn(() => 'blob:leadra-media')
+    const revokeObjectUrl = vi.fn()
+    const anchorClick = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined)
+    const openFallback = vi.spyOn(window, 'open').mockImplementation(() => null)
+    vi.stubGlobal('fetch', fetchMock)
+    Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: createObjectUrl })
+    Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: revokeObjectUrl })
+
+    await openSeedUnitDetails(user)
+    const startingPath = window.location.pathname
+    await user.click(screen.getByRole('button', { name: /download living-room\.jpg/i }))
+
+    await waitFor(() => expect(fetchMock).toHaveBeenCalledWith(expect.stringContaining('images.unsplash.com')))
+    expect(createObjectUrl).toHaveBeenCalled()
+    expect(anchorClick).toHaveBeenCalled()
+    expect(openFallback).not.toHaveBeenCalled()
+    expect(window.location.pathname).toBe(startingPath)
+  })
+
+  it('opens uploaded media in a new tab when direct Blob download is blocked', async () => {
+    renderApp()
+    const user = userEvent.setup()
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(new TypeError('CORS blocked')))
+    const openFallback = vi.spyOn(window, 'open').mockImplementation(() => null)
+
+    await openSeedUnitDetails(user)
+    const startingPath = window.location.pathname
+    await user.click(screen.getByRole('button', { name: /download living-room\.jpg/i }))
+
+    await waitFor(() => expect(openFallback).toHaveBeenCalledWith(expect.stringContaining('images.unsplash.com'), '_blank', 'noopener,noreferrer'))
+    expect(window.location.pathname).toBe(startingPath)
+  })
+
+  it('disables the media download button while the file is being prepared', async () => {
+    renderApp()
+    const user = userEvent.setup()
+    let resolveFetch: ((response: Response) => void) | undefined
+    vi.stubGlobal('fetch', vi.fn(() => new Promise<Response>((resolve) => {
+      resolveFetch = resolve
+    })))
+    Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: vi.fn(() => 'blob:leadra-media') })
+    Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: vi.fn() })
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => undefined)
+
+    await openSeedUnitDetails(user)
+    const downloadButton = screen.getByRole('button', { name: /download living-room\.jpg/i })
+    await user.click(downloadButton)
+
+    expect(downloadButton).toBeDisabled()
+    resolveFetch?.(new Response(new Blob(['image-bytes'], { type: 'image/jpeg' })))
+    await waitFor(() => expect(downloadButton).not.toBeDisabled())
+  })
+
   it('uses an admin wizard while preserving create-user and settings submits', async () => {
     renderApp()
     const user = userEvent.setup()
 
     await openLoginPage(user)
     await signInAs(user, /continue as admin/i)
-    await user.click((await screen.findAllByRole('button', { name: /^admin$/i }))[0])
+    await user.click((await screen.findAllByRole('link', { name: /^admin$/i }))[0])
 
     expect(await screen.findByRole('button', { name: /^users$/i })).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: /new user/i }))
@@ -261,7 +462,7 @@ describe('Leadra app shell', () => {
 
     await openLoginPage(user)
     await signInAs(user, /continue as admin/i)
-    await user.click((await screen.findAllByRole('button', { name: /^admin$/i }))[0])
+    await user.click((await screen.findAllByRole('link', { name: /^admin$/i }))[0])
     await user.click(screen.getByRole('button', { name: /master data/i }))
 
     expect(await screen.findByRole('heading', { name: /master data/i })).toBeInTheDocument()
@@ -282,7 +483,7 @@ describe('Leadra app shell', () => {
 
     await openLoginPage(user)
     await signInAs(user, /continue as admin/i)
-    await user.click((await screen.findAllByRole('button', { name: /^admin$/i }))[0])
+    await user.click((await screen.findAllByRole('link', { name: /^admin$/i }))[0])
 
     await chooseFromSelect(user, /^role$/i, /sales representative/i)
     expect(screen.getByText(/1 users shown/i)).toBeInTheDocument()
@@ -325,7 +526,7 @@ describe('Leadra app shell', () => {
 
     await openLoginPage(user)
     await signInAs(user, /continue as admin/i)
-    await user.click((await screen.findAllByRole('button', { name: /^admin$/i }))[0])
+    await user.click((await screen.findAllByRole('link', { name: /^admin$/i }))[0])
 
     await user.click(screen.getByRole('button', { name: /new user/i }))
     await user.type(screen.getByRole('textbox', { name: /full name/i }), 'Omar Replacement')
@@ -352,7 +553,7 @@ describe('Leadra app shell', () => {
 
     await openLoginPage(user)
     await signInAs(user, /continue as admin/i)
-    await user.click((await screen.findAllByRole('button', { name: /^admin$/i }))[0])
+    await user.click((await screen.findAllByRole('link', { name: /^admin$/i }))[0])
 
     await chooseFromSelect(user, /^role$/i, /manager/i)
     const managedUsers = screen.getByLabelText(/managed users/i)
@@ -370,7 +571,7 @@ describe('Leadra app shell', () => {
 
     await openLoginPage(user)
     await signInAs(user, /continue as admin/i)
-    await user.click((await screen.findAllByRole('button', { name: /^admin$/i }))[0])
+    await user.click((await screen.findAllByRole('link', { name: /^admin$/i }))[0])
 
     await chooseFromSelect(user, /^role$/i, /manager/i)
     await user.click(screen.getByRole('button', { name: /edit user/i }))
@@ -391,6 +592,7 @@ describe('Leadra app shell', () => {
     await openLoginPage(user)
     await signInAs(user, /continue as admin/i)
     await user.click(screen.getByRole('link', { name: /view all units/i }))
+    await openNewCairoProject(user)
     await user.click(screen.getByRole('button', { name: /open NC3BR/i }))
 
     expect(await screen.findByRole('heading', { name: /NC3BR/i })).toBeInTheDocument()
@@ -398,13 +600,25 @@ describe('Leadra app shell', () => {
     expect(await screen.findByText(/landscape/i)).toBeInTheDocument()
     expect(await screen.findByText(/furnishing status/i)).toBeInTheDocument()
     expect(await screen.findByText(/finish type/i)).toBeInTheDocument()
+    expect(screen.getAllByRole('img', { name: /living-room\.jpg/i }).length).toBeGreaterThan(0)
+    await user.click(screen.getByRole('button', { name: /remove living-room\.jpg/i }))
+    expect(await screen.findByText(/media removed from this unit/i)).toBeInTheDocument()
+    expect(screen.queryByRole('img', { name: /living-room\.jpg/i })).not.toBeInTheDocument()
+    expect(await screen.findByText(/media gallery/i, undefined, { timeout: 3000 })).toBeInTheDocument()
     expect(await screen.findByText(/installments table/i)).toBeInTheDocument()
+    expect(screen.getByText(/remaining from timetable/i)).toBeInTheDocument()
+    expect(screen.getAllByText(/^unpaid$/i).length).toBeGreaterThan(0)
+    expect(screen.queryByRole('button', { name: /^unpaid$/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /^paid$/i })).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: /archive/i })).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: /mark hold/i }))
     expect(await screen.findByText(/unit marked hold/i)).toBeInTheDocument()
 
-    await user.click(screen.getByRole('button', { name: /mark sold/i }))
-    expect(await screen.findByText(/unit marked sold/i)).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: /mark sold by us/i }))
+    expect(await screen.findByText(/unit marked sold by us/i)).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: /mark sold by others/i }))
+    expect(await screen.findByText(/unit marked sold by others/i)).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: /clear status/i }))
     expect(await screen.findByText(/unit marked available/i)).toBeInTheDocument()
@@ -428,6 +642,7 @@ describe('Leadra app shell', () => {
     await openLoginPage(user)
     await signInAs(user, /continue as mona hafez/i)
     await user.click(screen.getByRole('button', { name: /view all units/i }))
+    await openNewCairoProject(user)
     await user.click(screen.getByRole('button', { name: /open NC3BR/i }))
 
     expect(await screen.findByRole('heading', { name: /NC3BR/i })).toBeInTheDocument()

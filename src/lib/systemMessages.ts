@@ -42,6 +42,8 @@ export type LocalizedMessageKey =
   | 'flash.settingsUpdated'
   | 'flash.noteSaved'
   | 'flash.noteDeleted'
+  | 'flash.unitMediaRemoved'
+  | 'flash.unitUpdated'
   | 'error.invalidEmailOrPassword'
   | 'error.inactiveUsersCannotLogIn'
   | 'error.onlyAdminsCanCreateUsers'
@@ -61,6 +63,8 @@ export type LocalizedMessageKey =
   | 'error.notePermissionDenied'
   | 'error.noteCannotBeEmpty'
   | 'error.noteMissing'
+  | 'error.unitMediaRemoveNotAllowed'
+  | 'error.unitMediaNotFound'
 
 export interface LocalizedMessageRef {
   messageKey?: LocalizedMessageKey
@@ -283,5 +287,7 @@ export function createNotificationAudience(actor: LeadraUser) {
 function toTitleStatus(value: unknown): string {
   if (value === 'hold') return 'Hold'
   if (value === 'sold') return 'Sold'
+  if (value === 'sold_by_us') return 'Sold by Us'
+  if (value === 'sold_by_others') return 'Sold by Others'
   return 'Available'
 }

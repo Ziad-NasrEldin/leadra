@@ -70,7 +70,7 @@ The PRD is not fully implemented. The biggest open gaps are role visibility/priv
 | Sales notes | Not implemented | Sales notes are created and shown, but no post-create edit workflow exists. |
 | Admin/manager notes with metadata | Implemented | Admin/Sub Admin/Manager can add/update/delete a shared note with creator, role, timestamp. |
 | Sales notified when admin/manager comments on own unit | Implemented | Note workflow creates in-app notification targeted to unit creator. |
-| Status: Available, Hold, Sold by Us, Sold by Others | Not implemented | Status enum has only `available`, `hold`, `sold`; UI has Mark Hold and Mark Sold. |
+| Status: Available, Hold, Sold by Us, Sold by Others | Implemented | Unit status supports Available, Hold, Sold by Us, and Sold by Others; legacy `sold` values still render as sold for old data. |
 | Status visible in cards/details/filters/audit/PDF | Not implemented | Status is visible in app/audit, but not split into Sold by Us/Others and not clearly included in PDF. |
 | View All Units project/location-first cards | Implemented | Units page shows destination cards, then project cards, then units. |
 | Selected location/project opens separate page | Not implemented | Selection filters within the same `#units` view; no separate location/project route. |

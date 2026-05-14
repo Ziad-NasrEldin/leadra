@@ -1,3 +1,4 @@
+import { isSoldStatus } from './domain'
 import { compareText, translate, type LocaleCode } from './i18n'
 import type {
   AnalyticsDashboard,
@@ -93,10 +94,10 @@ function buildOverview(units: LeadraUnit[], users: LeadraUser[], events: Analyti
       overview.projectedCommission += unit.commissionAmount
       if (unit.status === 'available') overview.availableUnits += 1
       if (unit.status === 'hold') overview.holdUnits += 1
-      if (unit.status === 'sold') overview.soldUnits += 1
+      if (isSoldStatus(unit.status)) overview.soldUnits += 1
       if (isStale(unit, now)) overview.staleUnits += 1
     }
-    if (unit.status === 'sold') overview.soldValue += unit.totalAmount
+    if (isSoldStatus(unit.status)) overview.soldValue += unit.totalAmount
   }
 
   for (const user of users) {
@@ -215,7 +216,7 @@ function buildSalesPerformance(users: LeadraUser[], units: LeadraUnit[], events:
     .map((user) => {
       const userUnits = unitsByCreator.get(user.id) ?? []
       const userEvents = eventsByActor.get(user.id) ?? []
-      const soldUnits = userUnits.filter((unit) => unit.status === 'sold')
+      const soldUnits = userUnits.filter((unit) => isSoldStatus(unit.status))
 
       return {
         userId: user.id,
@@ -256,7 +257,7 @@ function buildInventoryHealth(units: LeadraUnit[], locale: LocaleCode, now: Date
         totalUnits,
         availableUnits: projectUnits.filter((unit) => unit.status === 'available').length,
         holdUnits,
-        soldUnits: projectUnits.filter((unit) => unit.status === 'sold').length,
+        soldUnits: projectUnits.filter((unit) => isSoldStatus(unit.status)).length,
         holdRatio: totalUnits === 0 ? 0 : Math.round((holdUnits / totalUnits) * 100),
         averagePrice: Math.round(projectUnits.reduce((total, unit) => total + unit.totalAmount, 0) / totalUnits),
         mediaCompleteness: Math.round((projectUnits.filter((unit) => unit.media.length > 0).length / totalUnits) * 100),
@@ -296,7 +297,7 @@ function buildActivityTimeline(events: AnalyticsEvent[], filters: AnalyticsFilte
     point.activityCount += 1
     if (event.eventType === 'unit_created') point.unitsCreated += 1
     if (event.eventType === 'status_changed') point.statusChanges += 1
-    if (event.eventType === 'status_changed' && event.unitStatusAfter === 'sold') point.soldValue += event.amountValue ?? 0
+    if (event.eventType === 'status_changed' && isSoldStatus(event.unitStatusAfter)) point.soldValue += event.amountValue ?? 0
     if (event.eventType === 'pdf_generated' || event.eventType === 'pdf_shared_or_downloaded') point.pdfExports += 1
     days.set(date, point)
   }
@@ -353,7 +354,7 @@ function buildTargetProgress(
     const targetUnits = units.filter((unit) => matchesTarget(target, unit.teamId, unit.createdBy))
     const targetEvents = events.filter((event) => matchesTarget(target, event.teamId, event.actorId))
     const created = targetUnits.filter((unit) => isWithin(unit.createdAt, target.startsAt, target.endsAt)).length
-    const sold = targetUnits.filter((unit) => unit.status === 'sold' && isWithin(unit.updatedAt, target.startsAt, target.endsAt))
+    const sold = targetUnits.filter((unit) => isSoldStatus(unit.status) && isWithin(unit.updatedAt, target.startsAt, target.endsAt))
     const soldValue = sold.reduce((total, unit) => total + unit.totalAmount, 0)
     const commission = sold.reduce((total, unit) => total + unit.commissionAmount, 0)
 

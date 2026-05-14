@@ -1,3 +1,4 @@
+import { PDFDocument } from 'pdf-lib'
 import { describe, expect, it } from 'vitest'
 import { demoUsers, initialAppState, seedUnits } from '../data/seed'
 import { buildPermissionSafePdfBlob, buildPermissionSafePdfText } from './pdf'
@@ -96,5 +97,27 @@ describe('pdf generation', () => {
     expect(blob.type).toBe('application/pdf')
     expect(header).toBe('%PDF-')
     expect(blob.size).toBeGreaterThan(1000)
+  })
+
+  it('excludes images marked hidden from the generated pdf', async () => {
+    const user = demoUsers[0]
+    const settings = initialAppState.settings
+    const visibleImage = {
+      id: 'media-visible',
+      type: 'image' as const,
+      name: 'visible.png',
+      sizeBytes: 68,
+      includeInPdf: true,
+      url: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAFgwJ/lZrD9wAAAABJRU5ErkJggg==',
+    }
+    const hiddenImage = { ...visibleImage, id: 'media-hidden', name: 'hidden.png', includeInPdf: false }
+
+    const withVisible = await buildPermissionSafePdfBlob(user, { ...seedUnits[0], media: [visibleImage] }, settings)
+    const withHiddenOnly = await buildPermissionSafePdfBlob(user, { ...seedUnits[0], media: [hiddenImage] }, settings)
+    const visiblePdf = await PDFDocument.load(await withVisible.arrayBuffer())
+    const hiddenPdf = await PDFDocument.load(await withHiddenOnly.arrayBuffer())
+
+    expect(visiblePdf.getPageCount()).toBe(2)
+    expect(hiddenPdf.getPageCount()).toBe(1)
   })
 })

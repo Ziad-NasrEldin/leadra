@@ -160,11 +160,12 @@ export const seedUnits: LeadraUnit[] = [
         sizeBytes: 1_200_000,
       },
       {
-        id: 'media-2',
-        type: 'video',
-        url: '/mock-tour.mp4',
-        name: 'tour.mp4',
-        sizeBytes: 7_500_000,
+        id: 'media-tour',
+        type: 'image',
+        url: 'https://images.unsplash.com/photo-1600607687644-c7171b42498f?auto=format&fit=crop&w=900&q=80',
+        name: 'gallery-detail.jpg',
+        sizeBytes: 2_400_000,
+        includeInPdf: false,
       },
     ],
     adminManagerNotes: [
@@ -348,7 +349,7 @@ export const seedAnalyticsEvents: AnalyticsEvent[] = [
     destinationId: 'dest-new-cairo',
     amountValue: null,
     commissionValue: null,
-    metadata: { fileCount: 2, imageCount: 1, videoCount: 1 },
+    metadata: { fileCount: 1, imageCount: 1 },
     createdAt: '2026-05-02T09:35:00.000Z',
   },
   {

@@ -1,9 +1,9 @@
 export type UserRole = 'admin' | 'sub_admin' | 'manager' | 'sales'
 export type AccountStatus = 'active' | 'inactive'
-export type UnitStatus = 'available' | 'hold' | 'sold'
+export type UnitStatus = 'available' | 'hold' | 'sold' | 'sold_by_us' | 'sold_by_others'
 export type PaymentMethod = 'cash' | 'installment'
 export type InstallmentType = 'quarterly' | 'semi_annual' | 'annual' | 'custom'
-export type MediaType = 'image' | 'video'
+export type MediaType = 'image'
 export type LookupKind = 'developer' | 'project' | 'destination' | 'view' | 'unit_type' | 'finish'
 export type PdfLayout = 'classic' | 'compact'
 export type AnalyticsEventType =
@@ -69,6 +69,7 @@ export interface LeadraMediaFile {
   url: string
   name: string
   sizeBytes: number
+  includeInPdf?: boolean
 }
 
 export interface LeadraNote {
@@ -443,6 +444,36 @@ export interface CreateUnitInput {
   originalOwnerPhone: string
   salesNotes: string
   media: LeadraMediaFile[]
+}
+
+export interface UnitEditInput {
+  developerId: string
+  developerName: string
+  projectId: string
+  projectName: string
+  destinationId: string
+  destinationName: string
+  unitType: string
+  floor: string
+  bua: number
+  roofGardenArea?: number | null
+  gardenArea?: number | null
+  terraceArea?: number | null
+  viewId: string
+  viewName: string
+  bedrooms: number
+  bathrooms: number
+  elevator: boolean
+  landArea?: number | null
+  furnished: boolean
+  finish: string
+  deliveryExpectancy: DeliveryExpectancy
+  originalOwnerName: string
+  countryCode: string
+  originalOwnerPhone: string
+  salesNotes: string
+  totalAmount: number
+  commissionPercentage: number
 }
 
 export type WorkflowResult<T = AppDataState> =

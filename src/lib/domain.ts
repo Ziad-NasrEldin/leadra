@@ -9,6 +9,7 @@ import type {
   PaymentSummary,
   ProjectSummary,
   UnitFilters,
+  UnitStatus,
 } from './types'
 import { compareText, getIntlLocale, type LocaleCode } from './i18n'
 
@@ -263,16 +264,44 @@ export function canViewSalesSensitiveData(user: LeadraUser, unit: LeadraUnit): b
 }
 
 export function canEditOwnerFields(user: LeadraUser, unit: LeadraUnit): boolean {
-  if (user.role === 'admin' || user.role === 'sub_admin' || user.role === 'manager') {
-    return true
-  }
+  void unit
+  return user.role === 'admin' || user.role === 'sub_admin'
+}
 
-  return unit.createdBy === user.id && Number.isNaN(Date.parse(unit.createdAt))
+export function canEditNonOwnerUnitDetails(user: LeadraUser, unit: LeadraUnit): boolean {
+  if (unit.archived) return false
+  if (user.role === 'admin' || user.role === 'sub_admin') return true
+  if (user.role === 'manager') return Boolean(user.teamId) && unit.teamId === user.teamId
+  return user.role === 'sales' && unit.createdBy === user.id
+}
+
+export function canEditUnitPricing(user: LeadraUser, unit: LeadraUnit): boolean {
+  if (unit.archived) return false
+  if (user.role === 'admin' || user.role === 'sub_admin') return true
+  return user.role === 'sales' && unit.createdBy === user.id
+}
+
+export function canEditUnitCommission(user: LeadraUser, unit: LeadraUnit): boolean {
+  void unit
+  return user.role === 'admin' || user.role === 'sub_admin'
+}
+
+export function canEditAnyUnitDetails(user: LeadraUser, unit: LeadraUnit): boolean {
+  return (
+    canEditNonOwnerUnitDetails(user, unit) ||
+    canEditOwnerFields(user, unit) ||
+    canEditUnitPricing(user, unit) ||
+    canEditUnitCommission(user, unit)
+  )
 }
 
 export function canArchiveUnit(user: LeadraUser, unit: LeadraUnit): boolean {
   void unit
   return user.role === 'admin' || user.role === 'sub_admin'
+}
+
+export function isSoldStatus(status: UnitStatus | string | null | undefined): boolean {
+  return status === 'sold' || status === 'sold_by_us' || status === 'sold_by_others'
 }
 
 export function canAddAdminManagerNote(user: LeadraUser): boolean {
@@ -459,7 +488,7 @@ export function summarizeDestinations(units: LeadraUnit[], locale: LocaleCode = 
     current.totalUnits += 1
     if (unit.status === 'available') current.availableUnits += 1
     if (unit.status === 'hold') current.holdUnits += 1
-    if (unit.status === 'sold') current.soldUnits += 1
+    if (isSoldStatus(unit.status)) current.soldUnits += 1
     summaries.set(unit.destinationId, current)
   }
 
@@ -486,7 +515,7 @@ export function summarizeProjects(units: LeadraUnit[], locale: LocaleCode = 'en'
     current.totalUnits += 1
     if (unit.status === 'available') current.availableUnits += 1
     if (unit.status === 'hold') current.holdUnits += 1
-    if (unit.status === 'sold') current.soldUnits += 1
+    if (isSoldStatus(unit.status)) current.soldUnits += 1
     summaries.set(unit.projectId, current)
   }
 
