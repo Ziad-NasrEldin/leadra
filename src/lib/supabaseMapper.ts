@@ -42,6 +42,10 @@ export interface SupabaseUnitRow {
   total_amount: number
   down_payment: number | null
   remaining_payment: number | null
+  transfer_fees?: number | null
+  maintenance_paid?: boolean | null
+  maintenance_cost?: number | null
+  maintenance_due_date?: string | null
   commission_percentage: number
   commission_amount: number
   installment_type: InstallmentType | null
@@ -93,6 +97,10 @@ export interface SafeUnitRpcRow {
   total_amount: number
   down_payment: number | null
   remaining_payment: number | null
+  transfer_fees?: number | null
+  maintenance_paid?: boolean | null
+  maintenance_cost?: number | null
+  maintenance_due_date?: string | null
   commission_percentage: number
   commission_amount: number
   installment_type: InstallmentType | null
@@ -165,6 +173,10 @@ export function toUnitInsertPayload(input: CreateUnitInput, actor: LeadraUser) {
     payment_method: input.paymentMethod,
     total_amount: input.totalAmount,
     down_payment: input.paymentMethod === 'installment' ? input.downPayment ?? 0 : null,
+    transfer_fees: input.transferFees ?? null,
+    maintenance_paid: input.maintenancePaid ?? false,
+    maintenance_cost: input.maintenancePaid ? input.maintenanceCost ?? null : null,
+    maintenance_due_date: input.maintenancePaid ? input.maintenanceDueDate ?? null : null,
     installment_type: input.paymentMethod === 'installment' ? input.installmentType ?? 'custom' : null,
     installment_years: input.paymentMethod === 'installment' ? input.installmentYears ?? null : null,
     delivery_month: input.deliveryExpectancy.mode === 'month_year' ? input.deliveryExpectancy.month ?? null : null,
@@ -215,7 +227,15 @@ export function toUnitUpdatePayload(
           original_owner_phone: input.originalOwnerPhone,
         }
       : {}),
-    ...(permissions.canEditPricing ? { total_amount: input.totalAmount } : {}),
+    ...(permissions.canEditPricing
+      ? {
+          total_amount: input.totalAmount,
+          transfer_fees: input.transferFees ?? null,
+          maintenance_paid: input.maintenancePaid ?? false,
+          maintenance_cost: input.maintenancePaid ? input.maintenanceCost ?? null : null,
+          maintenance_due_date: input.maintenancePaid ? input.maintenanceDueDate ?? null : null,
+        }
+      : {}),
     ...(permissions.canEditCommission ? { commission_percentage: input.commissionPercentage } : {}),
   }
 }
@@ -256,6 +276,10 @@ export function toUnitViewModel(row: SupabaseUnitRow): LeadraUnit {
     totalAmount: row.total_amount,
     downPayment: row.down_payment,
     remainingPayment: row.remaining_payment,
+    transferFees: row.transfer_fees ?? null,
+    maintenancePaid: row.maintenance_paid ?? false,
+    maintenanceCost: row.maintenance_cost ?? null,
+    maintenanceDueDate: row.maintenance_due_date ?? null,
     commissionPercentage: row.commission_percentage,
     commissionAmount: row.commission_amount,
     installmentType: row.installment_type,
@@ -319,6 +343,10 @@ export function toSafeUnitViewModel(row: SafeUnitRpcRow): LeadraUnit {
     totalAmount: row.total_amount,
     downPayment: row.down_payment,
     remainingPayment: row.remaining_payment,
+    transferFees: row.transfer_fees ?? null,
+    maintenancePaid: row.maintenance_paid ?? false,
+    maintenanceCost: row.maintenance_cost ?? null,
+    maintenanceDueDate: row.maintenance_due_date ?? null,
     commissionPercentage: row.commission_percentage,
     commissionAmount: row.commission_amount,
     installmentType: row.installment_type,

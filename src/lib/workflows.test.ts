@@ -102,6 +102,10 @@ function editInput(unit: LeadraUnit, overrides: Partial<UnitEditInput> = {}): Un
     originalOwnerPhone: unit.originalOwnerPhone ?? '',
     salesNotes: unit.salesNotes,
     totalAmount: unit.totalAmount,
+    transferFees: unit.transferFees ?? null,
+    maintenancePaid: unit.maintenancePaid ?? false,
+    maintenanceCost: unit.maintenanceCost ?? null,
+    maintenanceDueDate: unit.maintenanceDueDate ?? null,
     commissionPercentage: unit.commissionPercentage,
     ...overrides,
   }
@@ -199,6 +203,10 @@ describe('Leadra product workflows', () => {
       paymentMethod: 'installment',
       totalAmount: 6_000_000,
       downPayment: 1_200_000,
+      transferFees: 150_000,
+      maintenancePaid: true,
+      maintenanceCost: 40_000,
+      maintenanceDueDate: '2029-01-15',
       installmentType: 'annual',
       installmentYears: 4,
       deliveryExpectancy: { mode: 'year', year: 2029 },
@@ -213,6 +221,10 @@ describe('Leadra product workflows', () => {
     expect(result.state.units[0].normalizedOwnerPhone).toBe('+201033334444')
     expect(result.state.units[0].unitCode).toBe('ZE3BR')
     expect(result.state.units[0].remainingPayment).toBe(4_800_000)
+    expect(result.state.units[0].transferFees).toBe(150_000)
+    expect(result.state.units[0].maintenancePaid).toBe(true)
+    expect(result.state.units[0].maintenanceCost).toBe(40_000)
+    expect(result.state.units[0].maintenanceDueDate).toBe('2029-01-15')
     expect(result.state.units[0].installmentAmount).toBe(1_200_000)
     expect(result.state.auditLogs.at(0)?.actionType).toBe('Unit created')
     expect(result.state.notifications.at(0)?.title).toBe('New unit uploaded')
@@ -304,6 +316,10 @@ describe('Leadra product workflows', () => {
     const result = updateUnitWorkflow(state(), sales, unit.id, editInput(unit, {
       bua: 180,
       totalAmount: 5_500_000,
+      transferFees: 175_000,
+      maintenancePaid: true,
+      maintenanceCost: 25_000,
+      maintenanceDueDate: '2028-10-01',
       originalOwnerName: 'Blocked Sales Owner Edit',
       originalOwnerPhone: '0501234568',
       salesNotes: 'Updated from edit mode.',
@@ -315,6 +331,10 @@ describe('Leadra product workflows', () => {
       bua: 180,
       totalAmount: 5_500_000,
       remainingPayment: unit.remainingPayment,
+      transferFees: 175_000,
+      maintenancePaid: true,
+      maintenanceCost: 25_000,
+      maintenanceDueDate: '2028-10-01',
       originalOwnerName: unit.originalOwnerName,
       originalOwnerPhone: unit.originalOwnerPhone,
       salesNotes: 'Updated from edit mode.',
@@ -337,11 +357,17 @@ describe('Leadra product workflows', () => {
     const insideTeam = updateUnitWorkflow(state(), { ...manager, teamId: teamUnit.teamId }, teamUnit.id, editInput(teamUnit, {
       bua: teamUnit.bua + 10,
       totalAmount: teamUnit.totalAmount + 500_000,
+      transferFees: 90_000,
+      maintenancePaid: true,
+      maintenanceCost: 10_000,
+      maintenanceDueDate: '2028-11-01',
     }))
     expect(insideTeam.ok).toBe(true)
     const updated = insideTeam.state.units.find((item) => item.id === teamUnit.id)
     expect(updated?.bua).toBe(teamUnit.bua + 10)
     expect(updated?.totalAmount).toBe(teamUnit.totalAmount)
+    expect(updated?.transferFees ?? null).toBe(teamUnit.transferFees ?? null)
+    expect(updated?.maintenancePaid ?? false).toBe(teamUnit.maintenancePaid ?? false)
   })
 
   it('lets admins edit owner fields with validation and duplicate-phone protection', () => {

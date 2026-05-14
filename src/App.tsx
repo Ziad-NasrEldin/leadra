@@ -559,6 +559,7 @@ function LeadraApp() {
     const rawOwnerPhone = String(formData.get('ownerPhone'))
     const selectedCountryCode = String(formData.get('countryCode') ?? '+20')
     const ownerPhoneValidation = validateOwnerPhoneForCountry(rawOwnerPhone, selectedCountryCode, locale)
+    const maintenancePaid = formData.get('maintenancePaid') === 'on'
 
     if (!ownerPhoneValidation.ok) {
       setFlash(
@@ -595,6 +596,10 @@ function LeadraApp() {
       paymentMethod,
       totalAmount: Number(formData.get('totalAmount')),
       downPayment: paymentMethod === 'installment' ? Number(formData.get('downPayment')) : null,
+      transferFees: parseOptionalFormNumber(formData, 'transferFees'),
+      maintenancePaid,
+      maintenanceCost: maintenancePaid ? parseOptionalFormNumber(formData, 'maintenanceCost') : null,
+      maintenanceDueDate: maintenancePaid ? parseOptionalFormDate(formData, 'maintenanceDueDate') : null,
       installmentType: paymentMethod === 'installment' ? String(formData.get('installmentType')) as InstallmentType : null,
       installmentYears: paymentMethod === 'installment' && String(formData.get('installmentType')) !== 'custom' ? Number(formData.get('installmentYears')) : null,
       deliveryExpectancy: {
@@ -654,6 +659,7 @@ function LeadraApp() {
     const destination = activeLookupValues.find((item) => item.id === destinationId)
     const developer = activeLookupValues.find((item) => item.id === developerId)
     const viewLookup = activeLookupValues.find((item) => item.id === viewId)
+    const maintenancePaid = formData.get('maintenancePaid') === 'on'
     const input: UnitEditInput = {
       developerId,
       developerName: developer?.label ?? unit.developerName,
@@ -684,6 +690,10 @@ function LeadraApp() {
       originalOwnerPhone: String(formData.get('ownerPhone') ?? unit.originalOwnerPhone ?? ''),
       salesNotes: String(formData.get('salesNotes') ?? unit.salesNotes),
       totalAmount: Number(formData.get('totalAmount')),
+      transferFees: parseOptionalFormNumber(formData, 'transferFees'),
+      maintenancePaid,
+      maintenanceCost: maintenancePaid ? parseOptionalFormNumber(formData, 'maintenanceCost') : null,
+      maintenanceDueDate: maintenancePaid ? parseOptionalFormDate(formData, 'maintenanceDueDate') : null,
       commissionPercentage: Number(formData.get('commissionPercentage')),
     }
     const result = updateUnitWorkflow(appState, user, unit.id, input)
@@ -2491,6 +2501,18 @@ function parseOptionalNumber(value: string): number | undefined {
   return Number.isFinite(parsed) ? parsed : undefined
 }
 
+function parseOptionalFormNumber(formData: FormData, name: string): number | null {
+  const value = formData.get(name)
+  if (typeof value !== 'string' || value.trim() === '') return null
+  const parsed = Number(value)
+  return Number.isFinite(parsed) ? parsed : null
+}
+
+function parseOptionalFormDate(formData: FormData, name: string): string | null {
+  const value = formData.get(name)
+  return typeof value === 'string' && value.trim() !== '' ? value : null
+}
+
 function countActiveUnitFilters(filters: UnitFilters): number {
   return Object.values(filters).filter((value) => value !== undefined && value !== '' && value !== 'all').length
 }
@@ -2609,6 +2631,7 @@ function CreateUnitPage({
   const [downPayment, setDownPayment] = useState(900_000)
   const [installmentType, setInstallmentType] = useState<InstallmentType>('quarterly')
   const [installmentYears, setInstallmentYears] = useState(5)
+  const [maintenancePaid, setMaintenancePaid] = useState(false)
   const [ownerCountryCode, setOwnerCountryCode] = useState('+20')
   const [ownerPhone, setOwnerPhone] = useState('01012345678')
   const [selectedUnitType, setSelectedUnitType] = useState('Apartment')
@@ -2769,6 +2792,31 @@ function CreateUnitPage({
             <RequiredLabel label={t('create.totalAmount')} required />
             <input name="totalAmount" type="number" min={0} required value={totalAmount} onChange={(event) => setTotalAmount(Number(event.target.value))} />
           </label>
+          <label>
+            {t('create.transferFees')}
+            <input name="transferFees" type="number" min={0} step="0.01" />
+          </label>
+          <label className="toggle-line">
+            <input
+              name="maintenancePaid"
+              type="checkbox"
+              checked={maintenancePaid}
+              onChange={(event) => setMaintenancePaid(event.target.checked)}
+            />{' '}
+            {t('create.maintenancePaid')}
+          </label>
+          {maintenancePaid && (
+            <>
+              <label>
+                <RequiredLabel label={t('create.maintenanceCost')} required />
+                <input name="maintenanceCost" type="number" min={0} step="0.01" required />
+              </label>
+              <label>
+                <RequiredLabel label={t('create.maintenanceDueDate')} required />
+                <input name="maintenanceDueDate" type="date" required />
+              </label>
+            </>
+          )}
           {paymentMethod === 'installment' && (
             <>
               <label>
@@ -3127,6 +3175,7 @@ function UnitDetailsEditForm({
   const [floor, setFloor] = useState(unit.floor || 'Ground')
   const [ownerCountryCode, setOwnerCountryCode] = useState(unit.countryCode ?? '+20')
   const [ownerPhone, setOwnerPhone] = useState(unit.originalOwnerPhone ?? '')
+  const [maintenancePaid, setMaintenancePaid] = useState(unit.maintenancePaid ?? false)
   const areaFields = getApplicableUnitAreaFields(unitType, floor)
   const ownerPhoneCountryOptions = getOwnerPhoneCountryOptions(locale)
   const selectedOwnerPhoneCountry = getOwnerPhoneCountryMeta(ownerCountryCode, locale)
@@ -3206,6 +3255,32 @@ function UnitDetailsEditForm({
             <RequiredLabel label={t('create.totalAmount')} required />
             <input name="totalAmount" type="number" min={0} defaultValue={unit.totalAmount} disabled={!canEditPricing || saving} required={canEditPricing} />
           </label>
+          <label>
+            {t('create.transferFees')}
+            <input name="transferFees" type="number" min={0} step="0.01" defaultValue={unit.transferFees ?? ''} disabled={!canEditPricing || saving} />
+          </label>
+          <label className="toggle-line">
+            <input
+              name="maintenancePaid"
+              type="checkbox"
+              checked={maintenancePaid}
+              disabled={!canEditPricing || saving}
+              onChange={(event) => setMaintenancePaid(event.target.checked)}
+            />{' '}
+            {t('create.maintenancePaid')}
+          </label>
+          {maintenancePaid && (
+            <>
+              <label>
+                <RequiredLabel label={t('create.maintenanceCost')} required={canEditPricing} />
+                <input name="maintenanceCost" type="number" min={0} step="0.01" defaultValue={unit.maintenanceCost ?? ''} disabled={!canEditPricing || saving} required={canEditPricing} />
+              </label>
+              <label>
+                <RequiredLabel label={t('create.maintenanceDueDate')} required={canEditPricing} />
+                <input name="maintenanceDueDate" type="date" defaultValue={unit.maintenanceDueDate ?? ''} disabled={!canEditPricing || saving} required={canEditPricing} />
+              </label>
+            </>
+          )}
           <ReadOnlyField label={t('create.downPayment')} value={formatCurrency(unit.downPayment, locale)} />
           <ReadOnlyField label={t('details.remainingPayment')} value={formatCurrency(unit.remainingPayment, locale)} />
           <ReadOnlyField label={t('details.installmentAmount')} value={formatCurrency(unit.installmentAmount, locale)} />
@@ -3358,10 +3433,22 @@ function UnitDetailsDeepSections({
     [t('details.totalAmount'), formatCurrency(unit.totalAmount, locale)],
     [t('create.downPayment'), formatCurrency(unit.downPayment, locale)],
     [t('details.remainingPayment'), formatCurrency(unit.remainingPayment, locale)],
+    [t('details.maintenancePaid'), unit.maintenancePaid ? t('common.yes') : t('common.no')],
     [t('details.commission'), `${formatCurrency(unit.commissionAmount, locale)} (${unit.commissionPercentage}%)`],
     [t('details.installmentAmount'), formatCurrency(unit.installmentAmount, locale)],
     [t('details.installmentYears'), unit.installmentYears ? formatCount(locale, unit.installmentYears) : t('common.notSet')],
   ]
+  if (unit.transferFees != null && unit.transferFees > 0) {
+    pricingRows.splice(4, 0, [t('details.transferFees'), formatCurrency(unit.transferFees, locale)])
+  }
+  if (unit.maintenancePaid) {
+    pricingRows.splice(
+      pricingRows.findIndex(([label]) => label === t('details.commission')),
+      0,
+      [t('details.maintenanceCost'), formatCurrency(unit.maintenanceCost ?? null, locale)],
+      [t('details.maintenanceDueDate'), unit.maintenanceDueDate ?? t('common.notSet')],
+    )
+  }
   const ownerRows: [string, string | number | null][] = [
     [t('details.ownerName'), unit.originalOwnerName ?? t('common.notSet')],
     [t('details.ownerPhone'), unit.originalOwnerPhone ?? t('common.notSet')],

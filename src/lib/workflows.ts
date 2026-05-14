@@ -264,6 +264,15 @@ export function createUnitWorkflow(
       return { ok: false, state, error: 'Installment years are required for automatic installment calculations.', errorKey: null, errorParams: null }
     }
   }
+  if ((input.transferFees ?? 0) < 0) {
+    return { ok: false, state, error: 'Transfer fees cannot be negative.', errorKey: null, errorParams: null }
+  }
+  if ((input.maintenanceCost ?? 0) < 0) {
+    return { ok: false, state, error: 'Maintenance cost cannot be negative.', errorKey: null, errorParams: null }
+  }
+  if (input.maintenancePaid && (input.maintenanceCost == null || !input.maintenanceDueDate)) {
+    return { ok: false, state, error: 'Maintenance cost and due date are required when maintenance is paid.', errorKey: null, errorParams: null }
+  }
   const nextId = state.units.reduce((highest, unit) => Math.max(highest, unit.id), 0) + 1
   const payment = calculatePaymentSummary({
     paymentMethod: input.paymentMethod,
@@ -301,6 +310,10 @@ export function createUnitWorkflow(
     totalAmount: input.totalAmount,
     downPayment: input.paymentMethod === 'installment' ? input.downPayment ?? 0 : null,
     remainingPayment: payment.remainingPayment,
+    transferFees: input.transferFees ?? null,
+    maintenancePaid: input.maintenancePaid ?? false,
+    maintenanceCost: input.maintenancePaid ? input.maintenanceCost ?? null : null,
+    maintenanceDueDate: input.maintenancePaid ? input.maintenanceDueDate ?? null : null,
     commissionPercentage: state.settings.commissionPercentage,
     commissionAmount: payment.commissionAmount,
     installmentType: input.paymentMethod === 'installment' ? input.installmentType ?? 'custom' : null,
@@ -522,6 +535,22 @@ export function updateUnitWorkflow(
 
   const outdoorFields = canEditNonOwner ? normalizeUnitOutdoorFields(input) : unit
   const nextTotalAmount = canEditPricing ? input.totalAmount : unit.totalAmount
+  const nextMaintenancePaid = canEditPricing ? input.maintenancePaid ?? false : unit.maintenancePaid ?? false
+  if (canEditPricing && (input.transferFees ?? 0) < 0) {
+    return { ok: false, state, error: 'Transfer fees cannot be negative.', errorKey: null, errorParams: null }
+  }
+  if (canEditPricing && (input.maintenanceCost ?? 0) < 0) {
+    return { ok: false, state, error: 'Maintenance cost cannot be negative.', errorKey: null, errorParams: null }
+  }
+  if (canEditPricing && nextMaintenancePaid && (input.maintenanceCost == null || !input.maintenanceDueDate)) {
+    return { ok: false, state, error: 'Maintenance cost and due date are required when maintenance is paid.', errorKey: null, errorParams: null }
+  }
+  let nextMaintenanceCost: number | null = null
+  let nextMaintenanceDueDate: string | null = null
+  if (nextMaintenancePaid) {
+    nextMaintenanceCost = canEditPricing ? input.maintenanceCost ?? null : unit.maintenanceCost ?? null
+    nextMaintenanceDueDate = canEditPricing ? input.maintenanceDueDate ?? null : unit.maintenanceDueDate ?? null
+  }
   const nextCommissionPercentage = canEditCommission ? input.commissionPercentage : unit.commissionPercentage
   const installmentAmount =
     unit.paymentMethod === 'installment' && unit.installmentType !== 'custom' && unit.installmentYears
@@ -561,6 +590,10 @@ export function updateUnitWorkflow(
     salesNotes: canEditNonOwner ? input.salesNotes : unit.salesNotes,
     totalAmount: nextTotalAmount,
     remainingPayment: unit.remainingPayment,
+    transferFees: canEditPricing ? input.transferFees ?? null : unit.transferFees ?? null,
+    maintenancePaid: nextMaintenancePaid,
+    maintenanceCost: nextMaintenanceCost,
+    maintenanceDueDate: nextMaintenanceDueDate,
     commissionPercentage: nextCommissionPercentage,
     commissionAmount: Math.round((nextTotalAmount * nextCommissionPercentage) / 100),
     installmentAmount,
@@ -969,6 +1002,10 @@ const editableAuditFields = [
   'deliveryExpectancy',
   'salesNotes',
   'totalAmount',
+  'transferFees',
+  'maintenancePaid',
+  'maintenanceCost',
+  'maintenanceDueDate',
   'commissionPercentage',
   'originalOwnerName',
   'countryCode',

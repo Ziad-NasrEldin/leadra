@@ -38,6 +38,10 @@ const input: CreateUnitInput = {
   paymentMethod: 'installment',
   totalAmount: 5_000_000,
   downPayment: 1_000_000,
+  transferFees: 125_000,
+  maintenancePaid: true,
+  maintenanceCost: 45_000,
+  maintenanceDueDate: '2028-03-01',
   installmentType: 'quarterly',
   installmentYears: 5,
   deliveryExpectancy: { mode: 'month_year', month: 3, year: 2028 },
@@ -75,6 +79,10 @@ const editInput: UnitEditInput = {
   originalOwnerPhone: '0501234568',
   salesNotes: 'Updated notes.',
   totalAmount: 6_500_000,
+  transferFees: null,
+  maintenancePaid: false,
+  maintenanceCost: null,
+  maintenanceDueDate: null,
   commissionPercentage: 2,
 }
 
@@ -88,6 +96,10 @@ describe('Supabase mappers', () => {
       destination_id: 'dest-1',
       payment_method: 'installment',
       down_payment: 1_000_000,
+      transfer_fees: 125_000,
+      maintenance_paid: true,
+      maintenance_cost: 45_000,
+      maintenance_due_date: '2028-03-01',
       installment_type: 'quarterly',
       installment_years: 5,
       country_code: '+20',
@@ -126,6 +138,10 @@ describe('Supabase mappers', () => {
       country_code: '+971',
       original_owner_phone: '0501234568',
       total_amount: 6_500_000,
+      transfer_fees: null,
+      maintenance_paid: false,
+      maintenance_cost: null,
+      maintenance_due_date: null,
       commission_percentage: 2,
     })
     expect(payload).not.toHaveProperty('remaining_payment')
@@ -146,6 +162,10 @@ describe('Supabase mappers', () => {
     expect(payload).not.toHaveProperty('country_code')
     expect(payload).not.toHaveProperty('original_owner_phone')
     expect(payload).not.toHaveProperty('total_amount')
+    expect(payload).not.toHaveProperty('transfer_fees')
+    expect(payload).not.toHaveProperty('maintenance_paid')
+    expect(payload).not.toHaveProperty('maintenance_cost')
+    expect(payload).not.toHaveProperty('maintenance_due_date')
     expect(payload).not.toHaveProperty('commission_percentage')
     expect(payload).toMatchObject({ bua: 180, sales_notes: 'Updated notes.' })
   })
@@ -178,6 +198,10 @@ describe('Supabase mappers', () => {
       total_amount: 5_000_000,
       down_payment: null,
       remaining_payment: null,
+      transfer_fees: 150_000,
+      maintenance_paid: true,
+      maintenance_cost: 55_000,
+      maintenance_due_date: '2028-06-15',
       commission_percentage: 1.5,
       commission_amount: 75_000,
       installment_type: null,
@@ -204,6 +228,10 @@ describe('Supabase mappers', () => {
 
     expect(toUnitViewModel(row).projectName).toBe('New Cairo Estates')
     expect(toUnitViewModel(row).deliveryExpectancy).toEqual({ mode: 'year', year: 2028 })
+    expect(toUnitViewModel(row).transferFees).toBe(150_000)
+    expect(toUnitViewModel(row).maintenancePaid).toBe(true)
+    expect(toUnitViewModel(row).maintenanceCost).toBe(55_000)
+    expect(toUnitViewModel(row).maintenanceDueDate).toBe('2028-06-15')
     expect(toUnitViewModel(row).teamId).toBe('')
     expect(toUnitViewModel(row).branchId).toBe('')
   })

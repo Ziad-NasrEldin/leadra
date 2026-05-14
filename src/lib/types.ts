@@ -114,6 +114,10 @@ export interface LeadraUnit {
   totalAmount: number
   downPayment: number | null
   remainingPayment: number | null
+  transferFees?: number | null
+  maintenancePaid?: boolean
+  maintenanceCost?: number | null
+  maintenanceDueDate?: string | null
   commissionPercentage: number
   commissionAmount: number
   installmentType: InstallmentType | null
@@ -436,6 +440,10 @@ export interface CreateUnitInput {
   paymentMethod: PaymentMethod
   totalAmount: number
   downPayment?: number | null
+  transferFees?: number | null
+  maintenancePaid?: boolean
+  maintenanceCost?: number | null
+  maintenanceDueDate?: string | null
   installmentType?: InstallmentType | null
   installmentYears?: number | null
   deliveryExpectancy: DeliveryExpectancy
@@ -473,6 +481,10 @@ export interface UnitEditInput {
   originalOwnerPhone: string
   salesNotes: string
   totalAmount: number
+  transferFees?: number | null
+  maintenancePaid?: boolean
+  maintenanceCost?: number | null
+  maintenanceDueDate?: string | null
   commissionPercentage: number
 }
 
