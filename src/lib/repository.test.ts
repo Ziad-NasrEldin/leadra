@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { LeadraRepository } from './repository'
-import type { LeadraUser, UnitEditInput } from './types'
+import type { CreateUnitInput, LeadraUser, UnitEditInput } from './types'
 
 function salesUser(overrides: Partial<LeadraUser> = {}): LeadraUser {
   return {
@@ -18,6 +18,121 @@ function salesUser(overrides: Partial<LeadraUser> = {}): LeadraUser {
 }
 
 describe('LeadraRepository', () => {
+  it('creates units without sending a display code and uses the database-generated PRD code', async () => {
+    const inserts: unknown[] = []
+    const input: CreateUnitInput = {
+      developerId: 'dev-1',
+      developerName: 'Palm Hills',
+      projectId: 'project-1',
+      projectName: 'Mountain View',
+      destinationId: 'dest-1',
+      destinationName: 'New Cairo',
+      unitType: 'Apartment',
+      floor: '3rd',
+      bua: 188,
+      roofGardenArea: null,
+      gardenArea: null,
+      terraceArea: null,
+      viewId: 'view-1',
+      viewName: 'Garden',
+      bedrooms: 3,
+      bathrooms: 2,
+      elevator: true,
+      landArea: null,
+      furnished: false,
+      finish: 'Fully Finished',
+      paymentMethod: 'cash',
+      totalAmount: 5_500_000,
+      downPayment: null,
+      installmentType: null,
+      installmentYears: null,
+      deliveryExpectancy: { mode: 'year', year: 2029 },
+      originalOwnerName: 'Owner',
+      countryCode: '+20',
+      originalOwnerPhone: '01033334444',
+      salesNotes: 'Updated notes.',
+      media: [],
+    }
+    const client = {
+      from(table: string) {
+        expect(table).toBe('units')
+        return {
+          insert(payload: unknown) {
+            inserts.push(payload)
+            return {
+              select() {
+                return {
+                  single() {
+                    return Promise.resolve({
+                      error: null,
+                      data: {
+                        id: 105,
+                        unit_code: 'MV3BR',
+                        developer_id: 'dev-1',
+                        developer: { label: 'Palm Hills' },
+                        project_id: 'project-1',
+                        project: { label: 'Mountain View' },
+                        destination_id: 'dest-1',
+                        destination: { label: 'New Cairo' },
+                        unit_type: 'Apartment',
+                        floor: '3rd',
+                        bua: 188,
+                        roof_garden_area: null,
+                        garden_area: null,
+                        terrace_area: null,
+                        view_id: 'view-1',
+                        view: { label: 'Garden' },
+                        bedrooms: 3,
+                        bathrooms: 2,
+                        elevator: true,
+                        land_area: null,
+                        furnished: false,
+                        finish: 'Fully Finished',
+                        payment_method: 'cash',
+                        total_amount: 5_500_000,
+                        down_payment: null,
+                        remaining_payment: null,
+                        commission_percentage: 1.5,
+                        commission_amount: 82_500,
+                        installment_type: null,
+                        installment_years: null,
+                        installment_amount: null,
+                        delivery_month: null,
+                        delivery_year: 2029,
+                        original_owner_name: 'Owner',
+                        country_code: '+20',
+                        original_owner_phone: '01033334444',
+                        normalized_owner_phone: '+201033334444',
+                        sales_notes: 'Updated notes.',
+                        status: 'available',
+                        archived: false,
+                        created_by: 'sales-replacement',
+                        creator: { full_name: 'Replacement Sales' },
+                        team_id: 'team-b',
+                        branch_id: 'branch-b',
+                        created_at: '2026-05-04T00:00:00.000Z',
+                        updated_at: '2026-05-04T01:00:00.000Z',
+                        unit_media: [],
+                        unit_notes: [],
+                      },
+                    })
+                  },
+                }
+              },
+            }
+          },
+        }
+      },
+    }
+
+    const result = await new LeadraRepository(client as never).createUnit(salesUser(), input)
+
+    expect(inserts[0]).not.toHaveProperty('unit_code')
+    expect(result.unitCode).toBe('MV3BR')
+    expect(result.unitCode).not.toContain('Ba')
+    expect(result.unitCode).not.toContain(String(result.id))
+  })
+
   it('persists unit detail updates through the protected update payload', async () => {
     const updates: unknown[] = []
     const input: UnitEditInput = {

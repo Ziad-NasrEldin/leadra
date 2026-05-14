@@ -80,7 +80,9 @@ const editInput: UnitEditInput = {
 
 describe('Supabase mappers', () => {
   it('creates a snake_case unit insert payload that relies on database calculations', () => {
-    expect(toUnitInsertPayload(input, actor)).toMatchObject({
+    const payload = toUnitInsertPayload(input, actor)
+
+    expect(payload).toMatchObject({
       developer_id: 'dev-1',
       project_id: 'project-1',
       destination_id: 'dest-1',
@@ -96,6 +98,7 @@ describe('Supabase mappers', () => {
       team_id: 'team-1',
       branch_id: 'branch-1',
     })
+    expect(payload).not.toHaveProperty('unit_code')
   })
 
   it('stores null team and branch IDs for unassigned sales representatives', () => {
