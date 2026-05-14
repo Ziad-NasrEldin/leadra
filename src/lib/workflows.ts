@@ -9,6 +9,7 @@ import {
   canEditUnitPricing,
   canViewUnit,
   generateUnitCode,
+  normalizeInstallmentMonth,
   normalizeUnitOutdoorFields,
   normalizeOwnerPhone,
   validateOwnerPhoneForCountry,
@@ -23,6 +24,7 @@ import type {
   AnalyticsEventType,
   CreateUnitInput,
   CreateUserInput,
+  InstallmentType,
   LeadraUnit,
   LeadraUser,
   NotificationItem,
@@ -260,9 +262,16 @@ export function createUnitWorkflow(
     if ((input.downPayment ?? 0) > input.totalAmount) {
       return { ok: false, state, error: 'Down payment cannot exceed total amount.', errorKey: null, errorParams: null }
     }
-    if ((input.installmentType ?? 'custom') !== 'custom' && (!input.installmentYears || input.installmentYears < 1)) {
-      return { ok: false, state, error: 'Installment years are required for automatic installment calculations.', errorKey: null, errorParams: null }
-    }
+  }
+  const installmentFields = normalizeInstallmentFields({
+    paymentMethod: input.paymentMethod,
+    installmentType: input.installmentType,
+    installmentStartMonth: input.installmentStartMonth,
+    installmentEndMonth: input.installmentEndMonth,
+    customInstallmentText: input.customInstallmentText,
+  })
+  if (!installmentFields.ok) {
+    return { ok: false, state, error: installmentFields.error, errorKey: null, errorParams: null }
   }
   if ((input.transferFees ?? 0) < 0) {
     return { ok: false, state, error: 'Transfer fees cannot be negative.', errorKey: null, errorParams: null }
@@ -278,8 +287,10 @@ export function createUnitWorkflow(
     paymentMethod: input.paymentMethod,
     totalAmount: input.totalAmount,
     downPayment: input.downPayment,
-    installmentType: input.installmentType,
-    installmentYears: input.installmentYears,
+    installmentType: installmentFields.fields.installmentType,
+    installmentYears: installmentFields.fields.installmentYears,
+    installmentStartMonth: installmentFields.fields.installmentStartMonth,
+    installmentEndMonth: installmentFields.fields.installmentEndMonth,
     commissionPercentage: state.settings.commissionPercentage,
   })
   const outdoorFields = normalizeUnitOutdoorFields(input)
@@ -316,8 +327,11 @@ export function createUnitWorkflow(
     maintenanceDueDate: input.maintenancePaid ? input.maintenanceDueDate ?? null : null,
     commissionPercentage: state.settings.commissionPercentage,
     commissionAmount: payment.commissionAmount,
-    installmentType: input.paymentMethod === 'installment' ? input.installmentType ?? 'custom' : null,
-    installmentYears: input.paymentMethod === 'installment' ? input.installmentYears ?? null : null,
+    installmentType: installmentFields.fields.installmentType,
+    installmentYears: installmentFields.fields.installmentYears,
+    installmentStartMonth: installmentFields.fields.installmentStartMonth,
+    installmentEndMonth: installmentFields.fields.installmentEndMonth,
+    customInstallmentText: installmentFields.fields.customInstallmentText,
     installmentAmount: payment.installmentAmount,
     deliveryExpectancy: input.deliveryExpectancy,
     originalOwnerName: input.originalOwnerName,
@@ -551,18 +565,24 @@ export function updateUnitWorkflow(
     nextMaintenanceCost = canEditPricing ? input.maintenanceCost ?? null : unit.maintenanceCost ?? null
     nextMaintenanceDueDate = canEditPricing ? input.maintenanceDueDate ?? null : unit.maintenanceDueDate ?? null
   }
+  const nextInstallmentFields = resolveUnitEditInstallmentFields(unit, input, canEditPricing)
+  if (!nextInstallmentFields.ok) {
+    return { ok: false, state, error: nextInstallmentFields.error, errorKey: null, errorParams: null }
+  }
   const nextCommissionPercentage = canEditCommission ? input.commissionPercentage : unit.commissionPercentage
   const installmentAmount =
-    unit.paymentMethod === 'installment' && unit.installmentType !== 'custom' && unit.installmentYears
+    unit.paymentMethod === 'installment' && nextInstallmentFields.fields.installmentType !== 'custom'
       ? calculatePaymentSummary({
           paymentMethod: unit.paymentMethod,
           totalAmount: (unit.remainingPayment ?? 0) + (unit.downPayment ?? 0),
           downPayment: unit.downPayment,
-          installmentType: unit.installmentType,
-          installmentYears: unit.installmentYears,
+          installmentType: nextInstallmentFields.fields.installmentType,
+          installmentYears: nextInstallmentFields.fields.installmentYears,
+          installmentStartMonth: nextInstallmentFields.fields.installmentStartMonth,
+          installmentEndMonth: nextInstallmentFields.fields.installmentEndMonth,
           commissionPercentage: nextCommissionPercentage,
         }).installmentAmount
-      : unit.installmentAmount
+      : null
 
   const updatedUnit: LeadraUnit = {
     ...unit,
@@ -596,6 +616,11 @@ export function updateUnitWorkflow(
     maintenanceDueDate: nextMaintenanceDueDate,
     commissionPercentage: nextCommissionPercentage,
     commissionAmount: Math.round((nextTotalAmount * nextCommissionPercentage) / 100),
+    installmentType: nextInstallmentFields.fields.installmentType,
+    installmentYears: nextInstallmentFields.fields.installmentYears,
+    installmentStartMonth: nextInstallmentFields.fields.installmentStartMonth,
+    installmentEndMonth: nextInstallmentFields.fields.installmentEndMonth,
+    customInstallmentText: nextInstallmentFields.fields.customInstallmentText,
     installmentAmount,
     originalOwnerName: canEditOwner ? input.originalOwnerName : unit.originalOwnerName,
     countryCode: canEditOwner ? input.countryCode : unit.countryCode,
@@ -893,6 +918,129 @@ export function addAnalyticsEventWorkflow(
   })
 }
 
+type ResolvedInstallmentFields = {
+  installmentType: InstallmentType | null
+  installmentYears: number | null
+  installmentStartMonth: string | null
+  installmentEndMonth: string | null
+  customInstallmentText: string | null
+}
+
+type InstallmentFieldResult =
+  | { ok: true; fields: ResolvedInstallmentFields }
+  | { ok: false; error: string }
+
+function normalizeInstallmentFields(input: {
+  paymentMethod: LeadraUnit['paymentMethod']
+  installmentType?: InstallmentType | null
+  installmentYears?: number | null
+  installmentStartMonth?: string | null
+  installmentEndMonth?: string | null
+  customInstallmentText?: string | null
+  allowLegacyYears?: boolean
+}): InstallmentFieldResult {
+  if (input.paymentMethod === 'cash') {
+    return { ok: true, fields: emptyInstallmentFields() }
+  }
+
+  const installmentType = input.installmentType ?? 'custom'
+  if (installmentType === 'custom') {
+    const customInstallmentText = input.customInstallmentText?.trim() ?? ''
+    if (!customInstallmentText) {
+      return { ok: false, error: 'Custom installment text is required for custom installments.' }
+    }
+    return {
+      ok: true,
+      fields: {
+        installmentType,
+        installmentYears: null,
+        installmentStartMonth: null,
+        installmentEndMonth: null,
+        customInstallmentText,
+      },
+    }
+  }
+
+  const installmentStartMonth = normalizeInstallmentMonth(input.installmentStartMonth)
+  const installmentEndMonth = normalizeInstallmentMonth(input.installmentEndMonth)
+  if (!installmentStartMonth || !installmentEndMonth) {
+    if (input.allowLegacyYears && input.installmentYears && input.installmentYears > 0) {
+      return {
+        ok: true,
+        fields: {
+          installmentType,
+          installmentYears: input.installmentYears,
+          installmentStartMonth: null,
+          installmentEndMonth: null,
+          customInstallmentText: null,
+        },
+      }
+    }
+    return { ok: false, error: 'Installment start and end months are required for automatic installment calculations.' }
+  }
+  if (installmentStartMonth > installmentEndMonth) {
+    return { ok: false, error: 'Installment start month cannot be after the end month.' }
+  }
+
+  return {
+    ok: true,
+    fields: {
+      installmentType,
+      installmentYears: null,
+      installmentStartMonth,
+      installmentEndMonth,
+      customInstallmentText: null,
+    },
+  }
+}
+
+function resolveUnitEditInstallmentFields(
+  unit: LeadraUnit,
+  input: UnitEditInput,
+  canEditPricing: boolean,
+): InstallmentFieldResult {
+  if (!canEditPricing || !hasInstallmentEdit(input)) {
+    return { ok: true, fields: preservedInstallmentFields(unit) }
+  }
+
+  return normalizeInstallmentFields({
+    paymentMethod: unit.paymentMethod,
+    installmentType: input.installmentType ?? unit.installmentType,
+    installmentStartMonth: input.installmentStartMonth ?? unit.installmentStartMonth,
+    installmentEndMonth: input.installmentEndMonth ?? unit.installmentEndMonth,
+    customInstallmentText: input.customInstallmentText ?? unit.customInstallmentText,
+  })
+}
+
+function preservedInstallmentFields(unit: LeadraUnit): ResolvedInstallmentFields {
+  return {
+    installmentType: unit.installmentType,
+    installmentYears: unit.installmentYears,
+    installmentStartMonth: unit.installmentStartMonth ?? null,
+    installmentEndMonth: unit.installmentEndMonth ?? null,
+    customInstallmentText: unit.customInstallmentText ?? null,
+  }
+}
+
+function hasInstallmentEdit(input: UnitEditInput): boolean {
+  return (
+    input.installmentType !== undefined ||
+    input.installmentStartMonth !== undefined ||
+    input.installmentEndMonth !== undefined ||
+    input.customInstallmentText !== undefined
+  )
+}
+
+function emptyInstallmentFields(): ResolvedInstallmentFields {
+  return {
+    installmentType: null,
+    installmentYears: null,
+    installmentStartMonth: null,
+    installmentEndMonth: null,
+    customInstallmentText: null,
+  }
+}
+
 function withAudit(
   state: AppDataState,
   actor: LeadraUser,
@@ -1006,6 +1154,10 @@ const editableAuditFields = [
   'maintenancePaid',
   'maintenanceCost',
   'maintenanceDueDate',
+  'installmentType',
+  'installmentStartMonth',
+  'installmentEndMonth',
+  'customInstallmentText',
   'commissionPercentage',
   'originalOwnerName',
   'countryCode',

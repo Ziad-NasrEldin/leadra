@@ -10,7 +10,7 @@ import type {
   UnitStatus,
   UserRole,
 } from './types'
-import { normalizeUnitOutdoorFields } from './domain'
+import { normalizeInstallmentMonth, normalizeUnitOutdoorFields } from './domain'
 
 type JoinedLabel = { label?: string } | null
 type JoinedCreator = { full_name?: string } | null
@@ -50,6 +50,9 @@ export interface SupabaseUnitRow {
   commission_amount: number
   installment_type: InstallmentType | null
   installment_years: number | null
+  installment_start_month?: string | null
+  installment_end_month?: string | null
+  custom_installment_text?: string | null
   installment_amount: number | null
   delivery_month: number | null
   delivery_year: number
@@ -105,6 +108,9 @@ export interface SafeUnitRpcRow {
   commission_amount: number
   installment_type: InstallmentType | null
   installment_years: number | null
+  installment_start_month?: string | null
+  installment_end_month?: string | null
+  custom_installment_text?: string | null
   installment_amount: number | null
   delivery_month: number | null
   delivery_year: number
@@ -153,6 +159,7 @@ export interface SafeUnitRpcNoteRow {
 
 export function toUnitInsertPayload(input: CreateUnitInput, actor: LeadraUser) {
   const outdoorFields = normalizeUnitOutdoorFields(input)
+  const installmentType = input.paymentMethod === 'installment' ? input.installmentType ?? 'custom' : null
   return {
     developer_id: input.developerId,
     project_id: input.projectId,
@@ -177,8 +184,15 @@ export function toUnitInsertPayload(input: CreateUnitInput, actor: LeadraUser) {
     maintenance_paid: input.maintenancePaid ?? false,
     maintenance_cost: input.maintenancePaid ? input.maintenanceCost ?? null : null,
     maintenance_due_date: input.maintenancePaid ? input.maintenanceDueDate ?? null : null,
-    installment_type: input.paymentMethod === 'installment' ? input.installmentType ?? 'custom' : null,
-    installment_years: input.paymentMethod === 'installment' ? input.installmentYears ?? null : null,
+    installment_type: installmentType,
+    installment_years: null,
+    installment_start_month: installmentType && installmentType !== 'custom'
+      ? normalizeInstallmentMonth(input.installmentStartMonth)
+      : null,
+    installment_end_month: installmentType && installmentType !== 'custom'
+      ? normalizeInstallmentMonth(input.installmentEndMonth)
+      : null,
+    custom_installment_text: installmentType === 'custom' ? input.customInstallmentText?.trim() ?? null : null,
     delivery_month: input.deliveryExpectancy.mode === 'month_year' ? input.deliveryExpectancy.month ?? null : null,
     delivery_year: input.deliveryExpectancy.year,
     original_owner_name: input.originalOwnerName,
@@ -200,6 +214,10 @@ export function toUnitUpdatePayload(
   },
 ) {
   const outdoorFields = normalizeUnitOutdoorFields(input)
+  const installmentPatch =
+    permissions.canEditPricing && hasInstallmentPayload(input)
+      ? toInstallmentUpdatePayload(input)
+      : {}
   return {
     developer_id: input.developerId,
     project_id: input.projectId,
@@ -234,9 +252,34 @@ export function toUnitUpdatePayload(
           maintenance_paid: input.maintenancePaid ?? false,
           maintenance_cost: input.maintenancePaid ? input.maintenanceCost ?? null : null,
           maintenance_due_date: input.maintenancePaid ? input.maintenanceDueDate ?? null : null,
+          ...installmentPatch,
         }
       : {}),
     ...(permissions.canEditCommission ? { commission_percentage: input.commissionPercentage } : {}),
+  }
+}
+
+function hasInstallmentPayload(input: UnitEditInput): boolean {
+  return (
+    input.installmentType !== undefined ||
+    input.installmentStartMonth !== undefined ||
+    input.installmentEndMonth !== undefined ||
+    input.customInstallmentText !== undefined
+  )
+}
+
+function toInstallmentUpdatePayload(input: UnitEditInput) {
+  const installmentType = input.installmentType ?? 'custom'
+  return {
+    installment_type: installmentType,
+    installment_years: null,
+    installment_start_month: installmentType !== 'custom'
+      ? normalizeInstallmentMonth(input.installmentStartMonth)
+      : null,
+    installment_end_month: installmentType !== 'custom'
+      ? normalizeInstallmentMonth(input.installmentEndMonth)
+      : null,
+    custom_installment_text: installmentType === 'custom' ? input.customInstallmentText?.trim() ?? null : null,
   }
 }
 
@@ -284,6 +327,9 @@ export function toUnitViewModel(row: SupabaseUnitRow): LeadraUnit {
     commissionAmount: row.commission_amount,
     installmentType: row.installment_type,
     installmentYears: row.installment_years,
+    installmentStartMonth: row.installment_start_month ?? null,
+    installmentEndMonth: row.installment_end_month ?? null,
+    customInstallmentText: row.custom_installment_text ?? null,
     installmentAmount: row.installment_amount,
     deliveryExpectancy:
       row.delivery_month == null
@@ -351,6 +397,9 @@ export function toSafeUnitViewModel(row: SafeUnitRpcRow): LeadraUnit {
     commissionAmount: row.commission_amount,
     installmentType: row.installment_type,
     installmentYears: row.installment_years,
+    installmentStartMonth: row.installment_start_month ?? null,
+    installmentEndMonth: row.installment_end_month ?? null,
+    customInstallmentText: row.custom_installment_text ?? null,
     installmentAmount: row.installment_amount,
     deliveryExpectancy:
       row.delivery_month == null

@@ -62,6 +62,7 @@ import {
   formatDate,
   formatDateTime,
   formatShortDate,
+  getIntlLocale,
   getAccountStatusLabel,
   getPaymentMethodLabel,
   getRoleLabel,
@@ -560,6 +561,13 @@ function LeadraApp() {
     const selectedCountryCode = String(formData.get('countryCode') ?? '+20')
     const ownerPhoneValidation = validateOwnerPhoneForCountry(rawOwnerPhone, selectedCountryCode, locale)
     const maintenancePaid = formData.get('maintenancePaid') === 'on'
+    const installmentType = paymentMethod === 'installment' ? String(formData.get('installmentType')) as InstallmentType : null
+    const installmentStartMonth = paymentMethod === 'installment' && isAutomaticInstallmentType(installmentType)
+      ? parseOptionalFormMonthDate(formData, 'installmentStartMonth')
+      : null
+    const installmentEndMonth = paymentMethod === 'installment' && isAutomaticInstallmentType(installmentType)
+      ? parseOptionalFormMonthDate(formData, 'installmentEndMonth')
+      : null
 
     if (!ownerPhoneValidation.ok) {
       setFlash(
@@ -600,8 +608,11 @@ function LeadraApp() {
       maintenancePaid,
       maintenanceCost: maintenancePaid ? parseOptionalFormNumber(formData, 'maintenanceCost') : null,
       maintenanceDueDate: maintenancePaid ? parseOptionalFormDate(formData, 'maintenanceDueDate') : null,
-      installmentType: paymentMethod === 'installment' ? String(formData.get('installmentType')) as InstallmentType : null,
-      installmentYears: paymentMethod === 'installment' && String(formData.get('installmentType')) !== 'custom' ? Number(formData.get('installmentYears')) : null,
+      installmentType,
+      installmentStartMonth,
+      installmentEndMonth,
+      customInstallmentText: paymentMethod === 'installment' && installmentType === 'custom' ? parseOptionalFormText(formData, 'customInstallmentText') : null,
+      installmentYears: null,
       deliveryExpectancy: {
         mode: 'year',
         year: Number(formData.get('deliveryYear')),
@@ -660,6 +671,20 @@ function LeadraApp() {
     const developer = activeLookupValues.find((item) => item.id === developerId)
     const viewLookup = activeLookupValues.find((item) => item.id === viewId)
     const maintenancePaid = formData.get('maintenancePaid') === 'on'
+    const submittedInstallmentStartMonth = parseOptionalFormMonthDate(formData, 'installmentStartMonth')
+    const submittedInstallmentEndMonth = parseOptionalFormMonthDate(formData, 'installmentEndMonth')
+    const storedInstallmentStartMonth = getUnitInstallmentStartMonth(unit)
+    const storedInstallmentEndMonth = getUnitInstallmentEndMonth(unit)
+    const shouldSubmitInstallmentPeriod = unit.paymentMethod === 'installment' && isAutomaticInstallmentType(unit.installmentType) && (
+      Boolean(submittedInstallmentStartMonth || submittedInstallmentEndMonth) ||
+      Boolean(storedInstallmentStartMonth && storedInstallmentEndMonth)
+    )
+    const installmentStartMonth = shouldSubmitInstallmentPeriod
+      ? submittedInstallmentStartMonth ?? storedInstallmentStartMonth
+      : null
+    const installmentEndMonth = shouldSubmitInstallmentPeriod
+      ? submittedInstallmentEndMonth ?? storedInstallmentEndMonth
+      : null
     const input: UnitEditInput = {
       developerId,
       developerName: developer?.label ?? unit.developerName,
@@ -694,6 +719,19 @@ function LeadraApp() {
       maintenancePaid,
       maintenanceCost: maintenancePaid ? parseOptionalFormNumber(formData, 'maintenanceCost') : null,
       maintenanceDueDate: maintenancePaid ? parseOptionalFormDate(formData, 'maintenanceDueDate') : null,
+      ...(unit.paymentMethod === 'installment' && unit.installmentType === 'custom'
+        ? {
+            installmentType: unit.installmentType,
+            customInstallmentText: parseOptionalFormText(formData, 'customInstallmentText') ?? getUnitCustomInstallmentText(unit),
+          }
+        : {}),
+      ...(shouldSubmitInstallmentPeriod
+        ? {
+            installmentType: unit.installmentType,
+            installmentStartMonth,
+            installmentEndMonth,
+          }
+        : {}),
       commissionPercentage: Number(formData.get('commissionPercentage')),
     }
     const result = updateUnitWorkflow(appState, user, unit.id, input)
@@ -2513,6 +2551,93 @@ function parseOptionalFormDate(formData: FormData, name: string): string | null 
   return typeof value === 'string' && value.trim() !== '' ? value : null
 }
 
+function parseOptionalFormText(formData: FormData, name: string): string | null {
+  const value = formData.get(name)
+  if (typeof value !== 'string') return null
+  const trimmed = value.trim()
+  return trimmed === '' ? null : trimmed
+}
+
+function parseOptionalFormMonthDate(formData: FormData, name: string): string | null {
+  const value = parseOptionalFormText(formData, name)
+  if (!value) return null
+  return value.length === 7 ? `${value}-01` : value
+}
+
+function toMonthInputValue(value?: string | null): string {
+  if (!value) return ''
+  const match = /^(\d{4})-(\d{2})/.exec(value)
+  return match ? `${match[1]}-${match[2]}` : ''
+}
+
+function getOptionalUnitString(unit: LeadraUnit, name: 'installmentStartMonth' | 'installmentEndMonth' | 'customInstallmentText'): string | null {
+  const value = unit[name]
+  return typeof value === 'string' && value.trim() !== '' ? value : null
+}
+
+function getUnitInstallmentStartMonth(unit: LeadraUnit): string | null {
+  return getOptionalUnitString(unit, 'installmentStartMonth')
+}
+
+function getUnitInstallmentEndMonth(unit: LeadraUnit): string | null {
+  return getOptionalUnitString(unit, 'installmentEndMonth')
+}
+
+function getUnitCustomInstallmentText(unit: LeadraUnit): string | null {
+  return getOptionalUnitString(unit, 'customInstallmentText')
+}
+
+function isAutomaticInstallmentType(type: InstallmentType | null | undefined): type is Exclude<InstallmentType, 'custom'> {
+  return type === 'quarterly' || type === 'semi_annual' || type === 'annual'
+}
+
+function installmentFrequencyMonths(type: InstallmentType | null | undefined): number | null {
+  if (type === 'quarterly') return 3
+  if (type === 'semi_annual') return 6
+  if (type === 'annual') return 12
+  return null
+}
+
+function parseMonthValue(value?: string | null): { year: number; monthIndex: number } | null {
+  const monthValue = toMonthInputValue(value)
+  if (!monthValue) return null
+  const [yearText, monthText] = monthValue.split('-')
+  const year = Number(yearText)
+  const month = Number(monthText)
+  if (!Number.isInteger(year) || !Number.isInteger(month) || month < 1 || month > 12) return null
+  return { year, monthIndex: month - 1 }
+}
+
+function countInstallmentsBetweenMonths(type: InstallmentType | null | undefined, startMonth?: string | null, endMonth?: string | null): number | null {
+  const frequencyMonths = installmentFrequencyMonths(type)
+  const start = parseMonthValue(startMonth)
+  const end = parseMonthValue(endMonth)
+  if (!frequencyMonths || !start || !end) return null
+  const startIndex = start.year * 12 + start.monthIndex
+  const endIndex = end.year * 12 + end.monthIndex
+  if (endIndex < startIndex) return null
+  return Math.floor((endIndex - startIndex) / frequencyMonths) + 1
+}
+
+function calculateInstallmentAmountForPeriod(remainingPayment: number, type: InstallmentType | null | undefined, startMonth?: string | null, endMonth?: string | null): number | null {
+  const paymentCount = countInstallmentsBetweenMonths(type, startMonth, endMonth)
+  return paymentCount ? remainingPayment / paymentCount : null
+}
+
+function formatMonthYear(locale: LocaleCode, value?: string | null): string | null {
+  const parsed = parseMonthValue(value)
+  if (!parsed) return null
+  return new Intl.DateTimeFormat(getIntlLocale(locale), { month: 'long', year: 'numeric' }).format(new Date(parsed.year, parsed.monthIndex, 1))
+}
+
+function getInstallmentTypeLabel(type: InstallmentType | null | undefined, t: ReturnType<typeof useLocale>['t']): string {
+  if (type === 'quarterly') return t('create.quarterly')
+  if (type === 'semi_annual') return t('create.semiAnnual')
+  if (type === 'annual') return t('create.annual')
+  if (type === 'custom') return t('create.customInstallments')
+  return t('common.notSet')
+}
+
 function countActiveUnitFilters(filters: UnitFilters): number {
   return Object.values(filters).filter((value) => value !== undefined && value !== '' && value !== 'all').length
 }
@@ -2630,7 +2755,8 @@ function CreateUnitPage({
   const [totalAmount, setTotalAmount] = useState(4_500_000)
   const [downPayment, setDownPayment] = useState(900_000)
   const [installmentType, setInstallmentType] = useState<InstallmentType>('quarterly')
-  const [installmentYears, setInstallmentYears] = useState(5)
+  const [installmentStartMonth, setInstallmentStartMonth] = useState('2026-03')
+  const [installmentEndMonth, setInstallmentEndMonth] = useState('2030-03')
   const [maintenancePaid, setMaintenancePaid] = useState(false)
   const [ownerCountryCode, setOwnerCountryCode] = useState('+20')
   const [ownerPhone, setOwnerPhone] = useState('01012345678')
@@ -2640,10 +2766,9 @@ function CreateUnitPage({
   const mediaValidation = validateMediaUpload(selectedMedia)
   const totalMediaMb = selectedMedia.reduce((total, file) => total + file.sizeBytes, 0) / (1024 * 1024)
   const remainingPayment = Math.max(0, totalAmount - downPayment)
-  const paymentsPerYear = installmentType === 'quarterly' ? 4 : installmentType === 'semi_annual' ? 2 : installmentType === 'annual' ? 1 : null
   const calculatedInstallment =
-    paymentMethod === 'installment' && paymentsPerYear && installmentYears > 0
-      ? remainingPayment / (installmentYears * paymentsPerYear)
+    paymentMethod === 'installment' && isAutomaticInstallmentType(installmentType)
+      ? calculateInstallmentAmountForPeriod(remainingPayment, installmentType, installmentStartMonth, installmentEndMonth)
       : null
 
   const unitTypeOptions = PRD_UNIT_TYPES.map((unitType) => ({ value: unitType, label: unitType }))
@@ -2843,8 +2968,12 @@ function CreateUnitPage({
               {installmentType !== 'custom' ? (
                 <>
                   <label>
-                    <RequiredLabel label={t('create.installmentYears')} required />
-                    <input name="installmentYears" type="number" min={1} required value={installmentYears} onChange={(event) => setInstallmentYears(Number(event.target.value))} />
+                    <RequiredLabel label={t('create.installmentStartMonth')} required />
+                    <input name="installmentStartMonth" type="month" required value={installmentStartMonth} onChange={(event) => setInstallmentStartMonth(event.target.value)} />
+                  </label>
+                  <label>
+                    <RequiredLabel label={t('create.installmentEndMonth')} required />
+                    <input name="installmentEndMonth" type="month" min={installmentStartMonth} required value={installmentEndMonth} onChange={(event) => setInstallmentEndMonth(event.target.value)} />
                   </label>
                   <label>
                     {t('details.installmentAmount')}
@@ -2852,7 +2981,10 @@ function CreateUnitPage({
                   </label>
                 </>
               ) : (
-                <p className="media-empty-note wide-field">{t('details.customInstallmentMessage')}</p>
+                <label className="wide-field">
+                  <RequiredLabel label={t('create.customInstallmentText')} required />
+                  <textarea name="customInstallmentText" required dir="auto" />
+                </label>
               )}
             </>
           )}
@@ -3180,6 +3312,10 @@ function UnitDetailsEditForm({
   const ownerPhoneCountryOptions = getOwnerPhoneCountryOptions(locale)
   const selectedOwnerPhoneCountry = getOwnerPhoneCountryMeta(ownerCountryCode, locale)
   const deliveryYearOptions = Array.from({ length: 10 }, (_, index) => String(2026 + index))
+  const installmentStartMonth = getUnitInstallmentStartMonth(unit)
+  const installmentEndMonth = getUnitInstallmentEndMonth(unit)
+  const customInstallmentText = getUnitCustomInstallmentText(unit)
+  const hasStoredInstallmentPeriod = Boolean(installmentStartMonth && installmentEndMonth)
 
   return (
     <section className="content-card motion-stage details-edit-card" style={motionStyle(2, 70)} aria-labelledby="unit-edit-heading">
@@ -3283,7 +3419,32 @@ function UnitDetailsEditForm({
           )}
           <ReadOnlyField label={t('create.downPayment')} value={formatCurrency(unit.downPayment, locale)} />
           <ReadOnlyField label={t('details.remainingPayment')} value={formatCurrency(unit.remainingPayment, locale)} />
-          <ReadOnlyField label={t('details.installmentAmount')} value={formatCurrency(unit.installmentAmount, locale)} />
+          {unit.paymentMethod === 'installment' && (
+            <>
+              <ReadOnlyField label={t('details.installmentType')} value={getInstallmentTypeLabel(unit.installmentType, t)} />
+              {unit.installmentType === 'custom' ? (
+                <label className="wide-field">
+                  <RequiredLabel label={t('create.customInstallmentText')} required={canEditPricing} />
+                  <textarea name="customInstallmentText" defaultValue={customInstallmentText ?? ''} disabled={!canEditPricing || saving} required={canEditPricing} dir="auto" />
+                </label>
+              ) : (
+                <>
+                  <label>
+                    <RequiredLabel label={t('create.installmentStartMonth')} required={canEditPricing && hasStoredInstallmentPeriod} />
+                    <input name="installmentStartMonth" type="month" defaultValue={toMonthInputValue(installmentStartMonth)} disabled={!canEditPricing || saving} required={canEditPricing && hasStoredInstallmentPeriod} />
+                  </label>
+                  <label>
+                    <RequiredLabel label={t('create.installmentEndMonth')} required={canEditPricing && hasStoredInstallmentPeriod} />
+                    <input name="installmentEndMonth" type="month" defaultValue={toMonthInputValue(installmentEndMonth)} disabled={!canEditPricing || saving} required={canEditPricing && hasStoredInstallmentPeriod} />
+                  </label>
+                  {!hasStoredInstallmentPeriod && (
+                    <ReadOnlyField label={t('details.installmentYears')} value={unit.installmentYears ? formatCount(locale, unit.installmentYears) : t('common.notSet')} />
+                  )}
+                  <ReadOnlyField label={t('details.installmentAmount')} value={formatCurrency(unit.installmentAmount, locale)} />
+                </>
+              )}
+            </>
+          )}
           <label>
             <RequiredLabel label={t('details.commission')} required />
             <input name="commissionPercentage" type="number" min={0} step="0.01" defaultValue={unit.commissionPercentage} disabled={!canEditCommission || saving} required={canEditCommission} />
@@ -3393,6 +3554,10 @@ function UnitDetailsDeepSections({
   downloadingMediaId: string | null
 }) {
   const installmentSchedule = buildInstallmentSchedule(unit, locale)
+  const installmentStartMonth = getUnitInstallmentStartMonth(unit)
+  const installmentEndMonth = getUnitInstallmentEndMonth(unit)
+  const customInstallmentText = getUnitCustomInstallmentText(unit)
+  const hasInstallmentPeriod = Boolean(installmentStartMonth && installmentEndMonth)
   const scheduledInstallmentTotal = installmentSchedule.reduce((total, row) => total + row.amount, 0)
   const paidInstallmentTotal = Math.max(
     scheduledInstallmentTotal - (unit.remainingPayment ?? scheduledInstallmentTotal),
@@ -3435,8 +3600,6 @@ function UnitDetailsDeepSections({
     [t('details.remainingPayment'), formatCurrency(unit.remainingPayment, locale)],
     [t('details.maintenancePaid'), unit.maintenancePaid ? t('common.yes') : t('common.no')],
     [t('details.commission'), `${formatCurrency(unit.commissionAmount, locale)} (${unit.commissionPercentage}%)`],
-    [t('details.installmentAmount'), formatCurrency(unit.installmentAmount, locale)],
-    [t('details.installmentYears'), unit.installmentYears ? formatCount(locale, unit.installmentYears) : t('common.notSet')],
   ]
   if (unit.transferFees != null && unit.transferFees > 0) {
     pricingRows.splice(4, 0, [t('details.transferFees'), formatCurrency(unit.transferFees, locale)])
@@ -3448,6 +3611,22 @@ function UnitDetailsDeepSections({
       [t('details.maintenanceCost'), formatCurrency(unit.maintenanceCost ?? null, locale)],
       [t('details.maintenanceDueDate'), unit.maintenanceDueDate ?? t('common.notSet')],
     )
+  }
+  if (unit.paymentMethod === 'installment') {
+    pricingRows.push([t('details.installmentType'), getInstallmentTypeLabel(unit.installmentType, t)])
+    if (unit.installmentType === 'custom') {
+      pricingRows.push([t('details.customInstallmentText'), customInstallmentText ?? t('common.notSet')])
+    } else {
+      if (hasInstallmentPeriod) {
+        pricingRows.push(
+          [t('details.installmentStartMonth'), formatMonthYear(locale, installmentStartMonth)],
+          [t('details.installmentEndMonth'), formatMonthYear(locale, installmentEndMonth)],
+        )
+      } else {
+        pricingRows.push([t('details.installmentYears'), unit.installmentYears ? formatCount(locale, unit.installmentYears) : t('common.notSet')])
+      }
+      pricingRows.push([t('details.installmentAmount'), formatCurrency(unit.installmentAmount, locale)])
+    }
   }
   const ownerRows: [string, string | number | null][] = [
     [t('details.ownerName'), unit.originalOwnerName ?? t('common.notSet')],
@@ -3473,8 +3652,8 @@ function UnitDetailsDeepSections({
       <section className="content-card motion-stage details-installments-card" style={motionStyle(3, 100)}>
         <h2>{t('details.installmentsTable')}</h2>
         {unit.paymentMethod !== 'installment' && <EmptyState title={t('common.notSet')} body={t('payment.cash')} />}
-        {unit.paymentMethod === 'installment' && unit.installmentType === 'custom' && <p className="media-empty-note">{t('details.customInstallmentMessage')}</p>}
-        {installmentSchedule.length > 0 && (
+        {unit.paymentMethod === 'installment' && unit.installmentType === 'custom' && <p className="media-empty-note" dir="auto">{customInstallmentText ?? t('details.customInstallmentMessage')}</p>}
+        {unit.paymentMethod === 'installment' && unit.installmentType !== 'custom' && installmentSchedule.length > 0 && (
           <div className="installment-schedule" role="table" aria-label={t('details.installmentsTable')}>
             <div className="installment-summary" aria-live="polite">
               <span>Paid from timetable: {formatCurrency(paidInstallmentTotal, locale)}</span>

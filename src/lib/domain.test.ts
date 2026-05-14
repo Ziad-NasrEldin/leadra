@@ -13,6 +13,7 @@ import {
   canViewOwnerData,
   filterUnitsForUser,
   generateUnitCode,
+  getInstallmentScheduledDueMonths,
   searchUnits,
   summarizeDestinations,
   summarizeProjects,
@@ -249,12 +250,13 @@ describe('Leadra domain rules', () => {
         totalAmount: 5_000_000,
         downPayment: 1_000_000,
         installmentType: 'semi_annual',
-        installmentYears: 4,
+        installmentStartMonth: '2026-03-01',
+        installmentEndMonth: '2027-09-01',
       }),
     ).toMatchObject({
       remainingPayment: 4_000_000,
       commissionAmount: 75_000,
-      installmentAmount: 500_000,
+      installmentAmount: 1_000_000,
     })
 
     expect(
@@ -272,7 +274,22 @@ describe('Leadra domain rules', () => {
     const quarterlySchedule = buildInstallmentSchedule(baseUnit)
 
     expect(quarterlySchedule).toHaveLength(20)
-    expect(quarterlySchedule[0]).toMatchObject({ paymentNumber: 1, yearNumber: 1, periodLabel: 'Q1', amount: 200_000 })
+    expect(quarterlySchedule[0]).toMatchObject({ paymentNumber: 1, yearNumber: 1, dueMonth: null, periodLabel: 'Q1', amount: 200_000 })
+    expect(getInstallmentScheduledDueMonths('quarterly', '2026-03-01', '2026-12-01')).toEqual([
+      '2026-03-01',
+      '2026-06-01',
+      '2026-09-01',
+      '2026-12-01',
+    ])
+    expect(
+      buildInstallmentSchedule({
+        ...baseUnit,
+        installmentYears: null,
+        installmentStartMonth: '2026-03-01',
+        installmentEndMonth: '2026-12-01',
+        installmentAmount: 1_000_000,
+      }).map((row) => row.dueMonth),
+    ).toEqual(['2026-03-01', '2026-06-01', '2026-09-01', '2026-12-01'])
     expect(buildInstallmentSchedule({ ...baseUnit, installmentType: 'custom', installmentAmount: null })).toEqual([])
   })
 

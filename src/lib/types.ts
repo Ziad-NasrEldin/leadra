@@ -122,6 +122,9 @@ export interface LeadraUnit {
   commissionAmount: number
   installmentType: InstallmentType | null
   installmentYears: number | null
+  installmentStartMonth?: string | null
+  installmentEndMonth?: string | null
+  customInstallmentText?: string | null
   installmentAmount: number | null
   deliveryExpectancy: DeliveryExpectancy
   originalOwnerName: string | null
@@ -148,6 +151,9 @@ export interface PaymentInput {
   commissionPercentage?: number
   installmentType?: InstallmentType | null
   installmentYears?: number | null
+  installmentStartMonth?: string | null
+  installmentEndMonth?: string | null
+  customInstallmentText?: string | null
 }
 
 export interface PaymentSummary {
@@ -446,6 +452,9 @@ export interface CreateUnitInput {
   maintenanceDueDate?: string | null
   installmentType?: InstallmentType | null
   installmentYears?: number | null
+  installmentStartMonth?: string | null
+  installmentEndMonth?: string | null
+  customInstallmentText?: string | null
   deliveryExpectancy: DeliveryExpectancy
   originalOwnerName: string
   countryCode: string
@@ -485,6 +494,10 @@ export interface UnitEditInput {
   maintenancePaid?: boolean
   maintenanceCost?: number | null
   maintenanceDueDate?: string | null
+  installmentType?: InstallmentType | null
+  installmentStartMonth?: string | null
+  installmentEndMonth?: string | null
+  customInstallmentText?: string | null
   commissionPercentage: number
 }
 

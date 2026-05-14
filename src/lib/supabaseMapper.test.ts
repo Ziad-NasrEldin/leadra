@@ -44,6 +44,9 @@ const input: CreateUnitInput = {
   maintenanceDueDate: '2028-03-01',
   installmentType: 'quarterly',
   installmentYears: 5,
+  installmentStartMonth: '2026-03-01',
+  installmentEndMonth: '2030-03-01',
+  customInstallmentText: null,
   deliveryExpectancy: { mode: 'month_year', month: 3, year: 2028 },
   originalOwnerName: 'Owner',
   countryCode: '+20',
@@ -83,6 +86,8 @@ const editInput: UnitEditInput = {
   maintenancePaid: false,
   maintenanceCost: null,
   maintenanceDueDate: null,
+  installmentType: 'custom',
+  customInstallmentText: '10% on contract, balance by owner agreement.',
   commissionPercentage: 2,
 }
 
@@ -101,7 +106,10 @@ describe('Supabase mappers', () => {
       maintenance_cost: 45_000,
       maintenance_due_date: '2028-03-01',
       installment_type: 'quarterly',
-      installment_years: 5,
+      installment_years: null,
+      installment_start_month: '2026-03-01',
+      installment_end_month: '2030-03-01',
+      custom_installment_text: null,
       country_code: '+20',
       original_owner_phone: '010 1234 5678',
       garden_area: null,
@@ -142,6 +150,11 @@ describe('Supabase mappers', () => {
       maintenance_paid: false,
       maintenance_cost: null,
       maintenance_due_date: null,
+      installment_type: 'custom',
+      installment_years: null,
+      installment_start_month: null,
+      installment_end_month: null,
+      custom_installment_text: '10% on contract, balance by owner agreement.',
       commission_percentage: 2,
     })
     expect(payload).not.toHaveProperty('remaining_payment')
@@ -166,6 +179,10 @@ describe('Supabase mappers', () => {
     expect(payload).not.toHaveProperty('maintenance_paid')
     expect(payload).not.toHaveProperty('maintenance_cost')
     expect(payload).not.toHaveProperty('maintenance_due_date')
+    expect(payload).not.toHaveProperty('installment_type')
+    expect(payload).not.toHaveProperty('installment_start_month')
+    expect(payload).not.toHaveProperty('installment_end_month')
+    expect(payload).not.toHaveProperty('custom_installment_text')
     expect(payload).not.toHaveProperty('commission_percentage')
     expect(payload).toMatchObject({ bua: 180, sales_notes: 'Updated notes.' })
   })
@@ -206,6 +223,9 @@ describe('Supabase mappers', () => {
       commission_amount: 75_000,
       installment_type: null,
       installment_years: null,
+      installment_start_month: null,
+      installment_end_month: null,
+      custom_installment_text: null,
       installment_amount: null,
       delivery_month: null,
       delivery_year: 2028,
@@ -232,6 +252,8 @@ describe('Supabase mappers', () => {
     expect(toUnitViewModel(row).maintenancePaid).toBe(true)
     expect(toUnitViewModel(row).maintenanceCost).toBe(55_000)
     expect(toUnitViewModel(row).maintenanceDueDate).toBe('2028-06-15')
+    expect(toUnitViewModel(row).installmentStartMonth).toBeNull()
+    expect(toUnitViewModel(row).customInstallmentText).toBeNull()
     expect(toUnitViewModel(row).teamId).toBe('')
     expect(toUnitViewModel(row).branchId).toBe('')
   })

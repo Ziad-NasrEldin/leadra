@@ -208,7 +208,8 @@ describe('Leadra product workflows', () => {
       maintenanceCost: 40_000,
       maintenanceDueDate: '2029-01-15',
       installmentType: 'annual',
-      installmentYears: 4,
+      installmentStartMonth: '2029-01-01',
+      installmentEndMonth: '2032-01-01',
       deliveryExpectancy: { mode: 'year', year: 2029 },
       originalOwnerName: 'Unique Owner',
       countryCode: '+20',
@@ -225,6 +226,10 @@ describe('Leadra product workflows', () => {
     expect(result.state.units[0].maintenancePaid).toBe(true)
     expect(result.state.units[0].maintenanceCost).toBe(40_000)
     expect(result.state.units[0].maintenanceDueDate).toBe('2029-01-15')
+    expect(result.state.units[0].installmentYears).toBeNull()
+    expect(result.state.units[0].installmentStartMonth).toBe('2029-01-01')
+    expect(result.state.units[0].installmentEndMonth).toBe('2032-01-01')
+    expect(result.state.units[0].customInstallmentText).toBeNull()
     expect(result.state.units[0].installmentAmount).toBe(1_200_000)
     expect(result.state.auditLogs.at(0)?.actionType).toBe('Unit created')
     expect(result.state.notifications.at(0)?.title).toBe('New unit uploaded')
@@ -238,6 +243,62 @@ describe('Leadra product workflows', () => {
       commissionValue: 90_000,
     })
     expect(JSON.stringify(result.state.analyticsEvents.at(0))).not.toMatch(/Unique Owner|3333|ownerPhone/i)
+  })
+
+  it('validates installment period and custom text on unit creation', () => {
+    const baseInput = {
+      developerId: 'dev-palm',
+      developerName: 'Palm Hills',
+      projectId: 'project-zed',
+      projectName: 'ZED East',
+      destinationId: 'dest-new-cairo',
+      destinationName: 'New Cairo',
+      unitType: 'Apartment',
+      floor: '1st',
+      bua: 155,
+      viewId: 'view-garden',
+      viewName: 'Garden',
+      bedrooms: 3,
+      bathrooms: 2,
+      elevator: true,
+      finish: 'Fully Finished',
+      furnished: false,
+      paymentMethod: 'installment' as const,
+      totalAmount: 6_000_000,
+      downPayment: 1_200_000,
+      deliveryExpectancy: { mode: 'year' as const, year: 2029 },
+      originalOwnerName: 'Unique Owner',
+      countryCode: '+20',
+      originalOwnerPhone: '010 3333 5555',
+      salesNotes: 'Fresh resale lead.',
+      media: [],
+    }
+
+    const missingPeriod = createUnitWorkflow(state(), sales, {
+      ...baseInput,
+      installmentType: 'quarterly',
+    })
+    expect(missingPeriod.ok).toBe(false)
+    expect(missingPeriod.error).toContain('start and end months')
+
+    const reversedPeriod = createUnitWorkflow(state(), sales, {
+      ...baseInput,
+      originalOwnerPhone: '010 3333 6666',
+      installmentType: 'semi_annual',
+      installmentStartMonth: '2028-01-01',
+      installmentEndMonth: '2027-01-01',
+    })
+    expect(reversedPeriod.ok).toBe(false)
+    expect(reversedPeriod.error).toContain('cannot be after')
+
+    const missingCustomText = createUnitWorkflow(state(), sales, {
+      ...baseInput,
+      originalOwnerPhone: '010 3333 7777',
+      installmentType: 'custom',
+      customInstallmentText: '   ',
+    })
+    expect(missingCustomText.ok).toBe(false)
+    expect(missingCustomText.error).toContain('Custom installment text is required')
   })
 
   it('rejects same-project duplicate owner phone and records the attempt', () => {
@@ -320,6 +381,9 @@ describe('Leadra product workflows', () => {
       maintenancePaid: true,
       maintenanceCost: 25_000,
       maintenanceDueDate: '2028-10-01',
+      installmentType: 'quarterly',
+      installmentStartMonth: '2027-01-01',
+      installmentEndMonth: '2027-10-01',
       originalOwnerName: 'Blocked Sales Owner Edit',
       originalOwnerPhone: '0501234568',
       salesNotes: 'Updated from edit mode.',
@@ -335,6 +399,10 @@ describe('Leadra product workflows', () => {
       maintenancePaid: true,
       maintenanceCost: 25_000,
       maintenanceDueDate: '2028-10-01',
+      installmentYears: null,
+      installmentStartMonth: '2027-01-01',
+      installmentEndMonth: '2027-10-01',
+      installmentAmount: 1_000_000,
       originalOwnerName: unit.originalOwnerName,
       originalOwnerPhone: unit.originalOwnerPhone,
       salesNotes: 'Updated from edit mode.',

@@ -59,6 +59,13 @@ const paymentsPerYear = {
   custom: null,
 } as const
 
+const installmentStepMonths = {
+  quarterly: 3,
+  semi_annual: 6,
+  annual: 12,
+  custom: null,
+} as const
+
 export function getPrdUnitTypeSpec(unitType: string): PrdUnitTypeSpec {
   return PRD_UNIT_TYPE_SPECS.find((spec) => spec.unitType === unitType) ?? PRD_UNIT_TYPE_SPECS.find((spec) => spec.unitType === 'Apartment')!
 }
@@ -104,6 +111,34 @@ type OwnerPhoneCountrySpec = {
 
 export function getInstallmentPaymentsPerYear(type: InstallmentType | null | undefined): number | null {
   return type ? paymentsPerYear[type] : null
+}
+
+export function normalizeInstallmentMonth(value: string | null | undefined): string | null {
+  const match = value?.trim().match(/^(\d{4})-(\d{2})(?:-\d{2})?$/)
+  if (!match) return null
+
+  const year = Number(match[1])
+  const month = Number(match[2])
+  if (!Number.isInteger(year) || month < 1 || month > 12) return null
+
+  return `${match[1]}-${match[2]}-01`
+}
+
+export function getInstallmentScheduledDueMonths(
+  type: InstallmentType | null | undefined,
+  startMonth: string | null | undefined,
+  endMonth: string | null | undefined,
+): string[] {
+  const stepMonths = type ? installmentStepMonths[type] : null
+  const start = monthIndex(normalizeInstallmentMonth(startMonth))
+  const end = monthIndex(normalizeInstallmentMonth(endMonth))
+  if (!stepMonths || start == null || end == null || start > end) return []
+
+  const months: string[] = []
+  for (let current = start; current <= end; current += stepMonths) {
+    months.push(formatMonthIndex(current))
+  }
+  return months
 }
 
 const ownerPhoneCountrySpecs: OwnerPhoneCountrySpec[] = [
@@ -323,10 +358,15 @@ export function calculatePaymentSummary(input: PaymentInput): PaymentSummary {
   const downPayment = input.downPayment ?? 0
   const remainingPayment = Math.max(0, roundMoney(input.totalAmount - downPayment))
   const installmentType = input.installmentType ?? 'custom'
-  const years = input.installmentYears ?? 0
   const frequency = paymentsPerYear[installmentType]
-  const installmentAmount =
-    frequency && years > 0 ? roundMoney(remainingPayment / (years * frequency)) : null
+  const scheduledDueMonths = getInstallmentScheduledDueMonths(
+    installmentType,
+    input.installmentStartMonth,
+    input.installmentEndMonth,
+  )
+  const legacyPaymentCount = frequency && input.installmentYears ? input.installmentYears * frequency : 0
+  const paymentCount = scheduledDueMonths.length || legacyPaymentCount
+  const installmentAmount = frequency && paymentCount > 0 ? roundMoney(remainingPayment / paymentCount) : null
 
   return {
     remainingPayment,
@@ -338,18 +378,36 @@ export function calculatePaymentSummary(input: PaymentInput): PaymentSummary {
 export interface InstallmentScheduleRow {
   paymentNumber: number
   yearNumber: number
+  dueMonth: string | null
   periodLabel: string
   amount: number
 }
 
 export function buildInstallmentSchedule(unit: LeadraUnit, locale: LocaleCode = 'en'): InstallmentScheduleRow[] {
   const frequency = getInstallmentPaymentsPerYear(unit.installmentType)
-  if (unit.paymentMethod !== 'installment' || !frequency || !unit.installmentYears || !unit.installmentAmount) return []
+  if (unit.paymentMethod !== 'installment' || !frequency || !unit.installmentAmount) return []
 
   const formatter = new Intl.NumberFormat(getIntlLocale(locale), { maximumFractionDigits: 0 })
-  const totalPayments = unit.installmentYears * frequency
+  const dueMonths = getInstallmentScheduledDueMonths(
+    unit.installmentType,
+    unit.installmentStartMonth,
+    unit.installmentEndMonth,
+  )
   const amount = unit.installmentAmount
 
+  if (dueMonths.length > 0) {
+    return dueMonths.map((dueMonth, index) => ({
+      paymentNumber: index + 1,
+      yearNumber: Math.floor(index / frequency) + 1,
+      dueMonth,
+      periodLabel: formatInstallmentMonthLabel(dueMonth, locale),
+      amount,
+    }))
+  }
+
+  if (!unit.installmentYears) return []
+
+  const totalPayments = unit.installmentYears * frequency
   return Array.from({ length: totalPayments }, (_, index) => {
     const paymentNumber = index + 1
     const yearNumber = Math.floor(index / frequency) + 1
@@ -357,6 +415,7 @@ export function buildInstallmentSchedule(unit: LeadraUnit, locale: LocaleCode = 
     return {
       paymentNumber,
       yearNumber,
+      dueMonth: null,
       periodLabel:
         unit.installmentType === 'quarterly'
           ? `Q${periodInYear}`
@@ -366,6 +425,24 @@ export function buildInstallmentSchedule(unit: LeadraUnit, locale: LocaleCode = 
       amount,
     }
   })
+}
+
+function monthIndex(value: string | null): number | null {
+  if (!value) return null
+  const [year, month] = value.split('-').map(Number)
+  return year * 12 + month - 1
+}
+
+function formatMonthIndex(index: number): string {
+  const year = Math.floor(index / 12)
+  const month = (index % 12) + 1
+  return `${year}-${String(month).padStart(2, '0')}-01`
+}
+
+function formatInstallmentMonthLabel(value: string, locale: LocaleCode): string {
+  const [year, month] = value.split('-').map(Number)
+  const date = new Date(year, month - 1, 1)
+  return new Intl.DateTimeFormat(getIntlLocale(locale), { month: 'short', year: 'numeric' }).format(date)
 }
 
 export function formatOrdinalFloor(floor: number): string {
