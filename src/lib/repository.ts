@@ -84,15 +84,7 @@ export class LeadraRepository {
 
   async updateUnitStatus(unitId: number, status: UnitStatus): Promise<void> {
     const { error } = await this.client.from('units').update({ status }).eq('id', unitId)
-    if (!error) return
-
-    if ((status === 'sold_by_us' || status === 'sold_by_others') && isUnsupportedSplitSoldStatusError(error)) {
-      const { error: fallbackError } = await this.client.from('units').update({ status: 'sold' }).eq('id', unitId)
-      if (!fallbackError) return
-      throw fallbackError
-    }
-
-    throw error
+    if (error) throw error
   }
 
   async deleteUnitMedia(mediaId: string): Promise<void> {
@@ -123,18 +115,6 @@ export class LeadraRepository {
     void unitId
     throw new Error('The generate-unit-pdf edge function is retired. Use the localized printable brief export in the web client.')
   }
-}
-
-function isUnsupportedSplitSoldStatusError(error: unknown) {
-  const details = [
-    error instanceof Error ? error.message : '',
-    typeof error === 'object' && error ? String('message' in error ? error.message : '') : '',
-    typeof error === 'object' && error ? String('details' in error ? error.details : '') : '',
-    typeof error === 'object' && error ? String('hint' in error ? error.hint : '') : '',
-    typeof error === 'object' && error ? String('code' in error ? error.code : '') : '',
-  ].join(' ')
-
-  return details.includes('22P02') || /invalid input value for enum public\.unit_status/i.test(details)
 }
 
 function compactUnitFilters(filters: UnitFilters): Record<string, unknown> {

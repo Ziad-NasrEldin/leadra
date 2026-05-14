@@ -255,7 +255,7 @@ describe('LeadraRepository', () => {
     expect(updates[0]).not.toHaveProperty('commission_percentage')
   })
 
-  it('falls back to the legacy sold status when the database enum has not been migrated yet', async () => {
+  it('surfaces split sold status enum errors instead of collapsing to legacy sold', async () => {
     const updates: unknown[] = []
     const client = {
       from(table: string) {
@@ -265,11 +265,7 @@ describe('LeadraRepository', () => {
             updates.push(payload)
             return {
               eq() {
-                return Promise.resolve(
-                  updates.length === 1
-                    ? { error: { code: '22P02', message: 'invalid input value for enum public.unit_status: "sold_by_us"' } }
-                    : { error: null },
-                )
+                return Promise.resolve({ error: { code: '22P02', message: 'invalid input value for enum public.unit_status: "sold_by_us"' } })
               },
             }
           },
@@ -277,9 +273,11 @@ describe('LeadraRepository', () => {
       },
     }
 
-    await new LeadraRepository(client as never).updateUnitStatus(5, 'sold_by_us')
+    await expect(new LeadraRepository(client as never).updateUnitStatus(5, 'sold_by_us')).rejects.toMatchObject({
+      code: '22P02',
+    })
 
-    expect(updates).toEqual([{ status: 'sold_by_us' }, { status: 'sold' }])
+    expect(updates).toEqual([{ status: 'sold_by_us' }])
   })
 
   it('does not hide non-enum status persistence errors', async () => {
