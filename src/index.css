@@ -3089,19 +3089,19 @@ dd,
 
 .details-edit-form {
   grid-template-columns: 1fr;
-  gap: 0.8rem;
+  gap: 0.55rem;
 }
 
 .details-edit-form fieldset {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
-  column-gap: 0.75rem;
-  row-gap: 0.65rem;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  column-gap: 0.5rem;
+  row-gap: 0.42rem;
   min-width: 0;
   margin: 0;
   border: 1px solid rgba(38, 64, 51, 0.12);
-  border-radius: 0.9rem;
-  padding: 0.72rem;
+  border-radius: 0.72rem;
+  padding: 0.56rem;
 }
 
 .details-edit-form fieldset:disabled {
@@ -3109,16 +3109,17 @@ dd,
 }
 
 .details-edit-form legend {
-  padding-inline: 0.35rem;
+  padding-inline: 0.28rem;
   color: var(--olive);
   font-weight: 700;
+  line-height: 1.1;
 }
 
 .details-edit-form label,
 .details-edit-form .owner-phone-field {
   align-content: start;
-  gap: 0.24rem;
-  font-size: 0.78rem;
+  gap: 0.16rem;
+  font-size: 0.76rem;
 }
 
 .details-edit-form input,
@@ -3134,17 +3135,25 @@ dd,
 .details-edit-form .brand-select-trigger,
 .details-edit-form .owner-phone-shell {
   min-height: 46px;
-  border-radius: 0.78rem;
+  border-radius: 0.68rem;
+}
+
+.details-edit-form input[type="checkbox"] {
+  width: 46px !important;
+  min-width: 46px !important;
+  max-width: 46px;
+  height: 46px !important;
+  min-height: 46px !important;
 }
 
 .details-edit-form input,
 .details-edit-form textarea,
 .details-edit-form .brand-select-trigger {
-  padding: 0.62rem 0.72rem;
+  padding: 0.54rem 0.66rem;
 }
 
 .details-edit-form textarea {
-  min-height: 86px;
+  min-height: 76px;
 }
 
 .details-edit-form input:disabled,
