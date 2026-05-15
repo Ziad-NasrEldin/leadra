@@ -33,3 +33,21 @@ test-results/
 performance-reports/
 
 .vercel
+
+# Local agent/context caches
+.lean-ctx/
+
+# Generated PRD gap and merge verification artifacts
+artifacts/leadra_prd_exact_*
+artifacts/leadra_prd_gap_report_*.md
+artifacts/prd-g*.png
+artifacts/prd-g*.txt
+artifacts/supabase-unit-media-delete-policy-live.png
+artifacts/vivaldi-*.png
+artifacts/verification/main-merge-*.png
+artifacts/verification/merge-*.png
+artifacts/verification/rebrand-*.png
+
+# Unused source/reference brand exports
+src/assets/brand/leadra-guidelines-*
+src/assets/brand/leadra-wordmark-*
