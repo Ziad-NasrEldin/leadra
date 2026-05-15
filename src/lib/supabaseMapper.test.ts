@@ -242,7 +242,10 @@ describe('Supabase mappers', () => {
       branch_id: null,
       created_at: '2026-05-04T00:00:00.000Z',
       updated_at: '2026-05-04T00:00:00.000Z',
-      unit_media: [],
+      unit_media: [
+        { id: 'image-1', type: 'image', storage_path: '/image.jpg', file_name: 'image.jpg', size_bytes: 1000 },
+        { id: 'video-1', type: 'video', storage_path: '/video.mp4', file_name: 'video.mp4', size_bytes: 1000 },
+      ],
       unit_notes: [],
     }
 
@@ -256,5 +259,8 @@ describe('Supabase mappers', () => {
     expect(toUnitViewModel(row).customInstallmentText).toBeNull()
     expect(toUnitViewModel(row).teamId).toBe('')
     expect(toUnitViewModel(row).branchId).toBe('')
+    expect(toUnitViewModel(row).media).toEqual([
+      { id: 'image-1', type: 'image', url: '/image.jpg', name: 'image.jpg', sizeBytes: 1000, includeInPdf: true },
+    ])
   })
 })

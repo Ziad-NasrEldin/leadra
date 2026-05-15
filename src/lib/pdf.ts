@@ -1,5 +1,5 @@
 import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from 'pdf-lib'
-import { buildInstallmentSchedule, formatCurrency, formatDeliveryExpectancy, getApplicableUnitAreaFields, sanitizeUnitForPdf } from './domain'
+import { buildPaymentTimetable, canViewSalesSensitiveData, formatCurrency, formatDeliveryExpectancy, getApplicableUnitAreaFields, sanitizeUnitForPdf } from './domain'
 import { translate, type LocaleCode } from './i18n'
 import type { AppSettings, LeadraUnit, LeadraUser } from './types'
 
@@ -15,35 +15,15 @@ export function buildPermissionSafePdfText(
   locale: LocaleCode = 'en',
 ): string {
   const safeUnit = sanitizeUnitForPdf(user, unit)
-  const includeSalesData = canIncludeSalesExportData(user, unit)
-  const areaFields = getApplicableUnitAreaFields(safeUnit.unitType, safeUnit.floor)
   const lines = [
     settings.companyName,
     `${translate(locale, 'export.generatedBy')}: ${user.fullName}`,
     `${translate(locale, 'units.unitCode')}: ${safeUnit.unitCode}`,
-    `${translate(locale, 'export.destination')}: ${safeUnit.destinationName}`,
-    `${translate(locale, 'details.developer')}: ${safeUnit.developerName}`,
-    `${translate(locale, 'export.project')}: ${safeUnit.projectName}`,
-    `${translate(locale, 'export.type')}: ${safeUnit.unitType}`,
-    `${translate(locale, 'export.area')}: ${safeUnit.bua}`,
-    areaFields.showLandArea ? `${translate(locale, 'details.landArea')}: ${safeUnit.landArea ?? ''}` : '',
-    areaFields.showFloor ? `${translate(locale, 'details.floor')}: ${safeUnit.floor}` : '',
-    areaFields.showGardenArea ? `${translate(locale, 'details.gardenArea')}: ${safeUnit.gardenArea ?? ''}` : '',
-    areaFields.showTerraceArea ? `${translate(locale, 'details.terraceArea')}: ${safeUnit.terraceArea ?? ''}` : '',
-    `${translate(locale, 'export.bedsBaths')}: ${safeUnit.bedrooms} / ${safeUnit.bathrooms}`,
-    `${translate(locale, 'export.totalAmount')}: ${formatCurrency(safeUnit.totalAmount, locale)}`,
-    safeUnit.paymentMethod === 'installment'
-      ? `${translate(locale, 'export.installment')}: ${formatCurrency(safeUnit.installmentAmount, locale)}`
-      : '',
-    `${translate(locale, 'export.delivery')}: ${formatDeliveryExpectancy(safeUnit, locale)}`,
-    includeSalesData ? safeUnit.salesNotes || translate(locale, 'export.notesEmpty') : translate(locale, 'export.notesEmpty'),
+    ...buildPdfFacts(user, safeUnit, locale).map(([label, value]) => `${label}: ${value}`),
+    canIncludeSalesExportData(user, unit) ? safeUnit.salesNotes || translate(locale, 'export.notesEmpty') : translate(locale, 'export.notesEmpty'),
     settings.footerText,
     settings.contactDetails,
   ].filter(Boolean)
-
-  if (includeSalesData) {
-    lines.splice(9, 0, `${translate(locale, 'export.commission')}: ${formatCurrency(safeUnit.commissionAmount, locale)}`)
-  }
 
   return lines.join('\n')
 }
@@ -56,7 +36,6 @@ export async function buildPermissionSafePdfBlob(
 ): Promise<Blob> {
   const safeUnit = sanitizeUnitForPdf(user, unit)
   const includeSalesData = canIncludeSalesExportData(user, unit)
-  const areaFields = getApplicableUnitAreaFields(safeUnit.unitType, safeUnit.floor)
   const pdf = await PDFDocument.create()
   const font = await pdf.embedFont(StandardFonts.Helvetica)
   const bold = await pdf.embedFont(StandardFonts.HelveticaBold)
@@ -65,29 +44,28 @@ export async function buildPermissionSafePdfBlob(
   let y = height - 190
 
   page.drawRectangle({ x: 32, y: height - 154, width: 531, height: 120, color: rgb(0.05, 0.05, 0.06) })
-  drawPdfText(page, settings.companyName || 'Leadra', { x: 52, y: height - 78, size: 24, font: bold, color: rgb(0.96, 0.95, 0.92) })
+  const logo = settings.logoPath ? await embedImage(pdf, settings.logoPath) : null
+  if (settings.logoPath) {
+    if (logo) {
+      const logoBox = { x: 404, y: height - 126, width: 142, height: 90 }
+      const scaledLogo = logo.scaleToFit(142, 72)
+      page.drawImage(logo, {
+        x: logoBox.x + (logoBox.width - scaledLogo.width) / 2,
+        y: logoBox.y + (logoBox.height - scaledLogo.height) / 2,
+        width: scaledLogo.width,
+        height: scaledLogo.height,
+      })
+    } else {
+      const logoBox = { x: 406, y: height - 124, width: 140, height: 88 }
+      drawPdfText(page, 'Logo unavailable', { x: logoBox.x + 18, y: logoBox.y + 48, size: 10, font: bold, color: rgb(0.49, 0.45, 0.41), maxWidth: 104 })
+      drawPdfText(page, 'Upload PNG or JPG', { x: logoBox.x + 18, y: logoBox.y + 30, size: 8, font, color: rgb(0.49, 0.45, 0.41), maxWidth: 104 })
+    }
+  }
+  drawPdfText(page, settings.companyName || 'Leadra', { x: 52, y: height - 78, size: 24, font: bold, color: rgb(0.96, 0.95, 0.92), maxWidth: settings.logoPath ? 330 : 490 })
   drawPdfText(page, safeUnit.unitCode, { x: 52, y: height - 112, size: 18, font: bold, color: rgb(0.84, 0.69, 0.44) })
   drawPdfText(page, `${safeUnit.destinationName} / ${safeUnit.developerName} / ${safeUnit.projectName}`, { x: 52, y: height - 136, size: 11, font, color: rgb(0.96, 0.95, 0.92) })
 
-  const facts = [
-    ['Destination', safeUnit.destinationName],
-    ['Developer', safeUnit.developerName],
-    ['Project', safeUnit.projectName],
-    ['Unit type', safeUnit.unitType],
-    ['Area', `${safeUnit.bua} m2`],
-    ['Bedrooms / Bathrooms', `${safeUnit.bedrooms} / ${safeUnit.bathrooms}`],
-    ['Pricing', formatCurrency(safeUnit.totalAmount, locale)],
-    ['Delivery', formatDeliveryExpectancy(safeUnit, locale)],
-  ]
-  if (areaFields.showLandArea) facts.splice(5, 0, ['Land area', safeUnit.landArea ? `${safeUnit.landArea} m2` : ''])
-  if (areaFields.showFloor) facts.splice(5, 0, ['Floor', safeUnit.floor])
-  if (areaFields.showGardenArea) facts.splice(6, 0, ['Garden area', safeUnit.gardenArea ? `${safeUnit.gardenArea} m2` : ''])
-  if (areaFields.showTerraceArea) facts.splice(5, 0, ['Terrace area', safeUnit.terraceArea ? `${safeUnit.terraceArea} m2` : ''])
-
-  if (includeSalesData) facts.splice(4, 0, ['Commission', `${formatCurrency(safeUnit.commissionAmount, locale)} (${safeUnit.commissionPercentage}%)`])
-  if (safeUnit.paymentMethod === 'installment') {
-    facts.push(['Installment', safeUnit.installmentType === 'custom' ? translate(locale, 'details.customInstallmentMessage') : formatCurrency(safeUnit.installmentAmount, locale)])
-  }
+  const facts = buildPdfFacts(user, safeUnit, locale)
 
   for (const [label, value] of facts) {
     drawPdfText(page, label, { x: 52, y, size: 9, font: bold, color: rgb(0.49, 0.45, 0.41) })
@@ -95,7 +73,7 @@ export async function buildPermissionSafePdfBlob(
     y -= 28
   }
 
-  const schedule = buildInstallmentSchedule(safeUnit, locale).slice(0, 8)
+  const schedule = buildPaymentTimetable(safeUnit, locale).slice(0, 8)
   if (schedule.length > 0) {
     y -= 8
     drawPdfText(page, 'Installment schedule', { x: 52, y, size: 13, font: bold, color: rgb(0.16, 0.15, 0.14) })
@@ -156,9 +134,78 @@ export async function generateUnitPdfFile(
   unit: LeadraUnit,
   settings: AppSettings,
   locale: LocaleCode = 'en',
+  generatedAt = new Date(),
 ): Promise<GeneratedPdf> {
   const blob = await buildPermissionSafePdfBlob(user, unit, settings, locale)
-  return { blob, fileName: `leadra-${unit.unitCode}.pdf` }
+  return { blob, fileName: `leadra-${unit.unitCode}-${formatPdfTimestamp(generatedAt)}.pdf` }
+}
+
+function buildPdfFacts(user: LeadraUser, unit: LeadraUnit, locale: LocaleCode): [string, string][] {
+  const areaFields = getApplicableUnitAreaFields(unit.unitType, unit.floor)
+  const facts: [string, string][] = [
+    [translate(locale, 'export.destination'), unit.destinationName],
+    [translate(locale, 'details.developer'), unit.developerName],
+    [translate(locale, 'export.project'), unit.projectName],
+    [translate(locale, 'export.type'), unit.unitType],
+    [translate(locale, 'export.area'), formatArea(unit.bua)],
+  ]
+
+  if (areaFields.showLandArea) facts.push([translate(locale, 'details.landArea'), formatOptionalArea(unit.landArea)])
+  if (areaFields.showFloor) facts.push([translate(locale, 'details.floor'), unit.floor])
+  if (areaFields.showGardenArea) facts.push([translate(locale, 'details.gardenArea'), formatOptionalArea(unit.gardenArea)])
+  if (areaFields.showTerraceArea) facts.push([translate(locale, 'details.terraceArea'), formatOptionalArea(unit.terraceArea)])
+
+  facts.push(
+    [translate(locale, 'export.bedsBaths'), `${unit.bedrooms} / ${unit.bathrooms}`],
+    [translate(locale, 'details.finishType'), unit.finish],
+  )
+
+  if (unit.furnished) facts.push([translate(locale, 'details.furnishingStatus'), translate(locale, 'create.furnishedOption')])
+  if (unit.elevator) facts.push([translate(locale, 'details.elevator'), 'Yes'])
+
+  facts.push([translate(locale, 'export.totalAmount'), formatCurrency(unit.totalAmount, locale)])
+
+  if (canIncludeSalesExportData(user, unit)) {
+    facts.push([translate(locale, 'export.commission'), `${formatCurrency(unit.commissionAmount, locale)} (${unit.commissionPercentage}%)`])
+  }
+  if (unit.transferFees != null) facts.push([translate(locale, 'details.transferFees'), formatCurrency(unit.transferFees, locale)])
+  if (unit.downPayment != null) facts.push([translate(locale, 'create.downPayment'), formatCurrency(unit.downPayment, locale)])
+  if (unit.remainingPayment != null) facts.push([translate(locale, 'details.remainingPayment'), formatCurrency(unit.remainingPayment, locale)])
+  if (unit.paymentMethod === 'installment') {
+    if (unit.installmentType === 'custom') {
+      facts.push([translate(locale, 'details.customInstallmentText'), unit.customInstallmentText || translate(locale, 'details.customInstallmentMessage')])
+    } else {
+      const nextInstallment = getNextInstallment(unit, locale)
+      facts.push([
+        translate(locale, 'export.installment'),
+        nextInstallment
+          ? `#${nextInstallment.paymentNumber} ${nextInstallment.periodLabel}: ${formatCurrency(nextInstallment.amount, locale)}`
+          : formatCurrency(unit.installmentAmount, locale),
+      ])
+    }
+  }
+
+  facts.push([translate(locale, 'export.delivery'), formatDeliveryExpectancy(unit, locale)])
+
+  return facts.filter(([, value]) => Boolean(value))
+}
+
+function getNextInstallment(unit: LeadraUnit, locale: LocaleCode) {
+  return buildPaymentTimetable(unit, locale)
+    .filter((row) => !row.paid)
+    .sort((first, second) => first.paymentNumber - second.paymentNumber)[0] ?? null
+}
+
+function formatArea(value: number) {
+  return `${value} m2`
+}
+
+function formatOptionalArea(value: number | null | undefined) {
+  return value == null ? '' : formatArea(value)
+}
+
+function formatPdfTimestamp(date: Date) {
+  return date.toISOString().replace(/\.\d{3}Z$/, 'Z').replace(/[:-]/g, '').replace('T', '-').replace('Z', '')
 }
 
 export function downloadGeneratedPdf(pdf: GeneratedPdf): void {
@@ -223,5 +270,5 @@ async function imageBytes(url: string): Promise<Uint8Array | null> {
 }
 
 function canIncludeSalesExportData(user: LeadraUser, unit: LeadraUnit) {
-  return user.role !== 'sales' || unit.createdBy === user.id
+  return canViewSalesSensitiveData(user, unit)
 }

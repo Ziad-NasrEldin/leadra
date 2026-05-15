@@ -170,4 +170,23 @@ describe('analytics visibility', () => {
     expect(dashboard.filterOptions.teams.map((team) => team.id).sort()).toEqual(['team-a', 'team-b'])
     expect(dashboard.targetProgress).toHaveLength(1)
   })
+
+  it('does not count split sold statuses as stale units', () => {
+    const dashboard = buildAnalyticsDashboard(
+      manager,
+      {
+        ...state,
+        units: [
+          { ...baseUnit, status: 'sold_by_us', updatedAt: '2026-05-01T00:00:00.000Z' },
+          { ...baseUnit, id: 103, unitCode: 'SO103BR2Ba2', status: 'sold_by_others', updatedAt: '2026-05-01T00:00:00.000Z' },
+        ],
+      },
+      'en',
+      new Date('2026-05-10T12:00:00.000Z'),
+      defaultAnalyticsFilters,
+    )
+
+    expect(dashboard.overview.soldUnits).toBe(2)
+    expect(dashboard.overview.staleUnits).toBe(0)
+  })
 })

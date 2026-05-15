@@ -21,8 +21,9 @@ const masterDataDirectories = ['Developers', 'Destinations', 'Projects', 'Views'
 
 async function completeSignIn(page: Page, role: (typeof roles)[number]) {
   const intro = page.getByRole('button', { name: /continue to sign in/i })
-  await expect(intro.first()).toBeVisible()
-  await intro.first().click()
+  if (await intro.first().isVisible({ timeout: 1_000 }).catch(() => false)) {
+    await intro.first().click()
+  }
 
   const demoName = role === 'admin' ? /continue as admin/i : role === 'manager' ? /continue as mona hafez/i : /continue as sara amin/i
   const demo = page.getByRole('button', { name: demoName })

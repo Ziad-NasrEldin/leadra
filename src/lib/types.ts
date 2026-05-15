@@ -3,7 +3,7 @@ export type AccountStatus = 'active' | 'inactive'
 export type UnitStatus = 'available' | 'hold' | 'sold' | 'sold_by_us' | 'sold_by_others'
 export type PaymentMethod = 'cash' | 'installment'
 export type InstallmentType = 'quarterly' | 'semi_annual' | 'annual' | 'custom'
-export type MediaType = 'image'
+export type MediaType = 'image' | 'pdf' | 'video' | 'unsupported'
 export type LookupKind = 'developer' | 'project' | 'destination' | 'view' | 'unit_type' | 'finish'
 export type PdfLayout = 'classic' | 'compact'
 export type AnalyticsEventType =
@@ -49,6 +49,7 @@ export interface LookupValue {
   id: string
   kind: LookupKind
   label: string
+  thumbnailPath?: string | null
   archived?: boolean
 }
 
@@ -80,6 +81,31 @@ export interface LeadraNote {
   createdBy: string
   createdByName: string
   role: UserRole
+  createdAt: string
+}
+
+export interface PaymentScheduleRow {
+  id: string
+  unitId: number
+  paymentNumber: number
+  dueMonth: string | null
+  amount: number
+  paid: boolean
+  paidAt: string | null
+  paidBy: string | null
+  paidByName: string | null
+}
+
+export interface PaymentHistoryRow {
+  id: string
+  unitId: number
+  scheduleId: string
+  action: 'paid' | 'unpaid'
+  amount: number
+  previousRemainingValue: number
+  newRemainingValue: number
+  actorId: string
+  actorName: string
   createdAt: string
 }
 
@@ -144,6 +170,8 @@ export interface LeadraUnit {
   updatedAt: string
   media: LeadraMediaFile[]
   adminManagerNotes: LeadraNote[]
+  paymentSchedule?: PaymentScheduleRow[]
+  paymentHistory?: PaymentHistoryRow[]
 }
 
 export interface PaymentInput {
@@ -184,6 +212,12 @@ export interface UnitFilters {
   ownerPhone?: string
   buaFrom?: number
   buaTo?: number
+  landAreaFrom?: number
+  landAreaTo?: number
+  gardenAreaFrom?: number
+  gardenAreaTo?: number
+  terraceAreaFrom?: number
+  terraceAreaTo?: number
   priceFrom?: number
   priceTo?: number
   cashPriceFrom?: number

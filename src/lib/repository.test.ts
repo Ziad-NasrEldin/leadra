@@ -298,6 +298,113 @@ describe('LeadraRepository', () => {
     await expect(new LeadraRepository(client as never).updateUnitStatus(5, 'hold')).rejects.toThrow('permission denied')
   })
 
+  it('persists payment timetable paid/unpaid actions through the protected RPC', async () => {
+    const calls: Array<{ fn: string; args: unknown }> = []
+    const client = {
+      rpc(fn: string, args: unknown) {
+        calls.push({ fn, args })
+        return Promise.resolve({ error: null })
+      },
+      from(table: string) {
+        expect(table).toBe('units')
+        return {
+          select() {
+            return {
+              eq(column: string, value: number) {
+                expect(column).toBe('id')
+                expect(value).toBe(105)
+                return {
+                  single() {
+                    return Promise.resolve({
+                      error: null,
+                      data: {
+                        id: 105,
+                        unit_code: 'NC3BR',
+                        developer_id: 'dev-1',
+                        developer: { label: 'Palm Hills' },
+                        project_id: 'project-1',
+                        project: { label: 'New Cairo Estates' },
+                        destination_id: 'dest-1',
+                        destination: { label: 'New Cairo' },
+                        unit_type: 'Apartment',
+                        floor: '3rd',
+                        bua: 188,
+                        roof_garden_area: null,
+                        garden_area: null,
+                        terrace_area: null,
+                        view_id: 'view-1',
+                        view: { label: 'Garden' },
+                        bedrooms: 3,
+                        bathrooms: 2,
+                        elevator: true,
+                        land_area: null,
+                        furnished: false,
+                        finish: 'Fully Finished',
+                        payment_method: 'installment',
+                        total_amount: 5_000_000,
+                        down_payment: 1_000_000,
+                        remaining_payment: 3_800_000,
+                        commission_percentage: 1.5,
+                        commission_amount: 75_000,
+                        installment_type: 'quarterly',
+                        installment_years: null,
+                        installment_start_month: '2026-03-01',
+                        installment_end_month: '2026-12-01',
+                        custom_installment_text: null,
+                        installment_amount: 1_000_000,
+                        delivery_month: null,
+                        delivery_year: 2029,
+                        original_owner_name: 'Owner',
+                        country_code: '+20',
+                        original_owner_phone: '01033334444',
+                        normalized_owner_phone: '+201033334444',
+                        sales_notes: 'Updated notes.',
+                        status: 'available',
+                        archived: false,
+                        created_by: 'sales-1',
+                        creator: { full_name: 'Sales User' },
+                        team_id: 'team-1',
+                        branch_id: 'branch-1',
+                        created_at: '2026-05-04T00:00:00.000Z',
+                        updated_at: '2026-05-04T01:00:00.000Z',
+                        unit_media: [],
+                        unit_notes: [],
+                        unit_payment_schedule: [
+                          {
+                            id: 'schedule-1',
+                            unit_id: 105,
+                            payment_number: 1,
+                            due_month: '2026-03-01',
+                            amount: 1_000_000,
+                            paid: true,
+                            paid_at: '2026-05-15T10:00:00.000Z',
+                            paid_by: 'admin-1',
+                            paid_by_profile: { full_name: 'Admin User' },
+                          },
+                        ],
+                        unit_payment_history: [],
+                      },
+                    })
+                  },
+                }
+              },
+            }
+          },
+        }
+      },
+    }
+
+    const result = await new LeadraRepository(client as never).updatePaymentSchedule(105, 'schedule-1', true)
+
+    expect(calls).toEqual([
+      {
+        fn: 'set_unit_payment_paid',
+        args: { target_unit_id: 105, target_schedule_id: 'schedule-1', mark_paid: true },
+      },
+    ])
+    expect(result.paymentSchedule?.[0]).toMatchObject({ id: 'schedule-1', paid: true, paidByName: 'Admin User' })
+  })
+
   it('delegates sales representative deactivation and reassignment to the durable history RPC', async () => {
     const calls: Array<{ fn: string; args: unknown }> = []
     const client = {
