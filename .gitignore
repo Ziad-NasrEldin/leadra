@@ -51,3 +51,5 @@ artifacts/verification/rebrand-*.png
 # Unused source/reference brand exports
 src/assets/brand/leadra-guidelines-*
 src/assets/brand/leadra-wordmark-*
+
+.vercel
