@@ -520,6 +520,8 @@ export interface UnitEditInput {
   landArea?: number | null
   furnished: boolean
   finish: string
+  paymentMethod?: PaymentMethod
+  downPayment?: number | null
   deliveryExpectancy: DeliveryExpectancy
   originalOwnerName: string
   countryCode: string

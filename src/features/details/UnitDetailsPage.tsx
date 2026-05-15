@@ -2,8 +2,8 @@ import { Archive, Download, FileText, Share2, Trash2 } from 'lucide-react'
 import { useEffect, useState, type FormEvent } from 'react'
 import { buildPaymentTimetable, canAddAdminManagerNote, canArchiveUnit, canEditAnyUnitDetails, canEditNonOwnerUnitDetails, canEditOwnerFields, canEditUnitCommission, canEditUnitPricing, canViewOwnerData, canViewSalesSensitiveData, formatCurrency, formatDeliveryExpectancy, getApplicableUnitAreaFields, getOwnerPhoneCountryMeta, getOwnerPhoneCountryOptions, PRD_FLOOR_OPTIONS, PRD_UNIT_TYPES } from '../../lib/domain'
 import { formatCount, formatDateTime, getPaymentMethodLabel, getRoleLabel, getStatusLabel, useLocale, type LocaleCode } from '../../lib/i18n'
-import type { LeadraMediaFile, LeadraUnit, LeadraUser, LookupValue, UnitStatus } from '../../lib/types'
-import { EmptyState, InfoPanel, NativeLookupSelect, NumberField, OwnerPhoneField, ReadOnlyField, RequiredLabel } from '../../components/LeadraUi'
+import type { InstallmentType, LeadraMediaFile, LeadraUnit, LeadraUser, LookupValue, PaymentMethod, UnitStatus } from '../../lib/types'
+import { EmptyState, InfoPanel, NativeLookupSelect, NamedSelectField, NumberField, OwnerPhoneField, ReadOnlyField, RequiredLabel } from '../../components/LeadraUi'
 import { formatMonthYear, getInstallmentTypeLabel, getUnitCustomInstallmentText, getUnitInstallmentEndMonth, getUnitInstallmentStartMonth, toMonthInputValue } from '../shared/formUtils'
 import { motionStyle } from '../shared/motion'
 
@@ -134,8 +134,8 @@ export function UnitDetailsPage({
               <Download size={18} /> {t('details.downloadPdf')}
             </button>
           )}
-          <button className="secondary-button" type="button" onClick={onSharePdf} disabled={pdfGenerating || pdfSharing}>
-            <Share2 size={18} /> {pdfSharing ? 'Preparing share...' : pdfReady ? t('details.sharePdf') : 'Generate & share PDF'}
+          <button className="secondary-button" type="button" onClick={onSharePdf} disabled={!pdfReady || pdfGenerating || pdfSharing}>
+            <Share2 size={18} /> {pdfSharing ? 'Preparing share...' : t('details.sharePdf')}
           </button>
           <button className="secondary-button" type="button" onClick={onCopyShareLink}>
             <Share2 size={18} /> {t('details.shareLink')}
@@ -209,8 +209,11 @@ function UnitDetailsEditForm({
   const canEditOwner = canEditOwnerFields(user, unit)
   const canEditPricing = canEditUnitPricing(user, unit)
   const canEditCommission = canEditUnitCommission(user, unit)
+  const canEditPaymentPlan = user.role === 'admin' || user.role === 'sub_admin'
   const [unitType, setUnitType] = useState(unit.unitType)
   const [floor, setFloor] = useState(unit.floor || 'Ground')
+  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>(unit.paymentMethod)
+  const [installmentType, setInstallmentType] = useState<InstallmentType>(unit.installmentType ?? 'quarterly')
   const [ownerCountryCode, setOwnerCountryCode] = useState(unit.countryCode ?? '+20')
   const [ownerPhone, setOwnerPhone] = useState(unit.originalOwnerPhone ?? '')
   const [maintenancePaid, setMaintenancePaid] = useState(unit.maintenancePaid ?? false)
@@ -237,25 +240,28 @@ function UnitDetailsEditForm({
           <NativeLookupSelect name="destinationId" label={t('create.destination')} values={lookupValues.filter((item) => item.kind === 'destination')} defaultValue={unit.destinationId} required />
           <NativeLookupSelect name="developerId" label={t('create.developer')} values={lookupValues.filter((item) => item.kind === 'developer')} defaultValue={unit.developerId} required />
           <NativeLookupSelect name="projectId" label={t('create.project')} values={lookupValues.filter((item) => item.kind === 'project')} defaultValue={unit.projectId} required />
-          <label>
-            <RequiredLabel label={t('create.unitType')} required />
-            <select name="unitType" value={unitType} required onChange={(event) => {
-              const nextType = event.target.value
+          <NamedSelectField
+            name="unitType"
+            label={t('create.unitType')}
+            options={PRD_UNIT_TYPES.map((item) => ({ value: item, label: item }))}
+            value={unitType}
+            required
+            onValueChange={(nextType) => {
               setUnitType(nextType)
               if (!getApplicableUnitAreaFields(nextType, floor).showFloor) setFloor('Ground')
-            }}>
-              {PRD_UNIT_TYPES.map((item) => <option key={item} value={item}>{item}</option>)}
-            </select>
-          </label>
+            }}
+          />
           <NumberField name="bua" label={t('create.bua')} defaultValue={unit.bua} min={1} required />
           {areaFields.showLandArea && <NumberField name="landArea" label={t('create.landArea')} defaultValue={unit.landArea ?? 0} min={0} required />}
           {areaFields.showFloor && (
-            <label>
-              <RequiredLabel label={t('create.floor')} required />
-              <select name="floor" value={floor} required onChange={(event) => setFloor(event.target.value)}>
-                {PRD_FLOOR_OPTIONS.map((item) => <option key={item} value={item}>{item === 'Ground' ? t('create.ground') : item}</option>)}
-              </select>
-            </label>
+            <NamedSelectField
+              name="floor"
+              label={t('create.floor')}
+              options={PRD_FLOOR_OPTIONS.map((item) => ({ value: item, label: item === 'Ground' ? t('create.ground') : item }))}
+              value={floor}
+              required
+              onValueChange={setFloor}
+            />
           )}
           {areaFields.showGardenArea && <NumberField name="gardenArea" label={t('create.gardenArea')} defaultValue={unit.gardenArea ?? 0} min={0} />}
           {areaFields.showTerraceArea && <NumberField name="terraceArea" label={t('create.terraceArea')} defaultValue={unit.terraceArea ?? 0} min={0} required />}
@@ -263,27 +269,33 @@ function UnitDetailsEditForm({
           <NumberField name="bedrooms" label={t('create.bedrooms')} defaultValue={unit.bedrooms} min={1} max={10} required />
           <NumberField name="bathrooms" label={t('create.bathrooms')} defaultValue={unit.bathrooms} min={1} max={10} required />
           <label className="toggle-line"><input name="elevator" type="checkbox" defaultChecked={unit.elevator} /> {t('create.elevator')}</label>
-          <label>
-            {t('create.furnished')}
-            <select name="furnished" defaultValue={String(unit.furnished)}>
-              <option value="true">{t('create.furnishedOption')}</option>
-              <option value="false">{t('create.unfurnishedOption')}</option>
-            </select>
-          </label>
-          <label>
-            <RequiredLabel label={t('create.finish')} required />
-            <select name="finish" defaultValue={unit.finish} required>
-              <option value="Fully Finished">{t('create.fullyFinished')}</option>
-              <option value="Semi Finished">{t('create.semiFinished')}</option>
-              <option value="Core & Shell">{t('create.coreAndShell')}</option>
-            </select>
-          </label>
-          <label>
-            <RequiredLabel label={t('create.deliveryDate')} required />
-            <select name="deliveryYear" defaultValue={String(unit.deliveryExpectancy.year)} required>
-              {deliveryYearOptions.map((year) => <option key={year} value={year}>{year}</option>)}
-            </select>
-          </label>
+          <NamedSelectField
+            name="furnished"
+            label={t('create.furnished')}
+            defaultValue={String(unit.furnished)}
+            options={[
+              { value: 'true', label: t('create.furnishedOption') },
+              { value: 'false', label: t('create.unfurnishedOption') },
+            ]}
+          />
+          <NamedSelectField
+            name="finish"
+            label={t('create.finish')}
+            defaultValue={unit.finish}
+            required
+            options={[
+              { value: 'Fully Finished', label: t('create.fullyFinished') },
+              { value: 'Semi Finished', label: t('create.semiFinished') },
+              { value: 'Core & Shell', label: t('create.coreAndShell') },
+            ]}
+          />
+          <NamedSelectField
+            name="deliveryYear"
+            label={t('create.deliveryDate')}
+            defaultValue={String(unit.deliveryExpectancy.year)}
+            required
+            options={deliveryYearOptions.map((year) => ({ value: year, label: year }))}
+          />
           <label className="wide-field">
             {t('create.salesNotes')}
             <textarea name="salesNotes" defaultValue={unit.salesNotes} dir="auto" />
@@ -292,7 +304,18 @@ function UnitDetailsEditForm({
 
         <fieldset>
           <legend>{t('create.legend.payment')}</legend>
-          <ReadOnlyField label={t('create.paymentMethod')} value={getPaymentMethodLabel(locale, unit.paymentMethod)} />
+          <NamedSelectField
+            name="paymentMethod"
+            label={t('create.paymentMethod')}
+            disabled={!canEditPaymentPlan || saving}
+            options={[
+              { value: 'cash', label: getPaymentMethodLabel(locale, 'cash') },
+              { value: 'installment', label: getPaymentMethodLabel(locale, 'installment') },
+            ]}
+            value={paymentMethod}
+            required
+            onValueChange={(value) => setPaymentMethod(value as PaymentMethod)}
+          />
           <label>
             <RequiredLabel label={t('create.totalAmount')} required />
             <input name="totalAmount" type="number" min={0} defaultValue={unit.totalAmount} disabled={!canEditPricing || saving} required={canEditPricing} />
@@ -323,12 +346,30 @@ function UnitDetailsEditForm({
               </label>
             </>
           )}
-          <ReadOnlyField label={t('create.downPayment')} value={formatCurrency(unit.downPayment, locale)} />
+          {paymentMethod === 'installment' && (
+            <label>
+              <RequiredLabel label={t('create.downPayment')} required={canEditPaymentPlan} />
+              <input name="downPayment" type="number" min={0} max={unit.totalAmount} defaultValue={unit.downPayment ?? 0} disabled={!canEditPaymentPlan || saving} required={canEditPaymentPlan} />
+            </label>
+          )}
           <ReadOnlyField label={t('details.remainingPayment')} value={formatCurrency(unit.remainingPayment, locale)} />
-          {unit.paymentMethod === 'installment' && (
+          {paymentMethod === 'installment' && (
             <>
-              <ReadOnlyField label={t('details.installmentType')} value={getInstallmentTypeLabel(unit.installmentType, t)} />
-              {unit.installmentType === 'custom' ? (
+              <NamedSelectField
+                name="installmentType"
+                label={t('details.installmentType')}
+                disabled={!canEditPaymentPlan || saving}
+                options={[
+                  { value: 'quarterly', label: t('create.quarterly') },
+                  { value: 'semi_annual', label: t('create.semiAnnual') },
+                  { value: 'annual', label: t('create.annual') },
+                  { value: 'custom', label: t('create.customInstallments') },
+                ]}
+                value={installmentType}
+                required
+                onValueChange={(value) => setInstallmentType(value as InstallmentType)}
+              />
+              {installmentType === 'custom' ? (
                 <label className="wide-field">
                   <RequiredLabel label={t('create.customInstallmentText')} required={canEditPricing} />
                   <textarea name="customInstallmentText" defaultValue={customInstallmentText ?? ''} disabled={!canEditPricing || saving} required={canEditPricing} dir="auto" />

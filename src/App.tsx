@@ -336,26 +336,27 @@ function LeadraApp() {
     })
   }
 
-  function recordPdfAction(unit: LeadraUnit, kind: PdfActionKind) {
+  async function recordPdfAction(unit: LeadraUnit, kind: PdfActionKind) {
     const notificationMessage = createNotificationMessage(kind, { unitCode: unit.unitCode })
     const auditMessage = createAuditMessage(kind, { unitCode: unit.unitCode })
     const createdAt = new Date().toISOString()
+    const adminAudience = ['admin', 'sub_admin'] as const
+    const notifications = adminAudience.map((role) => ({
+      id: `notif-${kind}-${role}-${unit.id}-${createdAt}`,
+      title: notificationMessage.title.text,
+      body: notificationMessage.body.text,
+      messageKey: notificationMessage.body.messageKey ?? null,
+      messageParams: notificationMessage.body.messageParams ?? null,
+      audienceRole: role,
+      createdAt,
+      read: false,
+    }))
     setAppState((state) =>
       addAnalyticsEventWorkflow(
         {
           ...state,
           notifications: [
-            {
-              id: `notif-${kind}-${unit.id}-${createdAt}`,
-              title: notificationMessage.title.text,
-              body: notificationMessage.body.text,
-              messageKey: notificationMessage.body.messageKey ?? null,
-              messageParams: notificationMessage.body.messageParams ?? null,
-              audienceRole: user.role === 'sales' ? undefined : 'admin',
-              userId: user.role === 'sales' ? user.id : undefined,
-              createdAt,
-              read: false,
-            },
+            ...notifications,
             ...state.notifications,
           ],
           auditLogs: [
@@ -378,6 +379,16 @@ function LeadraApp() {
         unit,
       ),
     )
+    if (supabase && isSupabaseConfigured) {
+      await new LeadraRepository(supabase).recordPdfAction(
+        user,
+        unit,
+        kind === 'pdf_generated' ? 'pdf_generated' : 'pdf_shared_or_downloaded',
+        auditMessage,
+        notificationMessage,
+        [...adminAudience],
+      )
+    }
   }
 
   const completeSupabaseLogin = useCallback(async (authUser: SupabaseUser) => {
@@ -736,11 +747,22 @@ function LeadraApp() {
     const developer = activeLookupValues.find((item) => item.id === developerId)
     const viewLookup = activeLookupValues.find((item) => item.id === viewId)
     const maintenancePaid = formData.get('maintenancePaid') === 'on'
+    const submittedPaymentMethodValue = formData.get('paymentMethod')
+    const submittedPaymentMethod = submittedPaymentMethodValue === 'cash' || submittedPaymentMethodValue === 'installment'
+      ? submittedPaymentMethodValue
+      : unit.paymentMethod
+    const submittedInstallmentTypeValue = formData.get('installmentType')
+    const submittedInstallmentType = submittedInstallmentTypeValue === 'quarterly' ||
+      submittedInstallmentTypeValue === 'semi_annual' ||
+      submittedInstallmentTypeValue === 'annual' ||
+      submittedInstallmentTypeValue === 'custom'
+      ? submittedInstallmentTypeValue
+      : unit.installmentType
     const submittedInstallmentStartMonth = parseOptionalFormMonthDate(formData, 'installmentStartMonth')
     const submittedInstallmentEndMonth = parseOptionalFormMonthDate(formData, 'installmentEndMonth')
     const storedInstallmentStartMonth = getUnitInstallmentStartMonth(unit)
     const storedInstallmentEndMonth = getUnitInstallmentEndMonth(unit)
-    const shouldSubmitInstallmentPeriod = unit.paymentMethod === 'installment' && isAutomaticInstallmentType(unit.installmentType) && (
+    const shouldSubmitInstallmentPeriod = submittedPaymentMethod === 'installment' && isAutomaticInstallmentType(submittedInstallmentType) && (
       Boolean(submittedInstallmentStartMonth || submittedInstallmentEndMonth) ||
       Boolean(storedInstallmentStartMonth && storedInstallmentEndMonth)
     )
@@ -771,6 +793,8 @@ function LeadraApp() {
       landArea: Number(formData.get('landArea')) || null,
       furnished: String(formData.get('furnished')) === 'true',
       finish: String(formData.get('finish')),
+      paymentMethod: submittedPaymentMethod,
+      downPayment: submittedPaymentMethod === 'installment' ? parseOptionalFormNumber(formData, 'downPayment') ?? unit.downPayment ?? 0 : null,
       deliveryExpectancy: {
         mode: 'year',
         year: Number(formData.get('deliveryYear')),
@@ -784,15 +808,15 @@ function LeadraApp() {
       maintenancePaid,
       maintenanceCost: maintenancePaid ? parseOptionalFormNumber(formData, 'maintenanceCost') : null,
       maintenanceDueDate: maintenancePaid ? parseOptionalFormDate(formData, 'maintenanceDueDate') : null,
-      ...(unit.paymentMethod === 'installment' && unit.installmentType === 'custom'
+      ...(submittedPaymentMethod === 'installment' && submittedInstallmentType === 'custom'
         ? {
-            installmentType: unit.installmentType,
+            installmentType: submittedInstallmentType,
             customInstallmentText: parseOptionalFormText(formData, 'customInstallmentText') ?? getUnitCustomInstallmentText(unit),
           }
         : {}),
       ...(shouldSubmitInstallmentPeriod
         ? {
-            installmentType: unit.installmentType,
+            installmentType: submittedInstallmentType,
             installmentStartMonth,
             installmentEndMonth,
           }
@@ -1093,7 +1117,7 @@ function LeadraApp() {
     setGeneratingPdfUnitId(unit.id)
     try {
       await generatePdfFile(unit)
-      recordPdfAction(unit, 'pdf_generated')
+      await recordPdfAction(unit, 'pdf_generated')
       setFlash({ text: 'PDF generated. Use Download PDF or Share PDF from the unit details actions.', messageKey: null, messageParams: null })
     } catch {
       setFlash({ text: 'PDF could not be generated. Please try again.', messageKey: null, messageParams: null })
@@ -1108,8 +1132,8 @@ function LeadraApp() {
     try {
       const generated = generatedPdfs[unit.id] ?? await generatePdfFile(unit)
       const { downloadGeneratedPdf } = await import('./lib/pdf')
+      await recordPdfAction(unit, 'pdf_downloaded')
       downloadGeneratedPdf(generated)
-      recordPdfAction(unit, 'pdf_downloaded')
       setFlash({ text: 'PDF download started.', messageKey: null, messageParams: null })
     } catch {
       setFlash({ text: 'PDF could not be downloaded. Please generate it again.', messageKey: null, messageParams: null })
@@ -1126,12 +1150,12 @@ function LeadraApp() {
       const { shareGeneratedPdf, downloadGeneratedPdf } = await import('./lib/pdf')
       const shared = await shareGeneratedPdf(generated)
       if (shared) {
-        recordPdfAction(unit, 'pdf_shared')
+        await recordPdfAction(unit, 'pdf_shared')
         setFlash({ text: 'PDF share sheet opened.', messageKey: null, messageParams: null })
         return
       }
+      await recordPdfAction(unit, 'pdf_downloaded')
       downloadGeneratedPdf(generated)
-      recordPdfAction(unit, 'pdf_downloaded')
       setFlash({ text: 'Native sharing is unavailable in this browser. The PDF was downloaded so you can send it manually.', messageKey: null, messageParams: null })
     } catch {
       setFlash({ text: 'PDF could not be shared. Please try again.', messageKey: null, messageParams: null })

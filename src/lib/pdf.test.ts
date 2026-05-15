@@ -119,7 +119,7 @@ describe('pdf generation', () => {
     expect(text.indexOf('Destination: New Cairo')).toBeLessThan(text.indexOf('Developer: Palm Hills'))
     expect(text).toContain('Project: New Cairo Estates')
     expect(text).toContain('Type: Apartment')
-    expect(text).toContain('Area: 165 m2')
+    expect(text).toContain('BUA: 165 m2')
     expect(text).toContain('Floor: 3rd')
     expect(text).toContain('Beds / Baths: 3 / 2')
     expect(text).toContain('Finishing Status: Fully Finished')
@@ -130,7 +130,7 @@ describe('pdf generation', () => {
     expect(text).toContain('Transfer Fees: EGP\u00a0125,000')
     expect(text).toContain('Down Payment: EGP\u00a01,000,000')
     expect(text).toContain('Remaining Payment: EGP\u00a04,000,000')
-    expect(text).toContain('Installment: #2 Sep 2026: EGP\u00a0345,678')
+    expect(text).toContain('Next Installment: #2 Sep 2026: EGP\u00a0345,678')
     expect(text).not.toContain('Payment method')
     expect(text).not.toContain('Payment Method')
   })
@@ -143,14 +143,24 @@ describe('pdf generation', () => {
       elevator: false,
       installmentType: 'custom' as const,
       customInstallmentText: '10% every six months after handover',
-      installmentAmount: null,
+      installmentAmount: 250_000,
     }
 
     const text = buildPermissionSafePdfText(user, unit, initialAppState.settings)
 
     expect(text).toContain('Custom Installment Text: 10% every six months after handover')
+    expect(text).toContain('Next Installment: EGP\u00a0250,000')
     expect(text).not.toContain('Furnishing Status')
     expect(text).not.toContain('Elevator:')
+  })
+
+  it('omits zero transfer fees because they are not applicable', () => {
+    const user = demoUsers[0]
+    const unit = { ...seedUnits[0], transferFees: 0 }
+
+    const text = buildPermissionSafePdfText(user, unit, initialAppState.settings)
+
+    expect(text).not.toContain('Transfer Fees:')
   })
 
   it('embeds the uploaded company logo in generated pdf exports', async () => {

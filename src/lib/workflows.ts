@@ -616,6 +616,12 @@ export function updateUnitWorkflow(
     return { ok: false, state, error: 'Unit Type must use the fixed PRD list.', errorKey: null, errorParams: null }
   }
   const outdoorFields = canEditNonOwner ? normalizeUnitOutdoorFields(input) : unit
+  const nextPaymentMethod = canEditPricing ? input.paymentMethod ?? unit.paymentMethod : unit.paymentMethod
+  const nextDownPayment = canEditPricing
+    ? nextPaymentMethod === 'installment'
+      ? input.downPayment ?? unit.downPayment ?? 0
+      : null
+    : unit.downPayment
   const nextTotalAmount = canEditPricing ? input.totalAmount : unit.totalAmount
   const nextMaintenancePaid = canEditPricing ? input.maintenancePaid ?? false : unit.maintenancePaid ?? false
   if (canEditPricing && (input.transferFees ?? 0) < 0) {
@@ -626,6 +632,9 @@ export function updateUnitWorkflow(
   }
   if (canEditPricing && nextMaintenancePaid && (input.maintenanceCost == null || !input.maintenanceDueDate)) {
     return { ok: false, state, error: 'Maintenance cost and due date are required when maintenance is paid.', errorKey: null, errorParams: null }
+  }
+  if (canEditPricing && nextPaymentMethod === 'installment' && nextDownPayment != null && nextDownPayment > nextTotalAmount) {
+    return { ok: false, state, error: 'Down payment cannot be greater than total amount.', errorKey: null, errorParams: null }
   }
   let nextMaintenanceCost: number | null = null
   let nextMaintenanceDueDate: string | null = null
@@ -639,11 +648,11 @@ export function updateUnitWorkflow(
   }
   const nextCommissionPercentage = canEditCommission ? input.commissionPercentage : unit.commissionPercentage
   const installmentAmount =
-    unit.paymentMethod === 'installment' && nextInstallmentFields.fields.installmentType !== 'custom'
+    nextPaymentMethod === 'installment' && nextInstallmentFields.fields.installmentType !== 'custom'
       ? calculatePaymentSummary({
-          paymentMethod: unit.paymentMethod,
-          totalAmount: (unit.remainingPayment ?? 0) + (unit.downPayment ?? 0),
-          downPayment: unit.downPayment,
+          paymentMethod: nextPaymentMethod,
+          totalAmount: (unit.remainingPayment ?? 0) + (nextDownPayment ?? 0),
+          downPayment: nextDownPayment,
           installmentType: nextInstallmentFields.fields.installmentType,
           installmentYears: nextInstallmentFields.fields.installmentYears,
           installmentStartMonth: nextInstallmentFields.fields.installmentStartMonth,
@@ -676,7 +685,9 @@ export function updateUnitWorkflow(
     finish: canEditNonOwner ? input.finish : unit.finish,
     deliveryExpectancy: canEditNonOwner ? input.deliveryExpectancy : unit.deliveryExpectancy,
     salesNotes: canEditNonOwner ? input.salesNotes : unit.salesNotes,
+    paymentMethod: nextPaymentMethod,
     totalAmount: nextTotalAmount,
+    downPayment: nextDownPayment,
     remainingPayment: unit.remainingPayment,
     transferFees: canEditPricing ? input.transferFees ?? null : unit.transferFees ?? null,
     maintenancePaid: nextMaintenancePaid,
@@ -1078,12 +1089,16 @@ function resolveUnitEditInstallmentFields(
   input: UnitEditInput,
   canEditPricing: boolean,
 ): InstallmentFieldResult {
+  if (input.paymentMethod === 'cash') {
+    return { ok: true, fields: emptyInstallmentFields() }
+  }
+
   if (!canEditPricing || !hasInstallmentEdit(input)) {
     return { ok: true, fields: preservedInstallmentFields(unit) }
   }
 
   return normalizeInstallmentFields({
-    paymentMethod: unit.paymentMethod,
+    paymentMethod: input.paymentMethod ?? unit.paymentMethod,
     installmentType: input.installmentType ?? unit.installmentType,
     installmentStartMonth: input.installmentStartMonth ?? unit.installmentStartMonth,
     installmentEndMonth: input.installmentEndMonth ?? unit.installmentEndMonth,

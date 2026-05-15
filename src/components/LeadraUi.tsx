@@ -351,6 +351,7 @@ export function NamedSelectField({
   options,
   value,
   defaultValue,
+  disabled = false,
   required = false,
   onValueChange,
 }: {
@@ -359,6 +360,7 @@ export function NamedSelectField({
   options: BrandedSelectOption[]
   value?: string
   defaultValue?: string
+  disabled?: boolean
   required?: boolean
   onValueChange?: (value: string) => void
 }) {
@@ -366,7 +368,7 @@ export function NamedSelectField({
   return (
     <label>
       <span id={labelId}><RequiredLabel label={label} required={required} /></span>
-      <BrandedSelect defaultValue={defaultValue} labelId={labelId} name={name} options={options} value={value} onValueChange={onValueChange} />
+      <BrandedSelect disabled={disabled} defaultValue={defaultValue} labelId={labelId} name={name} options={options} value={value} onValueChange={onValueChange} />
     </label>
   )
 }

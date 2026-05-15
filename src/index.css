@@ -3089,17 +3089,19 @@ dd,
 
 .details-edit-form {
   grid-template-columns: 1fr;
+  gap: 0.8rem;
 }
 
 .details-edit-form fieldset {
   display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
-  gap: 0.8rem;
+  grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+  column-gap: 0.75rem;
+  row-gap: 0.65rem;
   min-width: 0;
   margin: 0;
   border: 1px solid rgba(38, 64, 51, 0.12);
   border-radius: 0.9rem;
-  padding: 0.85rem;
+  padding: 0.72rem;
 }
 
 .details-edit-form fieldset:disabled {
@@ -3112,8 +3114,42 @@ dd,
   font-weight: 700;
 }
 
+.details-edit-form label,
+.details-edit-form .owner-phone-field {
+  align-content: start;
+  gap: 0.24rem;
+  font-size: 0.78rem;
+}
+
+.details-edit-form input,
+.details-edit-form textarea,
+.details-edit-form .brand-select,
+.details-edit-form .brand-select-trigger,
+.details-edit-form .owner-phone-shell {
+  align-self: start;
+}
+
+.details-edit-form input,
+.details-edit-form textarea,
+.details-edit-form .brand-select-trigger,
+.details-edit-form .owner-phone-shell {
+  min-height: 46px;
+  border-radius: 0.78rem;
+}
+
+.details-edit-form input,
+.details-edit-form textarea,
+.details-edit-form .brand-select-trigger {
+  padding: 0.62rem 0.72rem;
+}
+
+.details-edit-form textarea {
+  min-height: 86px;
+}
+
 .details-edit-form input:disabled,
-.details-edit-form select:disabled {
+.details-edit-form select:disabled,
+.details-edit-form .brand-select.is-disabled .brand-select-trigger {
   cursor: not-allowed;
   background: rgba(224, 216, 201, 0.5);
 }

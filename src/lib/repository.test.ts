@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { demoUsers, seedUnits } from '../data/seed'
 import { LeadraRepository } from './repository'
 import type { CreateUnitInput, LeadraUser, UnitEditInput } from './types'
 
@@ -445,6 +446,40 @@ describe('LeadraRepository', () => {
         salesUser({ id: 'admin-1', role: 'admin' }),
       ),
     ).rejects.toThrow('Select an active replacement sales representative.')
+  })
+
+  it('persists pdf audit, admin notifications, and analytics rows', async () => {
+    const inserts: Array<{ table: string; payload: unknown }> = []
+    const client = {
+      from(table: string) {
+        return {
+          insert(payload: unknown) {
+            inserts.push({ table, payload })
+            return Promise.resolve({ error: null })
+          },
+        }
+      },
+    }
+
+    await new LeadraRepository(client as never).recordPdfAction(
+      demoUsers[3],
+      seedUnits[0],
+      'pdf_generated',
+      { text: 'PDF generated', messageKey: 'message.audit.pdfGenerated', messageParams: { unitCode: seedUnits[0].unitCode } },
+      {
+        title: { text: 'PDF generated', messageKey: 'message.notification.pdfGenerated.title' },
+        body: { text: 'PDF generated for unit.', messageKey: 'message.notification.pdfGenerated.body', messageParams: { unitCode: seedUnits[0].unitCode } },
+      },
+      ['admin', 'sub_admin'],
+    )
+
+    expect(inserts.map((item) => item.table)).toEqual(['audit_logs', 'notifications', 'analytics_events'])
+    expect(inserts[0].payload).toMatchObject({ actor_id: demoUsers[3].id, related_unit_id: seedUnits[0].id })
+    expect(inserts[1].payload).toEqual([
+      expect.objectContaining({ audience_role: 'admin' }),
+      expect.objectContaining({ audience_role: 'sub_admin' }),
+    ])
+    expect(inserts[2].payload).toMatchObject({ event_type: 'pdf_generated', unit_id: seedUnits[0].id })
   })
 
 })

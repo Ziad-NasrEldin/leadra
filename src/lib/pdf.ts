@@ -73,18 +73,6 @@ export async function buildPermissionSafePdfBlob(
     y -= 28
   }
 
-  const schedule = buildPaymentTimetable(safeUnit, locale).slice(0, 8)
-  if (schedule.length > 0) {
-    y -= 8
-    drawPdfText(page, 'Installment schedule', { x: 52, y, size: 13, font: bold, color: rgb(0.16, 0.15, 0.14) })
-    y -= 22
-    for (const row of schedule) {
-      drawPdfText(page, `#${row.paymentNumber} ${row.periodLabel}`, { x: 64, y, size: 9, font, color: rgb(0.16, 0.15, 0.14) })
-      drawPdfText(page, formatCurrency(row.amount, locale), { x: 220, y, size: 9, font: bold, color: rgb(0.16, 0.15, 0.14) })
-      y -= 16
-    }
-  }
-
   y -= 18
   drawPdfText(page, 'Notes', { x: 52, y, size: 13, font: bold, color: rgb(0.16, 0.15, 0.14) })
   y -= 20
@@ -147,7 +135,7 @@ function buildPdfFacts(user: LeadraUser, unit: LeadraUnit, locale: LocaleCode): 
     [translate(locale, 'details.developer'), unit.developerName],
     [translate(locale, 'export.project'), unit.projectName],
     [translate(locale, 'export.type'), unit.unitType],
-    [translate(locale, 'export.area'), formatArea(unit.bua)],
+    [translate(locale, 'create.bua'), formatArea(unit.bua)],
   ]
 
   if (areaFields.showLandArea) facts.push([translate(locale, 'details.landArea'), formatOptionalArea(unit.landArea)])
@@ -168,20 +156,22 @@ function buildPdfFacts(user: LeadraUser, unit: LeadraUnit, locale: LocaleCode): 
   if (canIncludeSalesExportData(user, unit)) {
     facts.push([translate(locale, 'export.commission'), `${formatCurrency(unit.commissionAmount, locale)} (${unit.commissionPercentage}%)`])
   }
-  if (unit.transferFees != null) facts.push([translate(locale, 'details.transferFees'), formatCurrency(unit.transferFees, locale)])
+  if ((unit.transferFees ?? 0) > 0) facts.push([translate(locale, 'details.transferFees'), formatCurrency(unit.transferFees, locale)])
   if (unit.downPayment != null) facts.push([translate(locale, 'create.downPayment'), formatCurrency(unit.downPayment, locale)])
   if (unit.remainingPayment != null) facts.push([translate(locale, 'details.remainingPayment'), formatCurrency(unit.remainingPayment, locale)])
   if (unit.paymentMethod === 'installment') {
+    const nextInstallment = getNextInstallment(unit, locale)
+    if (nextInstallment) {
+      facts.push([
+        translate(locale, 'export.nextInstallment'),
+        `#${nextInstallment.paymentNumber} ${nextInstallment.periodLabel}: ${formatCurrency(nextInstallment.amount, locale)}`,
+      ])
+    } else if (unit.installmentAmount != null) {
+      facts.push([translate(locale, 'export.nextInstallment'), formatCurrency(unit.installmentAmount, locale)])
+    }
+
     if (unit.installmentType === 'custom') {
       facts.push([translate(locale, 'details.customInstallmentText'), unit.customInstallmentText || translate(locale, 'details.customInstallmentMessage')])
-    } else {
-      const nextInstallment = getNextInstallment(unit, locale)
-      facts.push([
-        translate(locale, 'export.installment'),
-        nextInstallment
-          ? `#${nextInstallment.paymentNumber} ${nextInstallment.periodLabel}: ${formatCurrency(nextInstallment.amount, locale)}`
-          : formatCurrency(unit.installmentAmount, locale),
-      ])
     }
   }
 

@@ -12,7 +12,7 @@ import {
   type SupabasePaymentScheduleRow,
   type SupabaseUnitRow,
 } from './supabaseMapper'
-import type { CreateUnitInput, LeadraUnit, LeadraUser, UnitEditInput, UnitFilters, UnitStatus } from './types'
+import type { AnalyticsEventType, CreateUnitInput, LeadraUnit, LeadraUser, MessageParams, UnitEditInput, UnitFilters, UnitStatus, UserRole } from './types'
 
 const unitSelect = `
   *,
@@ -147,6 +147,54 @@ export class LeadraRepository {
       .eq('id', mediaId)
       .eq('type', 'image')
     if (error) throw error
+  }
+
+  async recordPdfAction(
+    actor: LeadraUser,
+    unit: LeadraUnit,
+    eventType: AnalyticsEventType,
+    audit: { text: string; messageKey?: string | null; messageParams?: MessageParams | null },
+    notification: {
+      title: { text: string; messageKey?: string | null; messageParams?: MessageParams | null }
+      body: { text: string; messageKey?: string | null; messageParams?: MessageParams | null }
+    },
+    audienceRoles: UserRole[],
+  ): Promise<void> {
+    const [auditResult, notificationResult, analyticsResult] = await Promise.all([
+      this.client.from('audit_logs').insert({
+        actor_id: actor.id,
+        actor_role: actor.role,
+        action_type: audit.text,
+        message_key: audit.messageKey ?? null,
+        message_params: audit.messageParams ?? null,
+        related_unit_id: unit.id,
+      }),
+      this.client.from('notifications').insert(audienceRoles.map((role) => ({
+        audience_role: role,
+        title: notification.title.text,
+        body: notification.body.text,
+        message_key: notification.body.messageKey ?? null,
+        message_params: notification.body.messageParams ?? null,
+      }))),
+      this.client.from('analytics_events').insert({
+        event_type: eventType,
+        actor_id: actor.id,
+        actor_role: actor.role,
+        team_id: actor.teamId || null,
+        branch_id: actor.branchId || null,
+        unit_id: unit.id,
+        project_id: unit.projectId,
+        developer_id: unit.developerId,
+        destination_id: unit.destinationId,
+        amount_value: unit.totalAmount,
+        commission_value: unit.commissionAmount,
+        metadata: { unitCode: unit.unitCode },
+      }),
+    ])
+
+    if (auditResult.error) throw auditResult.error
+    if (notificationResult.error) throw notificationResult.error
+    if (analyticsResult.error) throw analyticsResult.error
   }
 
   async deleteSalesRepresentativeAfterReassignment(salesUserId: string, replacement: LeadraUser, actor: LeadraUser): Promise<void> {
