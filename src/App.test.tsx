@@ -689,6 +689,23 @@ describe('Leadra app shell', () => {
     expect(screen.queryByText(/sara amin/i)).not.toBeInTheDocument()
   })
 
+  it('keeps active sales representatives on the reassignment deactivation path', async () => {
+    renderApp()
+    const user = userEvent.setup()
+
+    await openLoginPage(user)
+    await signInAs(user, /continue as admin/i)
+    await user.click((await screen.findAllByRole('link', { name: /^admin$/i }))[0])
+
+    await chooseFromSelect(user, /^role$/i, /sales representative/i)
+    await user.click(screen.getByRole('button', { name: /edit user/i }))
+    const editForm = screen.getByRole('button', { name: /save user/i }).closest('form')
+    expect(editForm).not.toBeNull()
+    await user.click(within(editForm as HTMLFormElement).getByRole('combobox', { name: /status/i }))
+
+    expect(screen.queryByRole('option', { name: /inactive/i })).not.toBeInTheDocument()
+  })
+
   it('removes a manager from user management without a sales reassignment step', async () => {
     renderApp()
     const user = userEvent.setup()

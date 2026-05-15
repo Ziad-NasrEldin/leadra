@@ -161,7 +161,10 @@ export function AdminPage({
   )
 
   useEffect(() => {
-    setLogoPathDraft(settings.logoPath)
+    const timeout = window.setTimeout(() => {
+      setLogoPathDraft(settings.logoPath)
+    }, 0)
+    return () => window.clearTimeout(timeout)
   }, [settings.logoPath])
 
   async function handleLogoFileChange(event: ChangeEvent<HTMLInputElement>) {

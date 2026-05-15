@@ -30,8 +30,15 @@ export function useLookupThumbnailSources(lookupValues: LookupValue[]) {
         return true
       })
 
-    setSources(inlineSources)
-    if (!supabase || !isSupabaseConfigured || storageItems.length === 0) return undefined
+    const inlineTimeout = window.setTimeout(() => {
+      if (!cancelled) setSources(inlineSources)
+    }, 0)
+    if (!supabase || !isSupabaseConfigured || storageItems.length === 0) {
+      return () => {
+        cancelled = true
+        window.clearTimeout(inlineTimeout)
+      }
+    }
 
     async function loadSignedSources() {
       const entries = await Promise.all(storageItems.map(async (item) => {
@@ -49,6 +56,7 @@ export function useLookupThumbnailSources(lookupValues: LookupValue[]) {
     void loadSignedSources()
     return () => {
       cancelled = true
+      window.clearTimeout(inlineTimeout)
     }
   }, [lookupValues])
 

@@ -407,11 +407,13 @@ describe('LeadraRepository', () => {
   })
 
   it('delegates sales representative deactivation and reassignment to the durable history RPC', async () => {
-    const calls: Array<{ fn: string; args: unknown }> = []
+    const calls: Array<{ fn: string; body: unknown }> = []
     const client = {
-      rpc(fn: string, args: unknown) {
-        calls.push({ fn, args })
-        return Promise.resolve({ error: null })
+      functions: {
+        invoke(fn: string, { body }: { body: unknown }) {
+          calls.push({ fn, body })
+          return Promise.resolve({ data: { ok: true }, error: null })
+        },
       },
     }
 
@@ -423,10 +425,10 @@ describe('LeadraRepository', () => {
 
     expect(calls).toEqual([
       {
-        fn: 'deactivate_sales_representative_after_reassignment',
-        args: {
-          target_sales_user_id: 'sales-old',
-          replacement_sales_user_id: 'sales-new',
+        fn: 'admin-deactivate-sales-rep',
+        body: {
+          salesUserId: 'sales-old',
+          replacementSalesUserId: 'sales-new',
         },
       },
     ])
@@ -434,8 +436,10 @@ describe('LeadraRepository', () => {
 
   it('surfaces RPC errors when reassignment persistence fails', async () => {
     const client = {
-      rpc() {
-        return Promise.resolve({ error: new Error('Select an active replacement sales representative.') })
+      functions: {
+        invoke() {
+          return Promise.resolve({ data: { ok: false, error: 'Select an active replacement sales representative.' }, error: null })
+        },
       },
     }
 

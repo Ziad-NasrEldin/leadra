@@ -206,14 +206,26 @@ function DirectoryCreateForm({
   const [thumbnailPreview, setThumbnailPreview] = useState<string | null>(null)
 
   useEffect(() => {
+    let cancelled = false
     if (!thumbnailFile) {
-      setThumbnailPreview(null)
-      return undefined
+      const timeout = window.setTimeout(() => {
+        if (!cancelled) setThumbnailPreview(null)
+      }, 0)
+      return () => {
+        cancelled = true
+        window.clearTimeout(timeout)
+      }
     }
 
     const preview = URL.createObjectURL(thumbnailFile)
-    setThumbnailPreview(preview)
-    return () => URL.revokeObjectURL(preview)
+    const timeout = window.setTimeout(() => {
+      if (!cancelled) setThumbnailPreview(preview)
+    }, 0)
+    return () => {
+      cancelled = true
+      window.clearTimeout(timeout)
+      URL.revokeObjectURL(preview)
+    }
   }, [thumbnailFile])
 
   return (
@@ -388,21 +400,35 @@ function DirectoryCard({
   const [thumbnailPreview, setThumbnailPreview] = useState<string | null>(null)
 
   useEffect(() => {
+    let cancelled = false
     if (!thumbnailFile) {
-      setThumbnailPreview(null)
-      return undefined
+      const timeout = window.setTimeout(() => {
+        if (!cancelled) setThumbnailPreview(null)
+      }, 0)
+      return () => {
+        cancelled = true
+        window.clearTimeout(timeout)
+      }
     }
 
     const preview = URL.createObjectURL(thumbnailFile)
-    setThumbnailPreview(preview)
-    return () => URL.revokeObjectURL(preview)
+    const timeout = window.setTimeout(() => {
+      if (!cancelled) setThumbnailPreview(preview)
+    }, 0)
+    return () => {
+      cancelled = true
+      window.clearTimeout(timeout)
+      URL.revokeObjectURL(preview)
+    }
   }, [thumbnailFile])
 
   useEffect(() => {
-    if (!isEditing) {
+    if (isEditing) return undefined
+    const timeout = window.setTimeout(() => {
       setThumbnailFile(null)
       setRemoveThumbnail(false)
-    }
+    }, 0)
+    return () => window.clearTimeout(timeout)
   }, [isEditing])
 
   return (

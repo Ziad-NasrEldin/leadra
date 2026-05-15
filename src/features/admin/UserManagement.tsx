@@ -41,7 +41,15 @@ export function UserManagementCard({
   const [deleteError, setDeleteError] = useState('')
   const [deletePending, setDeletePending] = useState(false)
   const [replacementSalesUserId, setReplacementSalesUserId] = useState(salesReplacementOptions[0]?.id ?? '')
-  const canDeleteManagedUser = user.role !== 'admin' && user.status === 'active' && !user.deletedAt
+  const canDeleteManagedUser = user.role === 'sales'
+    ? !user.deletedAt
+    : user.role !== 'admin' && user.status === 'active' && !user.deletedAt
+  const statusOptions = user.role === 'sales' && user.status === 'active'
+    ? [{ value: 'active', label: t('admin.statusActive') }]
+    : [
+        { value: 'active', label: t('admin.statusActive') },
+        { value: 'inactive', label: t('admin.statusInactive') },
+      ]
 
   return (
     <article className={`user-management-card motion-stage ${user.status}`} style={motionStyle(index)}>
@@ -146,10 +154,7 @@ export function UserManagementCard({
             defaultValue={user.status}
             label={t('admin.status')}
             name="status"
-            options={[
-              { value: 'active', label: t('admin.statusActive') },
-              { value: 'inactive', label: t('admin.statusInactive') },
-            ]}
+            options={statusOptions}
           />
           <label>
             {t('admin.jobTitle')}

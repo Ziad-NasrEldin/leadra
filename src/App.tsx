@@ -516,8 +516,11 @@ function LeadraApp() {
 
   useEffect(() => {
     if (!currentUser) return
-    setAppState((state) => queueSalesInactivityWarnings(state))
-  }, [currentUser?.id, appState.units.length, appState.users.length])
+    const timeout = window.setTimeout(() => {
+      setAppState((state) => queueSalesInactivityWarnings(state))
+    }, 0)
+    return () => window.clearTimeout(timeout)
+  }, [currentUser, appState.units.length, appState.users.length])
 
   useEffect(() => {
     if (!currentUser) {
@@ -1780,6 +1783,11 @@ function LeadraApp() {
                 setFlash(createFlashMessage('flash.userCreated', 'User created and audit history updated.'))
               }}
               onUpdateUser={async (userId, updates) => {
+                const existingUser = appState.users.find((item) => item.id === userId)
+                if (existingUser?.role === 'sales' && existingUser.status === 'active' && updates.status === 'inactive') {
+                  throw new Error('Use Reassign and deactivate sales rep so assigned units move to another active sales representative.')
+                }
+
                 const auditMessage = createAuditMessage('user_profile_updated')
                 const nextUser =
                   supabase && isSupabaseConfigured

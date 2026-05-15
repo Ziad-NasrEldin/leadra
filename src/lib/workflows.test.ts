@@ -168,6 +168,30 @@ describe('Leadra product workflows', () => {
     })
   })
 
+  it('can finish reassignment for a sales representative already marked inactive', () => {
+    const replacement: LeadraUser = {
+      ...sales,
+      id: 'sales-2',
+      fullName: 'Replacement Sales',
+      email: 'replacement@leadra.test',
+    }
+    const inactiveSales: LeadraUser = { ...sales, status: 'inactive' }
+
+    const result = deleteSalesRepresentativeWorkflow(
+      { ...state(), users: [admin, inactiveSales, replacement] },
+      admin,
+      inactiveSales.id,
+      replacement.id,
+    )
+
+    expect(result.ok).toBe(true)
+    expect(result.state.users.find((item) => item.id === inactiveSales.id)).toMatchObject({
+      status: 'inactive',
+      deletedAt: expect.any(String),
+    })
+    expect(result.state.units.filter((unit) => unit.createdBy === inactiveSales.id)).toHaveLength(0)
+  })
+
   it('deactivates and hides a manager without reassigning units', () => {
     const result = deleteManagedUserWorkflow({ ...state(), users: [admin, sales, manager] }, admin, manager.id)
 
