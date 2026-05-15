@@ -312,6 +312,8 @@ function LeadraApp() {
   const [loginError, setLoginError] = useState<UiMessage | null>(null)
   const [generatingPdfUnitId, setGeneratingPdfUnitId] = useState<number | null>(null)
   const [sharingPdfUnitId, setSharingPdfUnitId] = useState<number | null>(null)
+  const [batchPdfAction, setBatchPdfAction] = useState<'generate' | 'download' | 'share' | null>(null)
+  const [selectedBatchUnitIds, setSelectedBatchUnitIds] = useState<number[]>([])
   const [updatingStatusUnitId, setUpdatingStatusUnitId] = useState<number | null>(null)
   const [updatingPaymentScheduleId, setUpdatingPaymentScheduleId] = useState<string | null>(null)
   const [statusActionFeedback, setStatusActionFeedback] = useState<{
@@ -586,6 +588,7 @@ function LeadraApp() {
     projectId: activeSelectedProjectId ?? undefined,
   })
   const displayedUnits = remoteSearchUnits ?? filteredUnits
+  const selectedBatchUnits = displayedUnits.filter((unit) => selectedBatchUnitIds.includes(unit.id))
   const unreadCount = appState.notifications.filter(
     (notification) =>
       !notification.read &&
@@ -606,6 +609,7 @@ function LeadraApp() {
       routerNavigate(path, { replace: options?.replace })
       setFlash(null)
       setMobileMenuOpen(false)
+      setSelectedBatchUnitIds([])
     })
   }
 
@@ -1112,6 +1116,86 @@ function LeadraApp() {
     }
   }
 
+  function toggleBatchUnitSelection(unitId: number) {
+    setSelectedBatchUnitIds((ids) =>
+      ids.includes(unitId) ? ids.filter((id) => id !== unitId) : [...ids, unitId],
+    )
+  }
+
+  function selectVisibleBatchUnits(unitIds: number[]) {
+    setSelectedBatchUnitIds(unitIds)
+  }
+
+  function clearBatchUnitSelection() {
+    setSelectedBatchUnitIds([])
+  }
+
+  async function generateSelectedPdfs() {
+    if (batchPdfAction || generatingPdfUnitId || sharingPdfUnitId || selectedBatchUnits.length === 0) return
+    setBatchPdfAction('generate')
+    try {
+      for (const unit of selectedBatchUnits) {
+        await generatePdfFile(unit)
+        await recordPdfAction(unit, 'pdf_generated')
+      }
+      setFlash({ text: `Generated ${selectedBatchUnits.length} PDF${selectedBatchUnits.length === 1 ? '' : 's'}.`, messageKey: null, messageParams: null })
+    } catch {
+      setFlash({ text: 'Selected PDFs could not be generated. Please try again.', messageKey: null, messageParams: null })
+    } finally {
+      setBatchPdfAction(null)
+    }
+  }
+
+  async function shareSelectedPdfs() {
+    if (batchPdfAction || generatingPdfUnitId || sharingPdfUnitId || selectedBatchUnits.length === 0) return
+    setBatchPdfAction('share')
+    try {
+      const generated = []
+      for (const unit of selectedBatchUnits) {
+        generated.push(generatedPdfs[unit.id] ?? await generatePdfFile(unit))
+      }
+      const { shareGeneratedPdfs, downloadGeneratedPdf } = await import('./lib/pdf')
+      const shared = await shareGeneratedPdfs(generated)
+      if (shared) {
+        for (const unit of selectedBatchUnits) {
+          await recordPdfAction(unit, 'pdf_shared')
+        }
+        setFlash({ text: `PDF share sheet opened for ${selectedBatchUnits.length} unit${selectedBatchUnits.length === 1 ? '' : 's'}.`, messageKey: null, messageParams: null })
+        return
+      }
+      for (const [index, unit] of selectedBatchUnits.entries()) {
+        downloadGeneratedPdf(generated[index])
+        await recordPdfAction(unit, 'pdf_downloaded')
+      }
+      setFlash({ text: 'Native multi-file sharing is unavailable in this browser. The PDFs were downloaded so you can send them manually.', messageKey: null, messageParams: null })
+    } catch {
+      setFlash({ text: 'Selected PDFs could not be shared. Please try again.', messageKey: null, messageParams: null })
+    } finally {
+      setBatchPdfAction(null)
+    }
+  }
+
+  async function downloadSelectedPdfs() {
+    if (batchPdfAction || generatingPdfUnitId || sharingPdfUnitId || selectedBatchUnits.length === 0) return
+    setBatchPdfAction('download')
+    try {
+      const generated = []
+      for (const unit of selectedBatchUnits) {
+        generated.push(generatedPdfs[unit.id] ?? await generatePdfFile(unit))
+      }
+      const { downloadGeneratedPdf } = await import('./lib/pdf')
+      for (const [index, unit] of selectedBatchUnits.entries()) {
+        downloadGeneratedPdf(generated[index])
+        await recordPdfAction(unit, 'pdf_downloaded')
+      }
+      setFlash({ text: `Downloaded ${selectedBatchUnits.length} PDF${selectedBatchUnits.length === 1 ? '' : 's'}.`, messageKey: null, messageParams: null })
+    } catch {
+      setFlash({ text: 'Selected PDFs could not be downloaded. Please try again.', messageKey: null, messageParams: null })
+    } finally {
+      setBatchPdfAction(null)
+    }
+  }
+
   async function generatePdf(unit: LeadraUnit) {
     if (generatingPdfUnitId) return
     setGeneratingPdfUnitId(unit.id)
@@ -1177,12 +1261,14 @@ function LeadraApp() {
   function updateUnitFilter<K extends keyof UnitFilters>(key: K, value: UnitFilters[K]) {
     const nextFilters = { ...unitFilters, [key]: value }
     setUnitFilters(nextFilters)
+    setSelectedBatchUnitIds([])
     void loadRemoteUnitSearch(nextFilters)
   }
 
   function resetUnitFilters() {
     setUnitFilters({ status: 'all' })
     setRemoteSearchUnits(null)
+    setSelectedBatchUnitIds([])
   }
 
   async function loadRemoteUnitSearch(nextFilters: UnitFilters, destinationId = activeSelectedDestinationId, projectId = activeSelectedProjectId) {
@@ -1323,15 +1409,19 @@ function LeadraApp() {
               currentProject={projectSummaries.find((project) => project.projectId === activeSelectedProjectId) ?? null}
               units={displayedUnits}
               filters={unitFilters}
+              selectedUnitIds={selectedBatchUnitIds}
+              batchAction={batchPdfAction}
               onDestinationSelect={(id) => {
                 const nextFilters = { ...unitFilters, destinationId: undefined, projectId: undefined }
                 setUnitFilters(nextFilters)
+                setSelectedBatchUnitIds([])
                 setRemoteSearchUnits(null)
                 navigateToPath(destinationPath(id))
               }}
               onProjectSelect={(id) => {
                 const nextFilters = { ...unitFilters, projectId: undefined }
                 setUnitFilters(nextFilters)
+                setSelectedBatchUnitIds([])
                 void loadRemoteUnitSearch(nextFilters, activeSelectedDestinationId, id)
                 if (activeSelectedDestinationId) navigateToPath(projectPath(activeSelectedDestinationId, id))
               }}
@@ -1346,8 +1436,15 @@ function LeadraApp() {
               }}
               onFilterChange={updateUnitFilter}
               onResetFilters={resetUnitFilters}
+              onToggleUnitSelection={toggleBatchUnitSelection}
+              onSelectVisibleUnits={selectVisibleBatchUnits}
+              onClearSelection={clearBatchUnitSelection}
+              onGenerateSelectedPdfs={() => void generateSelectedPdfs()}
+              onDownloadSelectedPdfs={() => void downloadSelectedPdfs()}
+              onShareSelectedPdfs={() => void shareSelectedPdfs()}
               onOpenUnit={(id) => {
                 runPageTransition(() => {
+                  setSelectedBatchUnitIds([])
                   setView('details')
                   routerNavigate(unitDetailsPath(id))
                 })

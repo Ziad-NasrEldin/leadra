@@ -6,6 +6,20 @@ import App from './App'
 import { LocaleProvider } from './lib/i18n'
 import { ThemeProvider } from './lib/theme'
 
+const mockGenerateUnitPdfFile = vi.fn(async (_user: unknown, unit: { unitCode: string }) => ({
+  blob: new Blob([unit.unitCode], { type: 'application/pdf' }),
+  fileName: `leadra-${unit.unitCode}.pdf`,
+}))
+const mockShareGeneratedPdfs = vi.fn(async () => true)
+const mockDownloadGeneratedPdf = vi.fn()
+
+vi.mock('./lib/pdf', () => ({
+  generateUnitPdfFile: mockGenerateUnitPdfFile,
+  shareGeneratedPdfs: mockShareGeneratedPdfs,
+  shareGeneratedPdf: vi.fn(async () => true),
+  downloadGeneratedPdf: mockDownloadGeneratedPdf,
+}))
+
 const originalCreateObjectURL = URL.createObjectURL
 const originalRevokeObjectURL = URL.revokeObjectURL
 
@@ -69,6 +83,9 @@ describe('Leadra app shell', () => {
     window.localStorage.clear()
     delete document.documentElement.dataset.theme
     vi.restoreAllMocks()
+    mockGenerateUnitPdfFile.mockClear()
+    mockShareGeneratedPdfs.mockClear()
+    mockDownloadGeneratedPdf.mockClear()
     vi.unstubAllGlobals()
     Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: originalCreateObjectURL })
     Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: originalRevokeObjectURL })
@@ -99,6 +116,36 @@ describe('Leadra app shell', () => {
     expect(window.location.pathname).toBe('/units/destinations/dest-new-cairo/projects/project-new-cairo')
     expect(await screen.findByText(/NC3BR/i)).toBeInTheDocument()
     expect(screen.queryByText(/ZE4BR/i)).not.toBeInTheDocument()
+  })
+
+  it('selects units for batch pdf generation and preserves row navigation', async () => {
+    renderApp()
+    const user = userEvent.setup()
+
+    await openLoginPage(user)
+    await signInAs(user, /continue as admin/i)
+    await user.click(screen.getByRole('link', { name: /view all units/i }))
+    await openNewCairoProject(user)
+
+    await user.click(await screen.findByRole('checkbox', { name: /select NC3BR/i }))
+    expect(screen.getByText(/1 selected/i)).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: /generate PDFs/i }))
+    expect(await screen.findByText(/generated 1 PDF/i)).toBeInTheDocument()
+    expect(mockGenerateUnitPdfFile).toHaveBeenCalledTimes(1)
+
+    await user.click(screen.getByRole('button', { name: /download PDFs/i }))
+    await waitFor(() => expect(mockDownloadGeneratedPdf).toHaveBeenCalledTimes(1))
+    expect(await screen.findByText(/downloaded 1 PDF/i)).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: /share PDFs/i }))
+    await waitFor(() => expect(mockShareGeneratedPdfs).toHaveBeenCalledTimes(1))
+    expect(await screen.findByText(/PDF share sheet opened for 1 unit/i)).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: /clear/i }))
+    expect(screen.queryByText(/1 selected/i)).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: /open NC3BR/i }))
+    expect(await screen.findByRole('heading', { name: /NC3BR/i })).toBeInTheDocument()
   })
 
   it('does not leave a sales user on the admin page after signing out from admin', async () => {
@@ -219,6 +266,20 @@ describe('Leadra app shell', () => {
     expect(screen.queryByText(/preparing details/i)).not.toBeInTheDocument()
     expect(screen.getByRole('heading', { name: /media gallery/i })).toBeInTheDocument()
     expect(window.location.pathname).toMatch(/^\/units\/details\/\d+$/)
+  })
+
+  it('keeps the PDF download action visible and enables it after generation', async () => {
+    renderApp()
+    const user = userEvent.setup()
+
+    await openSeedUnitDetails(user)
+
+    const downloadButton = screen.getByRole('button', { name: /download pdf/i })
+    expect(downloadButton).toBeDisabled()
+
+    await user.click(screen.getByRole('button', { name: /generate brief/i }))
+
+    await waitFor(() => expect(screen.getByRole('button', { name: /download pdf/i })).toBeEnabled())
   })
 
   it('shows analytics to managers but not sales users', async () => {

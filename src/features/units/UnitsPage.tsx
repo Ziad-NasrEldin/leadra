@@ -1,4 +1,4 @@
-import { Image as ImageIcon, Search, SlidersHorizontal } from 'lucide-react'
+import { Download, FileText, Image as ImageIcon, Search, Share2, SlidersHorizontal, X } from 'lucide-react'
 import { memo, useState, type CSSProperties } from 'react'
 import { canViewOwnerData, getThumbnailMedia, summarizeDestinations, summarizeProjects } from '../../lib/domain'
 import { compareText, formatCount, getStatusLabel, useLocale } from '../../lib/i18n'
@@ -23,12 +23,20 @@ export function UnitsPage({
   currentProject,
   units,
   filters,
+  selectedUnitIds,
+  batchAction,
   onDestinationSelect,
   onProjectSelect,
   onBackToDestinations,
   onBackToProjects,
   onFilterChange,
   onResetFilters,
+  onToggleUnitSelection,
+  onSelectVisibleUnits,
+  onClearSelection,
+  onGenerateSelectedPdfs,
+  onDownloadSelectedPdfs,
+  onShareSelectedPdfs,
   onOpenUnit,
 }: {
   user: LeadraUser
@@ -42,12 +50,20 @@ export function UnitsPage({
   currentProject: ReturnType<typeof summarizeProjects>[number] | null
   units: LeadraUnit[]
   filters: UnitFilters
+  selectedUnitIds: number[]
+  batchAction: 'generate' | 'download' | 'share' | null
   onDestinationSelect: (id: string) => void
   onProjectSelect: (id: string) => void
   onBackToDestinations: () => void
   onBackToProjects: () => void
   onFilterChange: <K extends keyof UnitFilters>(key: K, value: UnitFilters[K]) => void
   onResetFilters: () => void
+  onToggleUnitSelection: (id: number) => void
+  onSelectVisibleUnits: (ids: number[]) => void
+  onClearSelection: () => void
+  onGenerateSelectedPdfs: () => void
+  onDownloadSelectedPdfs: () => void
+  onShareSelectedPdfs: () => void
   onOpenUnit: (id: number) => void
 }) {
   const { locale, t } = useLocale()
@@ -67,6 +83,8 @@ export function UnitsPage({
   const activeFilterCount = countActiveUnitFilters(filters)
   const invalidDestination = stage !== 'destinations' && !currentDestination
   const invalidProject = stage === 'units' && (!currentDestination || !currentProject)
+  const selectedVisibleCount = visibleUnits.filter((unit) => selectedUnitIds.includes(unit.id)).length
+  const batchBusy = batchAction !== null
 
   return (
     <section className="page-stack page-entrance units-page">
@@ -271,10 +289,39 @@ export function UnitsPage({
       </div>
       )}
 
+      <div className="batch-pdf-bar motion-stage" style={motionStyle(5, 70)}>
+        <strong>{formatCount(locale, selectedVisibleCount)} selected</strong>
+        <div className="batch-pdf-actions">
+          <button className="ghost-button compact-action" type="button" onClick={() => onSelectVisibleUnits(visibleUnits.map((unit) => unit.id))} disabled={visibleUnits.length === 0 || batchBusy}>
+            Select visible
+          </button>
+          <button className="secondary-button compact-action" type="button" onClick={onGenerateSelectedPdfs} disabled={selectedVisibleCount === 0 || batchBusy}>
+            <FileText size={16} /> {batchAction === 'generate' ? 'Generating...' : 'Generate PDFs'}
+          </button>
+          <button className="secondary-button compact-action" type="button" onClick={onDownloadSelectedPdfs} disabled={selectedVisibleCount === 0 || batchBusy}>
+            <Download size={16} /> {batchAction === 'download' ? 'Downloading...' : 'Download PDFs'}
+          </button>
+          <button className="secondary-button compact-action" type="button" onClick={onShareSelectedPdfs} disabled={selectedVisibleCount === 0 || batchBusy}>
+            <Share2 size={16} /> {batchAction === 'share' ? 'Sharing...' : 'Share PDFs'}
+          </button>
+          <button className="ghost-button compact-action" type="button" onClick={onClearSelection} disabled={selectedVisibleCount === 0 || batchBusy}>
+            <X size={16} /> Clear
+          </button>
+        </div>
+      </div>
+
       <section className="unit-list motion-list" key={`${selectedDestinationId ?? 'all'}-${selectedProjectId ?? 'all'}-${JSON.stringify(filters)}`}>
         {units.length === 0 && <EmptyState title={t('units.noMatchesTitle')} body={t('units.noMatchesBody')} />}
         {visibleUnits.map((unit, index) => (
-          <UnitListRow key={unit.id} user={user} unit={unit} index={index} onOpen={() => onOpenUnit(unit.id)} />
+          <UnitListRow
+            key={unit.id}
+            user={user}
+            unit={unit}
+            index={index}
+            selected={selectedUnitIds.includes(unit.id)}
+            onSelectionChange={() => onToggleUnitSelection(unit.id)}
+            onOpen={() => onOpenUnit(unit.id)}
+          />
         ))}
         {visibleUnits.length < units.length && (
           <button
@@ -398,20 +445,46 @@ function RangeFilter({
   )
 }
 
-export const UnitListRow = memo(function UnitListRow({ user, unit, onOpen, index = 0 }: { user: LeadraUser; unit: LeadraUnit; onOpen: () => void; index?: number }) {
+export const UnitListRow = memo(function UnitListRow({
+  user,
+  unit,
+  onOpen,
+  onSelectionChange,
+  selected = false,
+  index = 0,
+}: {
+  user: LeadraUser
+  unit: LeadraUnit
+  onOpen: () => void
+  onSelectionChange?: () => void
+  selected?: boolean
+  index?: number
+}) {
   const { locale, t } = useLocale()
   const thumbnail = getThumbnailMedia(unit.media)
 
   return (
-    <button className="unit-row motion-stage" type="button" aria-label={t('units.openUnit', { unitCode: unit.unitCode })} style={motionStyle(index)} onClick={onOpen}>
-      <div className="thumb">{thumbnail ? <img src={thumbnail.url} alt="" loading="lazy" decoding="async" /> : <ImageIcon />}</div>
-      <div>
-        <strong>{unit.unitCode}</strong>
-        <p dir="auto">{unit.projectName} / {unit.unitType} / {t('units.areaBua', { bua: formatCount(locale, unit.bua) })}</p>
-        <small dir="auto">{unit.createdByName}</small>
-        {canViewOwnerData(user, unit) && <small dir="auto">{unit.originalOwnerPhone}</small>}
-      </div>
-      <span className={`status-pill motion-status-pill ${unit.status}`}>{getStatusLabel(locale, unit.status)}</span>
-    </button>
+    <div className={`unit-row motion-stage ${onSelectionChange ? 'selectable' : ''} ${selected ? 'selected' : ''}`} style={motionStyle(index)}>
+      {onSelectionChange && (
+        <label className="unit-row-select">
+          <input
+            type="checkbox"
+            checked={selected}
+            onChange={onSelectionChange}
+            aria-label={`Select ${unit.unitCode}`}
+          />
+        </label>
+      )}
+      <button className="unit-row-open" type="button" aria-label={t('units.openUnit', { unitCode: unit.unitCode })} onClick={onOpen}>
+        <span className="thumb">{thumbnail ? <img src={thumbnail.url} alt="" loading="lazy" decoding="async" /> : <ImageIcon />}</span>
+        <span>
+          <strong>{unit.unitCode}</strong>
+          <p dir="auto">{unit.projectName} / {unit.unitType} / {t('units.areaBua', { bua: formatCount(locale, unit.bua) })}</p>
+          <small dir="auto">{unit.createdByName}</small>
+          {canViewOwnerData(user, unit) && <small dir="auto">{unit.originalOwnerPhone}</small>}
+        </span>
+        <span className={`status-pill motion-status-pill ${unit.status}`}>{getStatusLabel(locale, unit.status)}</span>
+      </button>
+    </div>
   )
 })

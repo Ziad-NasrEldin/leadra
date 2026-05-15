@@ -129,11 +129,9 @@ export function UnitDetailsPage({
           <button className="primary-button" type="button" onClick={onGeneratePdf} disabled={pdfGenerating || pdfSharing}>
             <FileText size={18} /> {pdfGenerating ? 'Preparing PDF...' : pdfReady ? t('details.regeneratePdf') : t('details.generateBrief')}
           </button>
-          {pdfReady && (
-            <button className="secondary-button" type="button" onClick={onDownloadPdf} disabled={pdfGenerating || pdfSharing}>
-              <Download size={18} /> {t('details.downloadPdf')}
-            </button>
-          )}
+          <button className="secondary-button" type="button" onClick={onDownloadPdf} disabled={!pdfReady || pdfGenerating || pdfSharing}>
+            <Download size={18} /> {t('details.downloadPdf')}
+          </button>
           <button className="secondary-button" type="button" onClick={onSharePdf} disabled={!pdfReady || pdfGenerating || pdfSharing}>
             <Share2 size={18} /> {pdfSharing ? 'Preparing share...' : t('details.sharePdf')}
           </button>

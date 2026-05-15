@@ -1,6 +1,6 @@
-import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFPage } from 'pdf-lib'
+import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFImage, type PDFPage } from 'pdf-lib'
 import { buildPaymentTimetable, canViewSalesSensitiveData, formatCurrency, formatDeliveryExpectancy, getApplicableUnitAreaFields, sanitizeUnitForPdf } from './domain'
-import { translate, type LocaleCode } from './i18n'
+import { getStatusLabel, translate, type LocaleCode } from './i18n'
 import type { AppSettings, LeadraUnit, LeadraUser } from './types'
 
 export interface GeneratedPdf {
@@ -15,12 +15,12 @@ export function buildPermissionSafePdfText(
   locale: LocaleCode = 'en',
 ): string {
   const safeUnit = sanitizeUnitForPdf(user, unit)
+  const pdfData = buildPdfUnitDetails(user, safeUnit, locale)
   const lines = [
     settings.companyName,
     `${translate(locale, 'export.generatedBy')}: ${user.fullName}`,
-    `${translate(locale, 'units.unitCode')}: ${safeUnit.unitCode}`,
-    ...buildPdfFacts(user, safeUnit, locale).map(([label, value]) => `${label}: ${value}`),
-    canIncludeSalesExportData(user, unit) ? safeUnit.salesNotes || translate(locale, 'export.notesEmpty') : translate(locale, 'export.notesEmpty'),
+    ...pdfData.rows.map((row) => `${row.label}: ${row.value}`),
+    ...pdfData.installments.map((row) => `Installment ${row.paymentNumber}: ${row.periodLabel} / ${formatCurrency(row.amount, locale)}${row.paid ? ' / Paid' : ''}`),
     settings.footerText,
     settings.contactDetails,
   ].filter(Boolean)
@@ -35,81 +35,37 @@ export async function buildPermissionSafePdfBlob(
   locale: LocaleCode = 'en',
 ): Promise<Blob> {
   const safeUnit = sanitizeUnitForPdf(user, unit)
-  const includeSalesData = canIncludeSalesExportData(user, unit)
+  const pdfData = buildPdfUnitDetails(user, safeUnit, locale)
+  const images = safeUnit.media.filter((file) => file.type === 'image' && file.includeInPdf !== false)
   const pdf = await PDFDocument.create()
   const font = await pdf.embedFont(StandardFonts.Helvetica)
   const bold = await pdf.embedFont(StandardFonts.HelveticaBold)
   const page = pdf.addPage([595, 842])
-  const { height } = page.getSize()
-  let y = height - 190
-
-  page.drawRectangle({ x: 32, y: height - 154, width: 531, height: 120, color: rgb(0.05, 0.05, 0.06) })
   const logo = settings.logoPath ? await embedImage(pdf, settings.logoPath) : null
-  if (settings.logoPath) {
-    if (logo) {
-      const logoBox = { x: 404, y: height - 126, width: 142, height: 90 }
-      const scaledLogo = logo.scaleToFit(142, 72)
-      page.drawImage(logo, {
-        x: logoBox.x + (logoBox.width - scaledLogo.width) / 2,
-        y: logoBox.y + (logoBox.height - scaledLogo.height) / 2,
-        width: scaledLogo.width,
-        height: scaledLogo.height,
-      })
-    } else {
-      const logoBox = { x: 406, y: height - 124, width: 140, height: 88 }
-      drawPdfText(page, 'Logo unavailable', { x: logoBox.x + 18, y: logoBox.y + 48, size: 10, font: bold, color: rgb(0.49, 0.45, 0.41), maxWidth: 104 })
-      drawPdfText(page, 'Upload PNG or JPG', { x: logoBox.x + 18, y: logoBox.y + 30, size: 8, font, color: rgb(0.49, 0.45, 0.41), maxWidth: 104 })
-    }
-  }
-  drawPdfText(page, settings.companyName || 'Leadra', { x: 52, y: height - 78, size: 24, font: bold, color: rgb(0.96, 0.95, 0.92), maxWidth: settings.logoPath ? 330 : 490 })
-  drawPdfText(page, safeUnit.unitCode, { x: 52, y: height - 112, size: 18, font: bold, color: rgb(0.84, 0.69, 0.44) })
-  drawPdfText(page, `${safeUnit.destinationName} / ${safeUnit.developerName} / ${safeUnit.projectName}`, { x: 52, y: height - 136, size: 11, font, color: rgb(0.96, 0.95, 0.92) })
+  const thumbnail = images[0] ? await embedImage(pdf, images[0].url) : null
 
-  const facts = buildPdfFacts(user, safeUnit, locale)
-
-  for (const [label, value] of facts) {
-    drawPdfText(page, label, { x: 52, y, size: 9, font: bold, color: rgb(0.49, 0.45, 0.41) })
-    drawPdfText(page, String(value ?? ''), { x: 210, y, size: 11, font, color: rgb(0.16, 0.15, 0.14), maxWidth: 330 })
-    y -= 28
-  }
-
-  y -= 18
-  drawPdfText(page, 'Notes', { x: 52, y, size: 13, font: bold, color: rgb(0.16, 0.15, 0.14) })
-  y -= 20
-  drawPdfText(page, includeSalesData ? safeUnit.salesNotes || translate(locale, 'export.notesEmpty') : translate(locale, 'export.notesEmpty'), {
-    x: 52,
-    y,
-    size: 10,
+  drawCoverPage(page, {
     font,
-    color: rgb(0.16, 0.15, 0.14),
-    maxWidth: 490,
+    bold,
+    logo,
+    thumbnail,
+    settings,
+    unit: safeUnit,
+    rows: pdfData.rows,
+    installments: pdfData.installments,
+    locale,
   })
 
-  drawPdfText(page, `${settings.footerText}${settings.contactDetails ? ` / ${settings.contactDetails}` : ''}`, {
-    x: 52,
-    y: 32,
-    size: 8,
-    font,
-    color: rgb(0.49, 0.45, 0.41),
-    maxWidth: 490,
-  })
-
-  const images = safeUnit.media.filter((file) => file.type === 'image' && file.includeInPdf !== false)
   for (let index = 0; index < images.length; index += 4) {
     const imagePage = pdf.addPage([595, 842])
-    drawPdfText(imagePage, `Unit images / ${safeUnit.unitCode}`, { x: 42, y: 790, size: 18, font: bold, color: rgb(0.16, 0.15, 0.14) })
-    const batch = images.slice(index, index + 4)
-    for (const [batchIndex, file] of batch.entries()) {
-      const embedded = await embedImage(pdf, file.url)
-      const x = batchIndex % 2 === 0 ? 42 : 305
-      const yImage = batchIndex < 2 ? 470 : 145
-      imagePage.drawRectangle({ x, y: yImage, width: 248, height: 275, color: rgb(0.96, 0.95, 0.92), borderColor: rgb(0.84, 0.69, 0.44), borderWidth: 1 })
-      if (embedded) {
-        const scaled = embedded.scaleToFit(224, 220)
-        imagePage.drawImage(embedded, { x: x + 12, y: yImage + 42, width: scaled.width, height: scaled.height })
-      }
-      drawPdfText(imagePage, file.name, { x: x + 12, y: yImage + 18, size: 9, font, color: rgb(0.49, 0.45, 0.41), maxWidth: 224 })
-    }
+    await drawImagePage(imagePage, {
+      pdf,
+      font,
+      bold,
+      unitCode: safeUnit.unitCode,
+      images: images.slice(index, index + 4),
+      pageNumber: Math.floor(index / 4) + 2,
+    })
   }
 
   const bytes = await pdf.save()
@@ -128,62 +84,332 @@ export async function generateUnitPdfFile(
   return { blob, fileName: `leadra-${unit.unitCode}-${formatPdfTimestamp(generatedAt)}.pdf` }
 }
 
-function buildPdfFacts(user: LeadraUser, unit: LeadraUnit, locale: LocaleCode): [string, string][] {
+function buildPdfUnitDetails(user: LeadraUser, unit: LeadraUnit, locale: LocaleCode) {
   const areaFields = getApplicableUnitAreaFields(unit.unitType, unit.floor)
-  const facts: [string, string][] = [
-    [translate(locale, 'export.destination'), unit.destinationName],
-    [translate(locale, 'details.developer'), unit.developerName],
-    [translate(locale, 'export.project'), unit.projectName],
-    [translate(locale, 'export.type'), unit.unitType],
-    [translate(locale, 'create.bua'), formatArea(unit.bua)],
+  const thumbnail = unit.media.find((file) => file.type === 'image' && file.includeInPdf !== false)
+  const rows: PdfDetailRow[] = [
+    { label: translate(locale, 'units.unitCode'), value: unit.unitCode, kind: 'hero' },
+    { label: 'Unit Thumbnail', value: thumbnail?.name ?? 'No PDF-visible image selected' },
+    { label: 'Uploader Name', value: unit.createdByName },
+    { label: 'Unit Status', value: getStatusLabel(locale, unit.status) },
+    { label: translate(locale, 'export.destination'), value: unit.destinationName },
+    { label: translate(locale, 'details.developer'), value: unit.developerName },
+    { label: translate(locale, 'export.project'), value: unit.projectName },
+    { label: translate(locale, 'export.type'), value: unit.unitType },
   ]
 
-  if (areaFields.showLandArea) facts.push([translate(locale, 'details.landArea'), formatOptionalArea(unit.landArea)])
-  if (areaFields.showFloor) facts.push([translate(locale, 'details.floor'), unit.floor])
-  if (areaFields.showGardenArea) facts.push([translate(locale, 'details.gardenArea'), formatOptionalArea(unit.gardenArea)])
-  if (areaFields.showTerraceArea) facts.push([translate(locale, 'details.terraceArea'), formatOptionalArea(unit.terraceArea)])
+  if (areaFields.showFloor) rows.push({ label: 'Floor / Position', value: unit.floor })
 
-  facts.push(
-    [translate(locale, 'export.bedsBaths'), `${unit.bedrooms} / ${unit.bathrooms}`],
-    [translate(locale, 'details.finishType'), unit.finish],
+  rows.push({ label: translate(locale, 'create.bua'), value: formatArea(unit.bua) })
+
+  if (areaFields.showLandArea) rows.push({ label: translate(locale, 'details.landArea'), value: formatOptionalArea(unit.landArea) })
+  if (areaFields.showGardenArea) rows.push({ label: translate(locale, 'details.gardenArea'), value: formatOptionalArea(unit.gardenArea) })
+  if (areaFields.showTerraceArea) rows.push({ label: translate(locale, 'details.terraceArea'), value: formatOptionalArea(unit.terraceArea) })
+
+  rows.push(
+    { label: 'View', value: unit.viewName },
+    { label: 'Bedrooms', value: String(unit.bedrooms) },
+    { label: 'Bathrooms', value: String(unit.bathrooms) },
+    { label: translate(locale, 'details.elevator'), value: unit.elevator ? 'Yes' : 'No' },
   )
 
-  if (unit.furnished) facts.push([translate(locale, 'details.furnishingStatus'), translate(locale, 'create.furnishedOption')])
-  if (unit.elevator) facts.push([translate(locale, 'details.elevator'), 'Yes'])
+  if (unit.furnished) rows.push({ label: 'Furnished', value: translate(locale, 'create.furnishedOption') })
 
-  facts.push([translate(locale, 'export.totalAmount'), formatCurrency(unit.totalAmount, locale)])
+  rows.push({ label: 'Finishing Status *', value: unit.finish })
 
-  if (canIncludeSalesExportData(user, unit)) {
-    facts.push([translate(locale, 'export.commission'), `${formatCurrency(unit.commissionAmount, locale)} (${unit.commissionPercentage}%)`])
+  let installments: ReturnType<typeof buildPaymentTimetable> = []
+  if (unit.paymentMethod === 'cash') {
+    rows.push({ label: 'Cash Price', value: formatCurrency(unit.totalAmount, locale), kind: 'money' })
   }
-  if ((unit.transferFees ?? 0) > 0) facts.push([translate(locale, 'details.transferFees'), formatCurrency(unit.transferFees, locale)])
-  if (unit.downPayment != null) facts.push([translate(locale, 'create.downPayment'), formatCurrency(unit.downPayment, locale)])
-  if (unit.remainingPayment != null) facts.push([translate(locale, 'details.remainingPayment'), formatCurrency(unit.remainingPayment, locale)])
   if (unit.paymentMethod === 'installment') {
-    const nextInstallment = getNextInstallment(unit, locale)
-    if (nextInstallment) {
-      facts.push([
-        translate(locale, 'export.nextInstallment'),
-        `#${nextInstallment.paymentNumber} ${nextInstallment.periodLabel}: ${formatCurrency(nextInstallment.amount, locale)}`,
-      ])
-    } else if (unit.installmentAmount != null) {
-      facts.push([translate(locale, 'export.nextInstallment'), formatCurrency(unit.installmentAmount, locale)])
-    }
+    installments = buildPaymentTimetable(unit, locale)
+    rows.push(
+      { label: 'Total Amount', value: formatCurrency(unit.totalAmount, locale), kind: 'money' },
+      { label: translate(locale, 'create.downPayment'), value: formatNullableCurrency(unit.downPayment, locale), kind: 'money' },
+      { label: 'Remaining Value', value: formatNullableCurrency(unit.remainingPayment, locale), kind: 'money' },
+      { label: 'Installments', value: installmentSummary(unit, installments, locale) },
+    )
 
     if (unit.installmentType === 'custom') {
-      facts.push([translate(locale, 'details.customInstallmentText'), unit.customInstallmentText || translate(locale, 'details.customInstallmentMessage')])
+      rows.push({ label: translate(locale, 'details.customInstallmentText'), value: unit.customInstallmentText || translate(locale, 'details.customInstallmentMessage') })
     }
   }
 
-  facts.push([translate(locale, 'export.delivery'), formatDeliveryExpectancy(unit, locale)])
+  rows.push({ label: 'Delivery Expectancy', value: formatDeliveryExpectancy(unit, locale) })
 
-  return facts.filter(([, value]) => Boolean(value))
+  if (canIncludeSalesExportData(user, unit)) {
+    rows.push({ label: translate(locale, 'export.commission'), value: `${formatCurrency(unit.commissionAmount, locale)} (${unit.commissionPercentage}%)`, kind: 'money' })
+  }
+  if ((unit.transferFees ?? 0) > 0) rows.push({ label: translate(locale, 'details.transferFees'), value: formatCurrency(unit.transferFees, locale), kind: 'money' })
+
+  return { rows: rows.filter((row) => Boolean(row.value)), installments }
 }
 
-function getNextInstallment(unit: LeadraUnit, locale: LocaleCode) {
-  return buildPaymentTimetable(unit, locale)
-    .filter((row) => !row.paid)
-    .sort((first, second) => first.paymentNumber - second.paymentNumber)[0] ?? null
+type PdfDetailRow = {
+  label: string
+  value: string
+  kind?: 'hero' | 'money'
+}
+
+type PdfPalette = {
+  paper: ReturnType<typeof rgb>
+  linen: ReturnType<typeof rgb>
+  charcoal: ReturnType<typeof rgb>
+  slate: ReturnType<typeof rgb>
+  muted: ReturnType<typeof rgb>
+  gold: ReturnType<typeof rgb>
+  goldSoft: ReturnType<typeof rgb>
+  white: ReturnType<typeof rgb>
+}
+
+type MeasuredDetailRow = {
+  row?: PdfDetailRow
+  height: number
+  labelLines: string[]
+  valueLines: string[]
+  labelSize: number
+  valueSize: number
+  labelFont: PDFFont
+  valueFont: PDFFont
+  valueColor: ReturnType<typeof rgb>
+}
+
+const palette: PdfPalette = {
+  paper: rgb(0.965, 0.945, 0.918),
+  linen: rgb(0.937, 0.906, 0.867),
+  charcoal: rgb(0.165, 0.149, 0.137),
+  slate: rgb(0.059, 0.106, 0.176),
+  muted: rgb(0.49, 0.455, 0.408),
+  gold: rgb(0.839, 0.69, 0.435),
+  goldSoft: rgb(0.906, 0.788, 0.557),
+  white: rgb(1, 0.98, 0.941),
+}
+
+function drawCoverPage(
+  page: PDFPage,
+  options: {
+    font: PDFFont
+    bold: PDFFont
+    logo: PDFImage | null
+    thumbnail: PDFImage | null
+    settings: AppSettings
+    unit: LeadraUnit
+    rows: PdfDetailRow[]
+    installments: ReturnType<typeof buildPaymentTimetable>
+    locale: LocaleCode
+  },
+) {
+  const { font, bold, logo, thumbnail, settings, unit, rows, installments, locale } = options
+  const { width, height } = page.getSize()
+
+  page.drawRectangle({ x: 0, y: 0, width, height, color: palette.paper })
+  page.drawRectangle({ x: 0, y: height - 196, width, height: 196, color: palette.slate })
+  page.drawRectangle({ x: 34, y: height - 196, width: 7, height: 196, color: palette.gold })
+  page.drawRectangle({ x: 42, y: height - 784, width: 1.2, height: 572, color: palette.goldSoft })
+
+  if (logo) {
+    const scaled = logo.scaleToFit(128, 56)
+    page.drawImage(logo, { x: 46, y: height - 76, width: scaled.width, height: scaled.height })
+  } else {
+    drawPdfText(page, settings.companyName || 'Leadra', { x: 48, y: height - 62, size: 17, font: bold, color: palette.white, maxWidth: 150 })
+  }
+
+  drawPdfText(page, 'PRIVATE RESALE BRIEF', { x: 48, y: height - 108, size: 8, font: bold, color: palette.goldSoft })
+  drawPdfText(page, unit.unitCode, { x: 48, y: height - 145, size: 30, font: bold, color: palette.white, maxWidth: 275 })
+  drawPdfText(page, `${unit.destinationName} / ${unit.projectName}`, { x: 50, y: height - 166, size: 10, font, color: palette.linen, maxWidth: 285 })
+
+  drawPdfText(page, 'CONFIDENTIAL', { x: 438, y: height - 52, size: 8, font: bold, color: palette.goldSoft })
+  drawPdfText(page, 'Generated for permission-safe sharing', { x: 348, y: height - 72, size: 8, font, color: palette.linen, maxWidth: 190 })
+
+  const thumbnailBox = { x: 348, y: height - 172, width: 198, height: 112 }
+  drawImageFrame(page, thumbnailBox.x, thumbnailBox.y, thumbnailBox.width, thumbnailBox.height, thumbnail, {
+    font,
+    bold,
+    emptyTitle: 'No PDF Thumbnail',
+    emptyBody: 'Select an image marked Show in PDF',
+  })
+
+  const leftRows = rows.slice(0, 14)
+  const rightRows = rows.slice(14)
+  drawDetailColumns(page, leftRows, rightRows, { y: height - 232, font, bold })
+
+  if (installments.length > 0) {
+    drawInstallmentTable(page, installments, { x: 62, y: 182, width: 480, font, bold, locale })
+  }
+
+  drawPdfText(page, `${settings.footerText}${settings.contactDetails ? ` / ${settings.contactDetails}` : ''}`, {
+    x: 62,
+    y: 32,
+    size: 7.5,
+    font,
+    color: palette.muted,
+    maxWidth: 470,
+  })
+}
+
+function drawDetailColumns(
+  page: PDFPage,
+  leftRows: PdfDetailRow[],
+  rightRows: PdfDetailRow[],
+  options: { y: number; font: PDFFont; bold: PDFFont },
+) {
+  let y = options.y
+  const count = Math.max(leftRows.length, rightRows.length)
+
+  for (let index = 0; index < count; index += 1) {
+    const left = measureDetailRow(leftRows[index], { labelWidth: 104, valueWidth: 178, font: options.font, bold: options.bold })
+    const right = measureDetailRow(rightRows[index], { labelWidth: 106, valueWidth: 116, font: options.font, bold: options.bold })
+    const rowHeight = Math.max(21, left.height, right.height)
+
+    if (left.row) {
+      drawMeasuredDetailRow(page, left, { x: 62, y, labelWidth: 104, valueWidth: 178 })
+      page.drawLine({ start: { x: 62, y: y - rowHeight + 10 }, end: { x: 344, y: y - rowHeight + 10 }, thickness: 0.35, color: rgb(0.83, 0.78, 0.71) })
+    }
+    if (right.row) {
+      drawMeasuredDetailRow(page, right, { x: 326, y, labelWidth: 106, valueWidth: 116 })
+      page.drawLine({ start: { x: 326, y: y - rowHeight + 10 }, end: { x: 548, y: y - rowHeight + 10 }, thickness: 0.35, color: rgb(0.83, 0.78, 0.71) })
+    }
+
+    y -= rowHeight
+  }
+}
+
+function measureDetailRow(
+  row: PdfDetailRow | undefined,
+  options: { labelWidth: number; valueWidth: number; font: PDFFont; bold: PDFFont },
+): MeasuredDetailRow {
+  if (!row) return { height: 21, labelLines: [], valueLines: [], labelSize: 6.8, valueSize: 9, labelFont: options.bold, valueFont: options.font, valueColor: palette.charcoal }
+
+  const labelSize = 6.8
+  const valueSize = row.kind === 'hero' ? 11 : 9
+  const labelFont = options.bold
+  const valueFont = row.kind ? options.bold : options.font
+  const labelLines = wrapPdfText(row.label.toUpperCase(), labelFont, labelSize, options.labelWidth)
+  const valueLines = wrapPdfText(row.value, valueFont, valueSize, options.valueWidth)
+  const lineCount = Math.max(labelLines.length, valueLines.length)
+  return {
+    row,
+    height: Math.max(21, lineCount * 11 + 10),
+    labelLines,
+    valueLines,
+    labelSize,
+    valueSize,
+    labelFont,
+    valueFont,
+    valueColor: row.kind === 'money' || row.kind === 'hero' ? palette.slate : palette.charcoal,
+  }
+}
+
+function drawMeasuredDetailRow(
+  page: PDFPage,
+  measured: MeasuredDetailRow,
+  options: { x: number; y: number; labelWidth: number; valueWidth: number },
+) {
+  drawWrappedPdfText(page, measured.labelLines, { x: options.x, y: options.y, size: measured.labelSize, font: measured.labelFont, color: palette.muted })
+  drawWrappedPdfText(page, measured.valueLines, { x: options.x + options.labelWidth, y: options.y - 1, size: measured.valueSize, font: measured.valueFont, color: measured.valueColor })
+}
+
+function drawInstallmentTable(
+  page: PDFPage,
+  installments: ReturnType<typeof buildPaymentTimetable>,
+  options: { x: number; y: number; width: number; font: PDFFont; bold: PDFFont; locale: LocaleCode },
+) {
+  const rows = installments.slice(0, 8)
+  drawPdfText(page, 'INSTALLMENTS TABLE', { x: options.x, y: options.y + 28, size: 8, font: options.bold, color: palette.slate })
+  drawPdfText(page, installments.length > rows.length ? `${installments.length - rows.length} more installments remain in system records.` : 'Visible because payment method is Installment.', {
+    x: options.x + 154,
+    y: options.y + 28,
+    size: 7,
+    font: options.font,
+    color: palette.muted,
+    maxWidth: 320,
+  })
+  page.drawRectangle({ x: options.x, y: options.y + 4, width: options.width, height: 19, color: palette.slate })
+  drawPdfText(page, '#', { x: options.x + 12, y: options.y + 10, size: 7, font: options.bold, color: palette.white })
+  drawPdfText(page, 'Period', { x: options.x + 44, y: options.y + 10, size: 7, font: options.bold, color: palette.white })
+  drawPdfText(page, 'Amount', { x: options.x + 220, y: options.y + 10, size: 7, font: options.bold, color: palette.white })
+  drawPdfText(page, 'Status', { x: options.x + 374, y: options.y + 10, size: 7, font: options.bold, color: palette.white })
+
+  let rowY = options.y - 15
+  for (const row of rows) {
+    page.drawRectangle({ x: options.x, y: rowY - 4, width: options.width, height: 18, color: row.paymentNumber % 2 === 0 ? palette.paper : palette.linen })
+    drawPdfText(page, String(row.paymentNumber), { x: options.x + 12, y: rowY, size: 7.2, font: options.bold, color: palette.charcoal })
+    drawPdfText(page, row.periodLabel, { x: options.x + 44, y: rowY, size: 7.2, font: options.font, color: palette.charcoal, maxWidth: 130 })
+    drawPdfText(page, formatCurrency(row.amount, options.locale), { x: options.x + 220, y: rowY, size: 7.2, font: options.bold, color: palette.slate, maxWidth: 120 })
+    drawPdfText(page, row.paid ? 'Paid' : 'Upcoming', { x: options.x + 374, y: rowY, size: 7.2, font: options.font, color: row.paid ? palette.muted : palette.slate })
+    rowY -= 18
+  }
+}
+
+async function drawImagePage(
+  page: PDFPage,
+  options: { pdf: PDFDocument; font: PDFFont; bold: PDFFont; unitCode: string; images: LeadraUnit['media']; pageNumber: number },
+) {
+  const { font, bold, unitCode, images } = options
+  const { width, height } = page.getSize()
+  page.drawRectangle({ x: 0, y: 0, width, height, color: palette.paper })
+  page.drawRectangle({ x: 0, y: height - 86, width, height: 86, color: palette.slate })
+  page.drawRectangle({ x: 42, y: height - 86, width: 6, height: 86, color: palette.gold })
+  drawPdfText(page, `Unit images / ${unitCode}`, { x: 62, y: height - 54, size: 18, font: bold, color: palette.white })
+  drawPdfText(page, `Page ${options.pageNumber}`, { x: 488, y: height - 54, size: 8, font: bold, color: palette.goldSoft })
+
+  const boxes = [
+    { x: 42, y: 458, width: 248, height: 270 },
+    { x: 305, y: 458, width: 248, height: 270 },
+    { x: 42, y: 134, width: 248, height: 270 },
+    { x: 305, y: 134, width: 248, height: 270 },
+  ]
+
+  for (const [index, file] of images.entries()) {
+    const box = boxes[index]
+    if (!box) continue
+    const embedded = await embedImage(options.pdf, file.url)
+    drawImageFrame(page, box.x, box.y, box.width, box.height, embedded, {
+      font,
+      bold,
+      emptyTitle: 'Image unavailable',
+      emptyBody: file.name,
+    })
+    drawPdfText(page, file.name, { x: box.x + 14, y: box.y + 14, size: 8, font, color: palette.muted, maxWidth: box.width - 28 })
+  }
+}
+
+function drawImageFrame(
+  page: PDFPage,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  image: PDFImage | null,
+  fallback: { font: PDFFont; bold: PDFFont; emptyTitle: string; emptyBody: string },
+) {
+  page.drawRectangle({ x, y, width, height, color: palette.linen, borderColor: palette.gold, borderWidth: 0.8 })
+  page.drawRectangle({ x: x + 5, y: y + 5, width: width - 10, height: height - 10, borderColor: rgb(1, 0.98, 0.94), borderWidth: 0.7 })
+  if (image) {
+    const scaled = image.scaleToFit(width - 18, height - 18)
+    page.drawImage(image, {
+      x: x + (width - scaled.width) / 2,
+      y: y + (height - scaled.height) / 2,
+      width: scaled.width,
+      height: scaled.height,
+    })
+    return
+  }
+
+  drawPdfText(page, fallback.emptyTitle, { x: x + 18, y: y + height / 2 + 8, size: 9, font: fallback.bold, color: palette.slate, maxWidth: width - 36 })
+  drawPdfText(page, fallback.emptyBody, { x: x + 18, y: y + height / 2 - 8, size: 7.5, font: fallback.font, color: palette.muted, maxWidth: width - 36 })
+}
+
+function installmentSummary(unit: LeadraUnit, installments: ReturnType<typeof buildPaymentTimetable>, locale: LocaleCode) {
+  if (unit.installmentType === 'custom') return unit.customInstallmentText || translate(locale, 'details.customInstallmentMessage')
+  const next = installments.find((row) => !row.paid)
+  if (next) return `Next #${next.paymentNumber} ${next.periodLabel}: ${formatCurrency(next.amount, locale)}`
+  if (unit.installmentAmount != null) return formatCurrency(unit.installmentAmount, locale)
+  return 'No scheduled installments'
+}
+
+function formatNullableCurrency(value: number | null | undefined, locale: LocaleCode) {
+  return value == null ? '' : formatCurrency(value, locale)
 }
 
 function formatArea(value: number) {
@@ -222,6 +448,19 @@ export async function shareGeneratedPdf(pdf: GeneratedPdf): Promise<boolean> {
   return false
 }
 
+export async function shareGeneratedPdfs(pdfs: GeneratedPdf[]): Promise<boolean> {
+  const files = pdfs.map((pdf) => new File([pdf.blob], pdf.fileName, { type: 'application/pdf' }))
+  if (files.length > 0 && navigator.canShare?.({ files }) && navigator.share) {
+    await navigator.share({
+      files,
+      title: `${files.length} Leadra unit PDF${files.length === 1 ? '' : 's'}`,
+      text: `Leadra unit PDF${files.length === 1 ? '' : 's'}`,
+    })
+    return true
+  }
+  return false
+}
+
 async function embedImage(pdf: PDFDocument, url: string) {
   try {
     const bytes = await imageBytes(url)
@@ -239,6 +478,41 @@ function drawPdfText(
   options: { x: number; y: number; size: number; font: PDFFont; color: ReturnType<typeof rgb>; maxWidth?: number },
 ) {
   page.drawText(toWinAnsiText(text), options)
+}
+
+function drawWrappedPdfText(
+  page: PDFPage,
+  lines: string[],
+  options: { x: number; y: number; size: number; font: PDFFont; color: ReturnType<typeof rgb> },
+) {
+  lines.forEach((line, index) => {
+    page.drawText(toWinAnsiText(line), {
+      x: options.x,
+      y: options.y - index * 11,
+      size: options.size,
+      font: options.font,
+      color: options.color,
+    })
+  })
+}
+
+function wrapPdfText(value: string, font: PDFFont, size: number, maxWidth: number): string[] {
+  const words = toWinAnsiText(value).split(/\s+/).filter(Boolean)
+  const lines: string[] = []
+  let current = ''
+
+  for (const word of words) {
+    const candidate = current ? `${current} ${word}` : word
+    if (font.widthOfTextAtSize(candidate, size) <= maxWidth) {
+      current = candidate
+      continue
+    }
+    if (current) lines.push(current)
+    current = word
+  }
+
+  if (current) lines.push(current)
+  return lines.length > 0 ? lines : ['']
 }
 
 function toWinAnsiText(value: string): string {

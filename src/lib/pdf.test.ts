@@ -1,9 +1,13 @@
 import { PDFDocument } from 'pdf-lib'
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { demoUsers, initialAppState, seedUnits } from '../data/seed'
-import { buildPermissionSafePdfBlob, buildPermissionSafePdfText, generateUnitPdfFile } from './pdf'
+import { buildPermissionSafePdfBlob, buildPermissionSafePdfText, generateUnitPdfFile, shareGeneratedPdfs } from './pdf'
 
 describe('pdf generation', () => {
+  afterEach(() => {
+    vi.restoreAllMocks()
+  })
+
   it('builds a privacy-safe printable brief blob with branding and generator name only', async () => {
     const user = demoUsers[3]
     const unit = { ...seedUnits[0], media: [] }
@@ -116,21 +120,33 @@ describe('pdf generation', () => {
 
     const text = buildPermissionSafePdfText(user, unit, initialAppState.settings)
 
+    expect(text.indexOf('Unit code: NC3BR')).toBeLessThan(text.indexOf('Unit Thumbnail: living-room.jpg'))
+    expect(text.indexOf('Unit Thumbnail: living-room.jpg')).toBeLessThan(text.indexOf('Uploader Name: Sara Amin'))
+    expect(text.indexOf('Uploader Name: Sara Amin')).toBeLessThan(text.indexOf('Unit Status: Available'))
+    expect(text.indexOf('Unit Status: Available')).toBeLessThan(text.indexOf('Destination: New Cairo'))
     expect(text.indexOf('Destination: New Cairo')).toBeLessThan(text.indexOf('Developer: Palm Hills'))
     expect(text).toContain('Project: New Cairo Estates')
     expect(text).toContain('Type: Apartment')
+    expect(text).toContain('Floor / Position: 3rd')
     expect(text).toContain('BUA: 165 m2')
-    expect(text).toContain('Floor: 3rd')
-    expect(text).toContain('Beds / Baths: 3 / 2')
-    expect(text).toContain('Finishing Status: Fully Finished')
-    expect(text).toContain('Furnishing Status: Furnished')
+    expect(text).toContain('View: Landscape')
+    expect(text).toContain('Bedrooms: 3')
+    expect(text).toContain('Bathrooms: 2')
     expect(text).toContain('Elevator: Yes')
-    expect(text).toContain('Delivery: March 2028')
+    expect(text).toContain('Furnished: Furnished')
+    expect(text).toContain('Finishing Status *: Fully Finished')
+    expect(text).toContain('Total Amount: EGP\u00a05,000,000')
+    expect(text).toContain('Down Payment: EGP\u00a01,000,000')
+    expect(text).toContain('Remaining Value: EGP\u00a04,000,000')
+    expect(text).toContain('Installments: Next #2 Sep 2026: EGP\u00a0345,678')
+    expect(text).toContain('Installment 1: Jun 2026 / EGP\u00a0123,456 / Paid')
+    expect(text).toContain('Installment 2: Sep 2026 / EGP\u00a0345,678')
+    expect(text).toContain('Delivery Expectancy: March 2028')
     expect(text).toContain('Commission: EGP\u00a075,000 (1.5%)')
     expect(text).toContain('Transfer Fees: EGP\u00a0125,000')
-    expect(text).toContain('Down Payment: EGP\u00a01,000,000')
-    expect(text).toContain('Remaining Payment: EGP\u00a04,000,000')
-    expect(text).toContain('Next Installment: #2 Sep 2026: EGP\u00a0345,678')
+    expect(text.indexOf('Installments:')).toBeLessThan(text.indexOf('Delivery Expectancy:'))
+    expect(text.indexOf('Delivery Expectancy:')).toBeLessThan(text.indexOf('Commission:'))
+    expect(text.indexOf('Commission:')).toBeLessThan(text.indexOf('Transfer Fees:'))
     expect(text).not.toContain('Payment method')
     expect(text).not.toContain('Payment Method')
   })
@@ -149,9 +165,9 @@ describe('pdf generation', () => {
     const text = buildPermissionSafePdfText(user, unit, initialAppState.settings)
 
     expect(text).toContain('Custom Installment Text: 10% every six months after handover')
-    expect(text).toContain('Next Installment: EGP\u00a0250,000')
-    expect(text).not.toContain('Furnishing Status')
-    expect(text).not.toContain('Elevator:')
+    expect(text).toContain('Installments: 10% every six months after handover')
+    expect(text).not.toContain('Furnished:')
+    expect(text).toContain('Elevator: No')
   })
 
   it('omits zero transfer fees because they are not applicable', () => {
@@ -213,5 +229,36 @@ describe('pdf generation', () => {
     expect(visiblePdf.getPageCount()).toBe(2)
     expect(excludedPdf.getPageCount()).toBe(1)
     expect(legacyUnmarkedPdf.getPageCount()).toBe(2)
+  })
+
+  it('shares multiple generated pdf files when the browser supports them', async () => {
+    const canShare = vi.fn(() => true)
+    const share = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, 'canShare', { configurable: true, value: canShare })
+    Object.defineProperty(navigator, 'share', { configurable: true, value: share })
+    const pdfs = [
+      { blob: new Blob(['one'], { type: 'application/pdf' }), fileName: 'leadra-one.pdf' },
+      { blob: new Blob(['two'], { type: 'application/pdf' }), fileName: 'leadra-two.pdf' },
+    ]
+
+    await expect(shareGeneratedPdfs(pdfs)).resolves.toBe(true)
+
+    expect(canShare).toHaveBeenCalledWith({ files: expect.arrayContaining([expect.any(File), expect.any(File)]) })
+    expect(share).toHaveBeenCalledWith({
+      files: expect.arrayContaining([expect.any(File), expect.any(File)]),
+      title: '2 Leadra unit PDFs',
+      text: 'Leadra unit PDFs',
+    })
+  })
+
+  it('does not open native share for multiple pdf files when unsupported', async () => {
+    const canShare = vi.fn(() => false)
+    const share = vi.fn().mockResolvedValue(undefined)
+    Object.defineProperty(navigator, 'canShare', { configurable: true, value: canShare })
+    Object.defineProperty(navigator, 'share', { configurable: true, value: share })
+
+    await expect(shareGeneratedPdfs([{ blob: new Blob(['one'], { type: 'application/pdf' }), fileName: 'leadra-one.pdf' }])).resolves.toBe(false)
+
+    expect(share).not.toHaveBeenCalled()
   })
 })
