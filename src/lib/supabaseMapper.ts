@@ -3,6 +3,8 @@ import type {
   InstallmentType,
   LeadraMediaFile,
   LeadraNote,
+  PaymentHistoryRow,
+  PaymentScheduleRow,
   LeadraUnit,
   LeadraUser,
   PaymentMethod,
@@ -71,6 +73,8 @@ export interface SupabaseUnitRow {
   updated_at: string
   unit_media?: SupabaseMediaRow[]
   unit_notes?: SupabaseNoteRow[]
+  unit_payment_schedule?: SupabasePaymentScheduleRow[]
+  unit_payment_history?: SupabasePaymentHistoryRow[]
 }
 
 export interface SafeUnitRpcRow {
@@ -129,14 +133,42 @@ export interface SafeUnitRpcRow {
   updated_at: string
   unit_media?: SupabaseMediaRow[]
   unit_notes?: SafeUnitRpcNoteRow[]
+  unit_payment_schedule?: SupabasePaymentScheduleRow[]
+  unit_payment_history?: SupabasePaymentHistoryRow[]
 }
 
 export interface SupabaseMediaRow {
   id: string
-  type: 'image' | 'video'
+  type: 'image' | 'pdf' | 'video'
   storage_path: string
   file_name: string
   size_bytes: number
+  include_in_pdf?: boolean | null
+}
+
+export interface SupabasePaymentScheduleRow {
+  id: string
+  unit_id: number
+  payment_number: number
+  due_month: string | null
+  amount: number
+  paid: boolean
+  paid_at: string | null
+  paid_by: string | null
+  paid_by_profile?: JoinedCreator
+}
+
+export interface SupabasePaymentHistoryRow {
+  id: string
+  unit_id: number
+  schedule_id: string
+  action: 'paid' | 'unpaid'
+  amount: number
+  previous_remaining_value: number
+  new_remaining_value: number
+  actor_id: string
+  actor_profile?: JoinedCreator
+  created_at: string
 }
 
 interface SupabaseNoteRow {
@@ -348,8 +380,10 @@ export function toUnitViewModel(row: SupabaseUnitRow): LeadraUnit {
     branchId: row.branch_id ?? '',
     createdAt: row.created_at,
     updatedAt: row.updated_at,
-    media: (row.unit_media ?? []).filter(isImageMediaRow).map(toMediaViewModel),
+    media: (row.unit_media ?? []).filter(isAllowedMediaRow).map(toMediaViewModel),
     adminManagerNotes: (row.unit_notes ?? []).map(toNoteViewModel),
+    paymentSchedule: (row.unit_payment_schedule ?? []).map(toPaymentScheduleViewModel).sort(sortPaymentScheduleRows),
+    paymentHistory: (row.unit_payment_history ?? []).map(toPaymentHistoryViewModel).sort(sortPaymentHistoryRows),
   }
 }
 
@@ -418,23 +452,38 @@ export function toSafeUnitViewModel(row: SafeUnitRpcRow): LeadraUnit {
     branchId: row.branch_id ?? '',
     createdAt: row.created_at,
     updatedAt: row.updated_at,
-    media: (row.unit_media ?? []).filter(isImageMediaRow).map(toMediaViewModel),
+    media: (row.unit_media ?? []).filter(isAllowedMediaRow).map(toMediaViewModel),
     adminManagerNotes: (row.unit_notes ?? []).map(toSafeNoteViewModel),
+    paymentSchedule: (row.unit_payment_schedule ?? []).map(toPaymentScheduleViewModel).sort(sortPaymentScheduleRows),
+    paymentHistory: (row.unit_payment_history ?? []).map(toPaymentHistoryViewModel).sort(sortPaymentHistoryRows),
   }
 }
 
-function toMediaViewModel(row: SupabaseMediaRow & { type: 'image' }): LeadraMediaFile {
+export function toMediaInsertPayload(unitId: number, file: LeadraMediaFile) {
+  return {
+    id: file.id,
+    unit_id: unitId,
+    type: file.type === 'pdf' ? 'pdf' : 'image',
+    storage_path: file.url,
+    file_name: file.name,
+    size_bytes: file.sizeBytes,
+    include_in_pdf: file.type === 'image' ? file.includeInPdf !== false : false,
+  }
+}
+
+function toMediaViewModel(row: SupabaseMediaRow & { type: 'image' | 'pdf' }): LeadraMediaFile {
   return {
     id: row.id,
-    type: 'image',
+    type: row.type,
     url: row.storage_path,
     name: row.file_name,
     sizeBytes: row.size_bytes,
+    includeInPdf: row.type === 'image' ? row.include_in_pdf !== false : false,
   }
 }
 
-function isImageMediaRow(row: SupabaseMediaRow): row is SupabaseMediaRow & { type: 'image' } {
-  return row.type === 'image'
+function isAllowedMediaRow(row: SupabaseMediaRow): row is SupabaseMediaRow & { type: 'image' | 'pdf' } {
+  return row.type === 'image' || row.type === 'pdf'
 }
 
 function toNoteViewModel(row: SupabaseNoteRow): LeadraNote {
@@ -457,4 +506,41 @@ function toSafeNoteViewModel(row: SafeUnitRpcNoteRow): LeadraNote {
     role: row.created_by_role,
     createdAt: row.created_at,
   }
+}
+
+export function toPaymentScheduleViewModel(row: SupabasePaymentScheduleRow): PaymentScheduleRow {
+  return {
+    id: row.id,
+    unitId: row.unit_id,
+    paymentNumber: row.payment_number,
+    dueMonth: row.due_month,
+    amount: Number(row.amount),
+    paid: row.paid,
+    paidAt: row.paid_at,
+    paidBy: row.paid_by,
+    paidByName: row.paid_by_profile?.full_name ?? null,
+  }
+}
+
+export function toPaymentHistoryViewModel(row: SupabasePaymentHistoryRow): PaymentHistoryRow {
+  return {
+    id: row.id,
+    unitId: row.unit_id,
+    scheduleId: row.schedule_id,
+    action: row.action,
+    amount: Number(row.amount),
+    previousRemainingValue: Number(row.previous_remaining_value),
+    newRemainingValue: Number(row.new_remaining_value),
+    actorId: row.actor_id,
+    actorName: row.actor_profile?.full_name ?? 'Leadra user',
+    createdAt: row.created_at,
+  }
+}
+
+function sortPaymentScheduleRows(first: PaymentScheduleRow, second: PaymentScheduleRow): number {
+  return first.paymentNumber - second.paymentNumber
+}
+
+function sortPaymentHistoryRows(first: PaymentHistoryRow, second: PaymentHistoryRow): number {
+  return new Date(second.createdAt).getTime() - new Date(first.createdAt).getTime()
 }

@@ -393,7 +393,7 @@ function percent(value: number, target: number) {
 }
 
 function isStale(unit: LeadraUnit, now: Date) {
-  return !unit.archived && unit.status !== 'sold' && now.getTime() - new Date(unit.updatedAt).getTime() > staleAfterMs
+  return !unit.archived && !isSoldStatus(unit.status) && now.getTime() - new Date(unit.updatedAt).getTime() > staleAfterMs
 }
 
 function uniqueOptions(options: { id: string; label: string }[]) {

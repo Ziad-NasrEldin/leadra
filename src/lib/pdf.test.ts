@@ -1,7 +1,7 @@
 import { PDFDocument } from 'pdf-lib'
 import { describe, expect, it } from 'vitest'
 import { demoUsers, initialAppState, seedUnits } from '../data/seed'
-import { buildPermissionSafePdfBlob, buildPermissionSafePdfText } from './pdf'
+import { buildPermissionSafePdfBlob, buildPermissionSafePdfText, generateUnitPdfFile } from './pdf'
 
 describe('pdf generation', () => {
   it('builds a privacy-safe printable brief blob with branding and generator name only', async () => {
@@ -79,6 +79,7 @@ describe('pdf generation', () => {
           type: 'image' as const,
           name: 'tiny.png',
           sizeBytes: 68,
+          includeInPdf: true,
           url: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAFgwJ/lZrD9wAAAABJRU5ErkJggg==',
         },
         {
@@ -86,6 +87,7 @@ describe('pdf generation', () => {
           type: 'image' as const,
           name: 'bad.png',
           sizeBytes: 4,
+          includeInPdf: true,
           url: 'data:image/png;base64,bad',
         },
       ],
@@ -99,7 +101,84 @@ describe('pdf generation', () => {
     expect(blob.size).toBeGreaterThan(1000)
   })
 
-  it('excludes images marked hidden from the generated pdf', async () => {
+  it('exports the PRD unit facts and omits payment-method wording', () => {
+    const user = demoUsers[0]
+    const unit = {
+      ...seedUnits[0],
+      furnished: true,
+      elevator: true,
+      transferFees: 125_000,
+      paymentSchedule: [
+        { id: 'paid-1', unitId: seedUnits[0].id, paymentNumber: 1, dueMonth: '2026-06-01', amount: 123_456, paid: true, paidAt: null, paidBy: null, paidByName: null },
+        { id: 'due-2', unitId: seedUnits[0].id, paymentNumber: 2, dueMonth: '2026-09-01', amount: 345_678, paid: false, paidAt: null, paidBy: null, paidByName: null },
+      ],
+    }
+
+    const text = buildPermissionSafePdfText(user, unit, initialAppState.settings)
+
+    expect(text.indexOf('Destination: New Cairo')).toBeLessThan(text.indexOf('Developer: Palm Hills'))
+    expect(text).toContain('Project: New Cairo Estates')
+    expect(text).toContain('Type: Apartment')
+    expect(text).toContain('Area: 165 m2')
+    expect(text).toContain('Floor: 3rd')
+    expect(text).toContain('Beds / Baths: 3 / 2')
+    expect(text).toContain('Finishing Status: Fully Finished')
+    expect(text).toContain('Furnishing Status: Furnished')
+    expect(text).toContain('Elevator: Yes')
+    expect(text).toContain('Delivery: March 2028')
+    expect(text).toContain('Commission: EGP\u00a075,000 (1.5%)')
+    expect(text).toContain('Transfer Fees: EGP\u00a0125,000')
+    expect(text).toContain('Down Payment: EGP\u00a01,000,000')
+    expect(text).toContain('Remaining Payment: EGP\u00a04,000,000')
+    expect(text).toContain('Installment: #2 Sep 2026: EGP\u00a0345,678')
+    expect(text).not.toContain('Payment method')
+    expect(text).not.toContain('Payment Method')
+  })
+
+  it('omits furnished and elevator facts unless selected and exports custom installment text', () => {
+    const user = demoUsers[0]
+    const unit = {
+      ...seedUnits[0],
+      furnished: false,
+      elevator: false,
+      installmentType: 'custom' as const,
+      customInstallmentText: '10% every six months after handover',
+      installmentAmount: null,
+    }
+
+    const text = buildPermissionSafePdfText(user, unit, initialAppState.settings)
+
+    expect(text).toContain('Custom Installment Text: 10% every six months after handover')
+    expect(text).not.toContain('Furnishing Status')
+    expect(text).not.toContain('Elevator:')
+  })
+
+  it('embeds the uploaded company logo in generated pdf exports', async () => {
+    const user = demoUsers[0]
+    const unit = { ...seedUnits[0], media: [] }
+    const logoPath = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAFgwJ/lZrD9wAAAABJRU5ErkJggg=='
+
+    const withoutLogo = await buildPermissionSafePdfBlob(user, unit, { ...initialAppState.settings, logoPath: '' })
+    const withLogo = await buildPermissionSafePdfBlob(user, unit, { ...initialAppState.settings, logoPath })
+    const pdf = await PDFDocument.load(await withLogo.arrayBuffer())
+
+    expect(pdf.getPageCount()).toBe(1)
+    expect(withLogo.size).toBeGreaterThan(withoutLogo.size)
+  })
+
+  it('names generated pdf files with the export timestamp so repeated downloads are visible', async () => {
+    const user = demoUsers[0]
+    const unit = { ...seedUnits[0], media: [] }
+
+    const first = await generateUnitPdfFile(user, unit, initialAppState.settings, 'en', new Date('2026-05-15T09:30:01Z'))
+    const second = await generateUnitPdfFile(user, unit, initialAppState.settings, 'en', new Date('2026-05-15T09:31:02Z'))
+
+    expect(first.fileName).toBe('leadra-NC3BR-20260515-093001.pdf')
+    expect(second.fileName).toBe('leadra-NC3BR-20260515-093102.pdf')
+    expect(second.fileName).not.toBe(first.fileName)
+  })
+
+  it('includes visible and legacy unmarked images while excluding hidden images and videos', async () => {
     const user = demoUsers[0]
     const settings = initialAppState.settings
     const visibleImage = {
@@ -111,13 +190,18 @@ describe('pdf generation', () => {
       url: 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAFgwJ/lZrD9wAAAABJRU5ErkJggg==',
     }
     const hiddenImage = { ...visibleImage, id: 'media-hidden', name: 'hidden.png', includeInPdf: false }
+    const unmarkedImage = { ...visibleImage, id: 'media-unmarked', name: 'unmarked.png', includeInPdf: undefined }
+    const video = { ...visibleImage, id: 'media-video', type: 'video' as never, name: 'walkthrough.mp4', includeInPdf: true }
 
     const withVisible = await buildPermissionSafePdfBlob(user, { ...seedUnits[0], media: [visibleImage] }, settings)
-    const withHiddenOnly = await buildPermissionSafePdfBlob(user, { ...seedUnits[0], media: [hiddenImage] }, settings)
+    const withExcludedOnly = await buildPermissionSafePdfBlob(user, { ...seedUnits[0], media: [hiddenImage, video] }, settings)
+    const withLegacyUnmarked = await buildPermissionSafePdfBlob(user, { ...seedUnits[0], media: [unmarkedImage] }, settings)
     const visiblePdf = await PDFDocument.load(await withVisible.arrayBuffer())
-    const hiddenPdf = await PDFDocument.load(await withHiddenOnly.arrayBuffer())
+    const excludedPdf = await PDFDocument.load(await withExcludedOnly.arrayBuffer())
+    const legacyUnmarkedPdf = await PDFDocument.load(await withLegacyUnmarked.arrayBuffer())
 
     expect(visiblePdf.getPageCount()).toBe(2)
-    expect(hiddenPdf.getPageCount()).toBe(1)
+    expect(excludedPdf.getPageCount()).toBe(1)
+    expect(legacyUnmarkedPdf.getPageCount()).toBe(2)
   })
 })

@@ -118,7 +118,7 @@ async function loadProfiles(client: SupabaseClient): Promise<LeadraUser[]> {
 async function loadLookupValues(client: SupabaseClient): Promise<LookupValue[]> {
   const { data, error } = await client
     .from('lookup_values')
-    .select('id, kind, label, archived')
+    .select('id, kind, label, thumbnail_path, archived')
     .eq('archived', false)
     .order('kind')
   if (error) throw new Error(`Lookup values load failed: ${error.message}`)
@@ -127,6 +127,7 @@ async function loadLookupValues(client: SupabaseClient): Promise<LookupValue[]> 
       id: String(row.id),
       kind: row.kind,
       label: row.label,
+      thumbnailPath: row.thumbnail_path,
       archived: row.archived,
     }))
     .sort((first, second) => compareText('en', first.label, second.label))

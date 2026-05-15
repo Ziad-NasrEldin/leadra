@@ -5,7 +5,9 @@ import type {
   DestinationSummary,
   InstallmentType,
   MediaValidation,
+  PaymentHistoryRow,
   PaymentInput,
+  PaymentScheduleRow,
   PaymentSummary,
   ProjectSummary,
   UnitFilters,
@@ -68,6 +70,10 @@ const installmentStepMonths = {
 
 export function getPrdUnitTypeSpec(unitType: string): PrdUnitTypeSpec {
   return PRD_UNIT_TYPE_SPECS.find((spec) => spec.unitType === unitType) ?? PRD_UNIT_TYPE_SPECS.find((spec) => spec.unitType === 'Apartment')!
+}
+
+export function isPrdUnitType(unitType: string): unitType is PrdUnitType {
+  return PRD_UNIT_TYPES.includes(unitType as PrdUnitType)
 }
 
 export function getApplicableUnitAreaFields(unitType: string, floor = '') {
@@ -304,15 +310,15 @@ export function canEditOwnerFields(user: LeadraUser, unit: LeadraUnit): boolean 
 }
 
 export function canEditNonOwnerUnitDetails(user: LeadraUser, unit: LeadraUnit): boolean {
-  if (unit.archived) return false
   if (user.role === 'admin' || user.role === 'sub_admin') return true
+  if (unit.archived) return false
   if (user.role === 'manager') return Boolean(user.teamId) && unit.teamId === user.teamId
   return user.role === 'sales' && unit.createdBy === user.id
 }
 
 export function canEditUnitPricing(user: LeadraUser, unit: LeadraUnit): boolean {
-  if (unit.archived) return false
   if (user.role === 'admin' || user.role === 'sub_admin') return true
+  if (unit.archived) return false
   return user.role === 'sales' && unit.createdBy === user.id
 }
 
@@ -383,6 +389,15 @@ export interface InstallmentScheduleRow {
   amount: number
 }
 
+export interface PaymentTimetableRow extends InstallmentScheduleRow {
+  id: string
+  unitId: number
+  paid: boolean
+  paidAt: string | null
+  paidBy: string | null
+  paidByName: string | null
+}
+
 export function buildInstallmentSchedule(unit: LeadraUnit, locale: LocaleCode = 'en'): InstallmentScheduleRow[] {
   const frequency = getInstallmentPaymentsPerYear(unit.installmentType)
   if (unit.paymentMethod !== 'installment' || !frequency || !unit.installmentAmount) return []
@@ -425,6 +440,102 @@ export function buildInstallmentSchedule(unit: LeadraUnit, locale: LocaleCode = 
       amount,
     }
   })
+}
+
+export function createInitialPaymentSchedule(unit: LeadraUnit): PaymentScheduleRow[] {
+  if (unit.paymentMethod !== 'installment' || unit.installmentType === 'custom') return []
+  return buildInstallmentSchedule(unit).map((row) => ({
+    id: `payment-${unit.id}-${row.paymentNumber}`,
+    unitId: unit.id,
+    paymentNumber: row.paymentNumber,
+    dueMonth: row.dueMonth,
+    amount: row.amount,
+    paid: false,
+    paidAt: null,
+    paidBy: null,
+    paidByName: null,
+  }))
+}
+
+export function buildPaymentTimetable(unit: LeadraUnit, locale: LocaleCode = 'en'): PaymentTimetableRow[] {
+  const schedule = (unit.paymentSchedule?.length ?? 0) > 0 ? unit.paymentSchedule ?? [] : createInitialPaymentSchedule(unit)
+  const labels = buildInstallmentSchedule(unit, locale)
+  return schedule
+    .slice()
+    .sort((first, second) => first.paymentNumber - second.paymentNumber)
+    .map((row, index) => {
+      const fallback = labels[index]
+      const frequency = getInstallmentPaymentsPerYear(unit.installmentType) ?? 1
+      return {
+        paymentNumber: row.paymentNumber,
+        yearNumber: fallback?.yearNumber ?? Math.floor(index / frequency) + 1,
+        dueMonth: row.dueMonth,
+        periodLabel: row.dueMonth ? formatInstallmentMonthLabel(row.dueMonth, locale) : fallback?.periodLabel ?? String(row.paymentNumber),
+        amount: row.amount,
+        id: row.id,
+        unitId: row.unitId,
+        paid: row.paid,
+        paidAt: row.paidAt,
+        paidBy: row.paidBy,
+        paidByName: row.paidByName,
+      }
+    })
+}
+
+export function calculateRemainingFromPaymentSchedule(schedule: PaymentScheduleRow[]): number {
+  return Math.max(
+    schedule.reduce((total, row) => total + (row.paid ? 0 : row.amount), 0),
+    0,
+  )
+}
+
+export function applyPaymentScheduleAction(
+  unit: LeadraUnit,
+  actor: LeadraUser,
+  scheduleId: string,
+  paid: boolean,
+  now = new Date().toISOString(),
+): { unit: LeadraUnit; history: PaymentHistoryRow } | null {
+  const currentSchedule = unit.paymentSchedule ?? createInitialPaymentSchedule(unit)
+  const target = currentSchedule.find((row) => row.id === scheduleId)
+  if (!target || target.paid === paid) return null
+
+  const previousRemainingValue = unit.remainingPayment ?? calculateRemainingFromPaymentSchedule(currentSchedule)
+  const nextSchedule = currentSchedule.map((row) =>
+    row.id === scheduleId
+      ? {
+          ...row,
+          paid,
+          paidAt: paid ? now : null,
+          paidBy: paid ? actor.id : null,
+          paidByName: paid ? actor.fullName : null,
+        }
+      : row,
+  )
+  const newRemainingValue = calculateRemainingFromPaymentSchedule(nextSchedule)
+  const history: PaymentHistoryRow = {
+    id: `payment-history-${unit.id}-${Date.now()}`,
+    unitId: unit.id,
+    scheduleId,
+    action: paid ? 'paid' : 'unpaid',
+    amount: target.amount,
+    previousRemainingValue,
+    newRemainingValue,
+    actorId: actor.id,
+    actorName: actor.fullName,
+    createdAt: now,
+  }
+
+  return {
+    unit: {
+      ...unit,
+      paymentSchedule: nextSchedule,
+      paymentHistory: [history, ...(unit.paymentHistory ?? [])],
+      remainingPayment: newRemainingValue,
+      updatedAt: now,
+    },
+    history,
+  }
 }
 
 function monthIndex(value: string | null): number | null {
@@ -474,6 +585,30 @@ export function generateUnitCode(projectName: string, bedrooms: number): string 
 }
 
 export function validateMediaUpload(files: LeadraMediaFile[]): MediaValidation {
+  if (files.some((file) => file.type === 'video')) {
+    return {
+      ok: false,
+      message: 'Upload failed. Videos are not allowed in unit media.',
+      messageKey: 'error.invalidVideoUpload',
+    }
+  }
+
+  if (files.some((file) => file.type !== 'image' && file.type !== 'pdf')) {
+    return {
+      ok: false,
+      message: 'Upload failed. Only image files and PDF attachments are allowed.',
+      messageKey: 'error.invalidMediaUpload',
+    }
+  }
+
+  if (files.some((file) => file.type === 'pdf') && !files.some((file) => file.type === 'image')) {
+    return {
+      ok: false,
+      message: 'Upload failed. A PDF attachment requires at least one related photo.',
+      messageKey: 'error.pdfRequiresPhoto',
+    }
+  }
+
   if (files.length > MAX_MEDIA_FILES) {
     return {
       ok: false,
@@ -526,6 +661,9 @@ export function searchUnits(user: LeadraUser, units: LeadraUnit[], filters: Unit
     if (filters.bathrooms && filters.bathrooms !== 'all' && unit.bathrooms !== filters.bathrooms) return false
     if (filters.paymentMethod && filters.paymentMethod !== 'all' && unit.paymentMethod !== filters.paymentMethod) return false
     if (!inRange(unit.bua, filters.buaFrom, filters.buaTo)) return false
+    if (!inRange(unit.landArea, filters.landAreaFrom, filters.landAreaTo)) return false
+    if (!inRange(unit.gardenArea, filters.gardenAreaFrom, filters.gardenAreaTo)) return false
+    if (!inRange(unit.terraceArea, filters.terraceAreaFrom, filters.terraceAreaTo)) return false
     if (!inRange(unit.totalAmount, filters.priceFrom, filters.priceTo)) return false
     if (!inRange(unit.paymentMethod === 'cash' ? unit.totalAmount : null, filters.cashPriceFrom, filters.cashPriceTo)) return false
     if (!inRange(unit.downPayment, filters.downPaymentFrom, filters.downPaymentTo)) return false

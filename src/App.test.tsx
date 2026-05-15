@@ -26,7 +26,8 @@ function renderApp() {
 }
 
 async function openLoginPage(user: ReturnType<typeof userEvent.setup>) {
-  await user.click(screen.getByRole('button', { name: /continue to sign in/i }))
+  const introButton = screen.queryByRole('button', { name: /continue to sign in/i })
+  if (introButton) await user.click(introButton)
 }
 
 async function signInAs(user: ReturnType<typeof userEvent.setup>, name: RegExp) {
@@ -77,7 +78,7 @@ describe('Leadra app shell', () => {
     renderApp()
     const user = userEvent.setup()
 
-    expect(screen.getByRole('heading', { name: /resale command/i })).toBeInTheDocument()
+    expect(screen.getByRole('heading', { name: /sign in to leadra/i })).toBeInTheDocument()
     await openLoginPage(user)
     await signInAs(user, /continue as admin/i)
 
@@ -138,6 +139,21 @@ describe('Leadra app shell', () => {
     await user.click(within(themeSettingsCard as HTMLElement).getByRole('button', { name: /switch to light theme/i }))
     await waitFor(() => expect(document.documentElement.dataset.theme).toBe('light'))
     expect(window.localStorage.getItem('leadra.theme')).toBe('light')
+  })
+
+  it('keeps the theme toggle out of the mobile more menu', async () => {
+    renderApp()
+    const user = userEvent.setup()
+
+    await openLoginPage(user)
+    await signInAs(user, /continue as admin/i)
+    expect(await screen.findByRole('heading', { name: /admin command/i })).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: /^more$/i }))
+    const mobileMoreSheet = screen.getByRole('menu', { name: /more mobile destinations/i })
+    expect(within(mobileMoreSheet).queryByRole('button', { name: /switch to dark theme/i })).not.toBeInTheDocument()
+    expect(mobileMoreSheet.querySelector('.theme-toggle')).toBeNull()
+    expect(within(mobileMoreSheet).getByRole('link', { name: /alerts/i })).toBeInTheDocument()
   })
 
   it('honors legacy units hash links after login and updates full routes during navigation', async () => {
@@ -496,7 +512,7 @@ describe('Leadra app shell', () => {
     expect(createConfirmPassword).toHaveAttribute('type', 'text')
     await user.type(createPassword, 'Leadra8!')
     await user.type(createConfirmPassword, 'Leadra8!')
-    await user.clear(screen.getByRole('textbox', { name: /^branch$/i }))
+    expect(screen.getByRole('combobox', { name: /^branch$/i })).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: /^create user$/i }))
     expect(await screen.findByText(/adapted user/i)).toBeInTheDocument()
 
@@ -523,8 +539,18 @@ describe('Leadra app shell', () => {
     expect(await screen.findByRole('heading', { name: /master data/i })).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: /destinations/i }))
     await user.type(screen.getByRole('textbox', { name: /value label/i }), 'North Coast')
+    const destinationThumb = new File(['destination'], 'north-coast.png', { type: 'image/png' })
+    await user.upload(screen.getByLabelText(/thumbnail image/i), destinationThumb)
     await user.click(screen.getByRole('button', { name: /add value/i }))
     expect(await screen.findByText(/north coast/i)).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: /^projects/i }))
+    await user.type(screen.getByRole('textbox', { name: /value label/i }), 'Zim')
+    expect(screen.queryByRole('textbox', { name: /thumbnail url/i })).not.toBeInTheDocument()
+    const projectThumb = new File(['project'], 'zim.png', { type: 'image/png' })
+    await user.upload(screen.getByLabelText(/thumbnail image/i), projectThumb)
+    await user.click(screen.getByRole('button', { name: /add value/i }))
+    expect(await screen.findByText(/zim/i)).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: /branch management/i }))
     await user.type(screen.getByRole('textbox', { name: /branch name/i }), 'Alexandria Branch')
@@ -620,6 +646,27 @@ describe('Leadra app shell', () => {
     expect(screen.queryByText(/mona hafez/i)).not.toBeInTheDocument()
   })
 
+  it('lets admins upload a company logo image instead of typing a path', async () => {
+    renderApp()
+    const user = userEvent.setup()
+
+    await signInAs(user, /continue as admin/i)
+    navigateTestPath('/admin/settings')
+
+    expect(await screen.findByText(/^company logo$/i)).toBeInTheDocument()
+    expect(screen.queryByLabelText(/logo path/i)).not.toBeInTheDocument()
+
+    const logo = new File(['logo'], 'leadra-logo.png', { type: 'image/png' })
+    await user.upload(screen.getByLabelText(/upload image/i), logo)
+
+    await waitFor(() => {
+      expect(screen.getByRole('img', { name: /company logo preview/i })).toHaveAttribute('src', expect.stringMatching(/^data:image\/png;base64,/))
+    })
+    await user.click(screen.getByRole('button', { name: /save settings/i }))
+
+    expect(await screen.findByText(/settings updated and audited/i)).toBeInTheDocument()
+  })
+
   it('hides inactive users from default user management results after persistence reloads', async () => {
     renderApp()
     const user = userEvent.setup()
@@ -651,15 +698,14 @@ describe('Leadra app shell', () => {
     await user.click(screen.getByRole('button', { name: /open NC3BR/i }))
 
     expect(await screen.findByRole('heading', { name: /NC3BR/i })).toBeInTheDocument()
-    expect(await screen.findByText(/unit thumbnail/i, undefined, { timeout: 3000 })).toBeInTheDocument()
+    expect(await screen.findByText(/media gallery/i, undefined, { timeout: 3000 })).toBeInTheDocument()
     expect(await screen.findByText(/landscape/i)).toBeInTheDocument()
-    expect(await screen.findByText(/furnishing status/i)).toBeInTheDocument()
-    expect(await screen.findByText(/finish type/i)).toBeInTheDocument()
+    expect(screen.queryByText(/furnishing status/i)).not.toBeInTheDocument()
+    expect(await screen.findByText(/finishing/i)).toBeInTheDocument()
     expect(screen.getAllByRole('img', { name: /living-room\.jpg/i }).length).toBeGreaterThan(0)
     await user.click(screen.getByRole('button', { name: /remove living-room\.jpg/i }))
     expect(await screen.findByText(/media removed from this unit/i)).toBeInTheDocument()
     expect(screen.queryByRole('img', { name: /living-room\.jpg/i })).not.toBeInTheDocument()
-    expect(await screen.findByText(/media gallery/i, undefined, { timeout: 3000 })).toBeInTheDocument()
     expect(await screen.findByText(/installments table/i)).toBeInTheDocument()
     expect(screen.getByText(/remaining from timetable/i)).toBeInTheDocument()
     expect(screen.getAllByText(/^unpaid$/i).length).toBeGreaterThan(0)

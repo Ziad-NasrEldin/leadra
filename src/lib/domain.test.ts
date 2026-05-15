@@ -14,6 +14,9 @@ import {
   filterUnitsForUser,
   generateUnitCode,
   getInstallmentScheduledDueMonths,
+  applyPaymentScheduleAction,
+  buildPaymentTimetable,
+  createInitialPaymentSchedule,
   searchUnits,
   summarizeDestinations,
   summarizeProjects,
@@ -219,6 +222,17 @@ describe('Leadra domain rules', () => {
     expect(canEditAnyUnitDetails(salesB, baseUnit)).toBe(false)
   })
 
+  it('lets admins and sub-admins edit all archived unit details', () => {
+    const archivedUnit = { ...baseUnit, archived: true, createdBy: salesB.id, teamId: 'team-b' }
+
+    expect(canEditNonOwnerUnitDetails(admin, archivedUnit)).toBe(true)
+    expect(canEditNonOwnerUnitDetails(subAdmin, archivedUnit)).toBe(true)
+    expect(canEditUnitPricing(admin, archivedUnit)).toBe(true)
+    expect(canEditUnitPricing(subAdmin, archivedUnit)).toBe(true)
+    expect(canEditNonOwnerUnitDetails(manager, archivedUnit)).toBe(false)
+    expect(canEditUnitPricing(salesB, archivedUnit)).toBe(false)
+  })
+
   it('allows every role to view all units while keeping owner data separately restricted', () => {
     const sameBranchOtherTeam = { ...baseUnit, id: 106, teamId: 'team-b', branchId: 'branch-cairo', createdBy: salesB.id }
     const sameTeamOtherBranch = { ...baseUnit, id: 107, teamId: 'team-a', branchId: 'branch-alex' }
@@ -293,6 +307,43 @@ describe('Leadra domain rules', () => {
     expect(buildInstallmentSchedule({ ...baseUnit, installmentType: 'custom', installmentAmount: null })).toEqual([])
   })
 
+  it('marks persisted timetable rows paid and recalculates remaining value from unpaid rows', () => {
+    const schedule = createInitialPaymentSchedule({
+      ...baseUnit,
+      installmentYears: null,
+      installmentStartMonth: '2026-03-01',
+      installmentEndMonth: '2026-12-01',
+      installmentAmount: 1_000_000,
+      remainingPayment: 4_000_000,
+    })
+    const unit = {
+      ...baseUnit,
+      installmentYears: null,
+      installmentStartMonth: '2026-03-01',
+      installmentEndMonth: '2026-12-01',
+      installmentAmount: 1_000_000,
+      remainingPayment: 4_000_000,
+      paymentSchedule: schedule,
+      paymentHistory: [],
+    }
+
+    const paid = applyPaymentScheduleAction(unit, admin, schedule[0].id, true, '2026-05-15T10:00:00.000Z')
+    expect(paid?.unit.remainingPayment).toBe(3_000_000)
+    expect(paid?.history).toMatchObject({
+      action: 'paid',
+      amount: 1_000_000,
+      previousRemainingValue: 4_000_000,
+      newRemainingValue: 3_000_000,
+      actorName: admin.fullName,
+    })
+    expect(buildPaymentTimetable(paid!.unit)[0]).toMatchObject({ paid: true, paidByName: admin.fullName })
+
+    const unpaid = applyPaymentScheduleAction(paid!.unit, admin, schedule[0].id, false, '2026-05-15T11:00:00.000Z')
+    expect(unpaid?.unit.remainingPayment).toBe(4_000_000)
+    expect(unpaid?.unit.paymentHistory).toHaveLength(2)
+    expect(unpaid?.history.action).toBe('unpaid')
+  })
+
   it('summarizes destinations before projects and scopes projects by destination', () => {
     const secondDestinationUnit = {
       ...baseUnit,
@@ -331,6 +382,9 @@ describe('Leadra domain rules', () => {
     }
 
     expect(searchUnits(admin, [baseUnit, otherSalesUnit], { buaFrom: 0, buaTo: 100 })).toEqual([otherSalesUnit])
+    expect(searchUnits(admin, [{ ...baseUnit, unitType: 'Town House', landArea: 260 }, otherSalesUnit], { landAreaFrom: 200, landAreaTo: 300 })).toEqual([{ ...baseUnit, unitType: 'Town House', landArea: 260 }])
+    expect(searchUnits(admin, [{ ...baseUnit, floor: 'Ground', gardenArea: 55 }, otherSalesUnit], { gardenAreaFrom: 50, gardenAreaTo: 60 })).toEqual([{ ...baseUnit, floor: 'Ground', gardenArea: 55 }])
+    expect(searchUnits(admin, [{ ...baseUnit, unitType: 'Penthouse', terraceArea: 40 }, otherSalesUnit], { terraceAreaFrom: 35, terraceAreaTo: 45 })).toEqual([{ ...baseUnit, unitType: 'Penthouse', terraceArea: 40 }])
     expect(searchUnits(admin, [baseUnit, otherSalesUnit], { installmentType: 'quarterly', installmentAmountFrom: 150_000, installmentAmountTo: 250_000 })).toEqual([baseUnit])
     expect(searchUnits(salesA, [baseUnit, otherSalesUnit], { ownerPhone: '01099999999' })).toEqual([])
     expect(searchUnits(salesA, [baseUnit, otherSalesUnit], { ownerPhone: '501234567' })).toEqual([])
@@ -380,6 +434,15 @@ describe('Leadra domain rules', () => {
 
     expect(validateMediaUpload(files)).toEqual({ ok: true })
     expect(getThumbnailMedia(files)?.id).toBe('i1')
+    expect(
+      validateMediaUpload([
+        { id: 'v1', type: 'video', url: '/tour.mp4', name: 'tour.mp4', sizeBytes: 1_000_000 },
+      ] as unknown as LeadraMediaFile[]),
+    ).toMatchObject({
+      ok: false,
+      message: 'Upload failed. Videos are not allowed in unit media.',
+      messageKey: 'error.invalidVideoUpload',
+    })
     expect(
       validateMediaUpload([{ id: 'big', type: 'image', url: '/big.jpg', name: 'big.jpg', sizeBytes: 41 * 1024 * 1024 }]),
     ).toMatchObject({

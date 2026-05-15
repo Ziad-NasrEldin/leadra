@@ -1,5 +1,6 @@
 import {
   calculatePaymentSummary,
+  applyPaymentScheduleAction,
   canAddAdminManagerNote,
   canArchiveUnit,
   canEditAnyUnitDetails,
@@ -9,12 +10,14 @@ import {
   canEditUnitPricing,
   canViewUnit,
   generateUnitCode,
+  createInitialPaymentSchedule,
   normalizeInstallmentMonth,
   normalizeUnitOutdoorFields,
   normalizeOwnerPhone,
   validateOwnerPhoneForCountry,
   unitHasSameProjectPhoneDuplicate,
   validateMediaUpload,
+  isPrdUnitType,
 } from './domain'
 import type {
   AppDataState,
@@ -244,6 +247,10 @@ export function createUnitWorkflow(
     }
   }
 
+  if (!isPrdUnitType(input.unitType)) {
+    return { ok: false, state, error: 'Unit Type must use the fixed PRD list.', errorKey: null, errorParams: null }
+  }
+
   const ownerPhoneValidation = validateOwnerPhoneForCountry(input.originalOwnerPhone, input.countryCode)
   if (!ownerPhoneValidation.ok) {
     return {
@@ -349,7 +356,10 @@ export function createUnitWorkflow(
     updatedAt: new Date().toISOString(),
     media: input.media,
     adminManagerNotes: [],
+    paymentSchedule: [],
+    paymentHistory: [],
   }
+  candidate.paymentSchedule = createInitialPaymentSchedule(candidate)
 
   if (unitHasSameProjectPhoneDuplicate(candidate, state.units)) {
     const nextState = withAnalyticsEvent(
@@ -506,6 +516,61 @@ export function updateUnitStatusWorkflow(
   }
 }
 
+export function updatePaymentScheduleWorkflow(
+  state: AppDataState,
+  actor: LeadraUser,
+  unitId: number,
+  scheduleId: string,
+  paid: boolean,
+): WorkflowResult {
+  const unit = state.units.find((item) => item.id === unitId)
+  if (!unit) return { ok: false, state, ...createErrorMessage('error.unitNotFound', 'Unit not found.') }
+  if (!canViewUnit(actor, unit)) return { ok: false, state, ...createErrorMessage('error.unitOutsideVisibility', 'Unit is outside your visibility scope.') }
+  if (unit.paymentMethod !== 'installment' || unit.installmentType === 'custom') {
+    return { ok: false, state, error: 'Payment timetable is only available for automatic installment units.', errorKey: null, errorParams: null }
+  }
+
+  const applied = applyPaymentScheduleAction(unit, actor, scheduleId, paid)
+  if (!applied) return { ok: false, state, error: 'Payment timetable row was not changed.', errorKey: null, errorParams: null }
+
+  const nextState = {
+    ...state,
+    units: state.units.map((item) => item.id === unitId ? applied.unit : item),
+  }
+  const actionText = paid ? 'Payment marked paid' : 'Payment marked unpaid'
+  return {
+    ok: true,
+    state: withAnalyticsEvent(
+      withAudit(
+        nextState,
+        actor,
+        actionText,
+        unit.unitCode,
+        { remainingPayment: applied.history.previousRemainingValue },
+        {
+          remainingPayment: applied.history.newRemainingValue,
+          amount: applied.history.amount,
+          scheduleId,
+          action: applied.history.action,
+        },
+      ),
+      actor,
+      'installment_updated',
+      {
+        unit: applied.unit,
+        amountValue: applied.history.amount,
+        metadata: {
+          unitCode: unit.unitCode,
+          scheduleId,
+          action: applied.history.action,
+          previousRemainingValue: applied.history.previousRemainingValue,
+          newRemainingValue: applied.history.newRemainingValue,
+        },
+      },
+    ),
+  }
+}
+
 export function updateUnitWorkflow(
   state: AppDataState,
   actor: LeadraUser,
@@ -547,6 +612,9 @@ export function updateUnitWorkflow(
     normalizedOwnerPhone = normalizeOwnerPhone(ownerPhoneValidation.localPhone, input.countryCode)
   }
 
+  if (canEditNonOwner && !isPrdUnitType(input.unitType)) {
+    return { ok: false, state, error: 'Unit Type must use the fixed PRD list.', errorKey: null, errorParams: null }
+  }
   const outdoorFields = canEditNonOwner ? normalizeUnitOutdoorFields(input) : unit
   const nextTotalAmount = canEditPricing ? input.totalAmount : unit.totalAmount
   const nextMaintenancePaid = canEditPricing ? input.maintenancePaid ?? false : unit.maintenancePaid ?? false
@@ -627,6 +695,17 @@ export function updateUnitWorkflow(
     originalOwnerPhone: canEditOwner ? ownerPhoneValidation?.localPhone ?? input.originalOwnerPhone : unit.originalOwnerPhone,
     normalizedOwnerPhone,
     updatedAt: new Date().toISOString(),
+  }
+  if (
+    updatedUnit.paymentMethod === 'installment' &&
+    updatedUnit.installmentType !== 'custom' &&
+    (updatedUnit.installmentType !== unit.installmentType ||
+      updatedUnit.installmentStartMonth !== unit.installmentStartMonth ||
+      updatedUnit.installmentEndMonth !== unit.installmentEndMonth ||
+      updatedUnit.installmentAmount !== unit.installmentAmount)
+  ) {
+    updatedUnit.paymentSchedule = createInitialPaymentSchedule(updatedUnit)
+    updatedUnit.paymentHistory = unit.paymentHistory
   }
 
   if (unitHasSameProjectPhoneDuplicate(updatedUnit, state.units)) {
