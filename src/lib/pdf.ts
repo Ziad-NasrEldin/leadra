@@ -64,10 +64,10 @@ export async function buildPermissionSafePdfBlob(
   const { height } = page.getSize()
   let y = height - 190
 
-  page.drawRectangle({ x: 32, y: height - 154, width: 531, height: 120, color: rgb(0.08, 0.13, 0.11) })
-  drawPdfText(page, settings.companyName || 'Leadra', { x: 52, y: height - 78, size: 24, font: bold, color: rgb(1, 0.98, 0.9) })
-  drawPdfText(page, safeUnit.unitCode, { x: 52, y: height - 112, size: 18, font: bold, color: rgb(0.94, 0.86, 0.73) })
-  drawPdfText(page, `${safeUnit.destinationName} / ${safeUnit.developerName} / ${safeUnit.projectName}`, { x: 52, y: height - 136, size: 11, font, color: rgb(1, 0.98, 0.9) })
+  page.drawRectangle({ x: 32, y: height - 154, width: 531, height: 120, color: rgb(0.05, 0.05, 0.06) })
+  drawPdfText(page, settings.companyName || 'Leadra', { x: 52, y: height - 78, size: 24, font: bold, color: rgb(0.96, 0.95, 0.92) })
+  drawPdfText(page, safeUnit.unitCode, { x: 52, y: height - 112, size: 18, font: bold, color: rgb(0.84, 0.69, 0.44) })
+  drawPdfText(page, `${safeUnit.destinationName} / ${safeUnit.developerName} / ${safeUnit.projectName}`, { x: 52, y: height - 136, size: 11, font, color: rgb(0.96, 0.95, 0.92) })
 
   const facts = [
     ['Destination', safeUnit.destinationName],
@@ -90,32 +90,32 @@ export async function buildPermissionSafePdfBlob(
   }
 
   for (const [label, value] of facts) {
-    drawPdfText(page, label, { x: 52, y, size: 9, font: bold, color: rgb(0.3, 0.42, 0.34) })
-    drawPdfText(page, String(value ?? ''), { x: 210, y, size: 11, font, color: rgb(0.08, 0.13, 0.11), maxWidth: 330 })
+    drawPdfText(page, label, { x: 52, y, size: 9, font: bold, color: rgb(0.49, 0.45, 0.41) })
+    drawPdfText(page, String(value ?? ''), { x: 210, y, size: 11, font, color: rgb(0.16, 0.15, 0.14), maxWidth: 330 })
     y -= 28
   }
 
   const schedule = buildInstallmentSchedule(safeUnit, locale).slice(0, 8)
   if (schedule.length > 0) {
     y -= 8
-    drawPdfText(page, 'Installment schedule', { x: 52, y, size: 13, font: bold, color: rgb(0.08, 0.13, 0.11) })
+    drawPdfText(page, 'Installment schedule', { x: 52, y, size: 13, font: bold, color: rgb(0.16, 0.15, 0.14) })
     y -= 22
     for (const row of schedule) {
-      drawPdfText(page, `#${row.paymentNumber} ${row.periodLabel}`, { x: 64, y, size: 9, font, color: rgb(0.08, 0.13, 0.11) })
-      drawPdfText(page, formatCurrency(row.amount, locale), { x: 220, y, size: 9, font: bold, color: rgb(0.08, 0.13, 0.11) })
+      drawPdfText(page, `#${row.paymentNumber} ${row.periodLabel}`, { x: 64, y, size: 9, font, color: rgb(0.16, 0.15, 0.14) })
+      drawPdfText(page, formatCurrency(row.amount, locale), { x: 220, y, size: 9, font: bold, color: rgb(0.16, 0.15, 0.14) })
       y -= 16
     }
   }
 
   y -= 18
-  drawPdfText(page, 'Notes', { x: 52, y, size: 13, font: bold, color: rgb(0.08, 0.13, 0.11) })
+  drawPdfText(page, 'Notes', { x: 52, y, size: 13, font: bold, color: rgb(0.16, 0.15, 0.14) })
   y -= 20
   drawPdfText(page, includeSalesData ? safeUnit.salesNotes || translate(locale, 'export.notesEmpty') : translate(locale, 'export.notesEmpty'), {
     x: 52,
     y,
     size: 10,
     font,
-    color: rgb(0.08, 0.13, 0.11),
+    color: rgb(0.16, 0.15, 0.14),
     maxWidth: 490,
   })
 
@@ -124,25 +124,25 @@ export async function buildPermissionSafePdfBlob(
     y: 32,
     size: 8,
     font,
-    color: rgb(0.3, 0.42, 0.34),
+    color: rgb(0.49, 0.45, 0.41),
     maxWidth: 490,
   })
 
   const images = safeUnit.media.filter((file) => file.type === 'image' && file.includeInPdf !== false)
   for (let index = 0; index < images.length; index += 4) {
     const imagePage = pdf.addPage([595, 842])
-    drawPdfText(imagePage, `Unit images / ${safeUnit.unitCode}`, { x: 42, y: 790, size: 18, font: bold, color: rgb(0.08, 0.13, 0.11) })
+    drawPdfText(imagePage, `Unit images / ${safeUnit.unitCode}`, { x: 42, y: 790, size: 18, font: bold, color: rgb(0.16, 0.15, 0.14) })
     const batch = images.slice(index, index + 4)
     for (const [batchIndex, file] of batch.entries()) {
       const embedded = await embedImage(pdf, file.url)
       const x = batchIndex % 2 === 0 ? 42 : 305
       const yImage = batchIndex < 2 ? 470 : 145
-      imagePage.drawRectangle({ x, y: yImage, width: 248, height: 275, color: rgb(0.98, 0.96, 0.91), borderColor: rgb(0.85, 0.82, 0.77), borderWidth: 1 })
+      imagePage.drawRectangle({ x, y: yImage, width: 248, height: 275, color: rgb(0.96, 0.95, 0.92), borderColor: rgb(0.84, 0.69, 0.44), borderWidth: 1 })
       if (embedded) {
         const scaled = embedded.scaleToFit(224, 220)
         imagePage.drawImage(embedded, { x: x + 12, y: yImage + 42, width: scaled.width, height: scaled.height })
       }
-      drawPdfText(imagePage, file.name, { x: x + 12, y: yImage + 18, size: 9, font, color: rgb(0.3, 0.42, 0.34), maxWidth: 224 })
+      drawPdfText(imagePage, file.name, { x: x + 12, y: yImage + 18, size: 9, font, color: rgb(0.49, 0.45, 0.41), maxWidth: 224 })
     }
   }
 

@@ -160,7 +160,7 @@ serve(async (request) => {
       branch_id: branchUuid,
       status,
     })
-    .select('id, full_name, email, role, job_title, phone_number, team_id, branch_id, status, created_at, last_login_at')
+    .select('id, full_name, email, role, job_title, phone_number, team_id, branch_id, status, theme_preference, created_at, last_login_at')
     .single()
 
   if (upsertError || !profile) {

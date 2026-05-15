@@ -4,15 +4,18 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import './index.css'
 import App from './App.tsx'
 import { LocaleProvider } from './lib/i18n'
+import { ThemeProvider } from './lib/theme'
 
 const queryClient = new QueryClient()
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
-    <LocaleProvider>
-      <QueryClientProvider client={queryClient}>
-        <App />
-      </QueryClientProvider>
-    </LocaleProvider>
+    <ThemeProvider>
+      <LocaleProvider>
+        <QueryClientProvider client={queryClient}>
+          <App />
+        </QueryClientProvider>
+      </LocaleProvider>
+    </ThemeProvider>
   </StrictMode>,
 )

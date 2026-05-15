@@ -13,19 +13,25 @@ import {
   Home,
   Image as ImageIcon,
   LogOut,
+  Moon,
   MoreHorizontal,
   Plus,
   Search,
   Settings,
   Share2,
   SlidersHorizontal,
+  Sun,
   Trash2,
   Users,
 } from 'lucide-react'
 import type { User as SupabaseUser } from '@supabase/supabase-js'
-import { memo, useCallback, useDeferredValue, useEffect, useId, useMemo, useRef, useState, type CSSProperties, type FormEvent, type ReactNode } from 'react'
+import { memo, useCallback, useDeferredValue, useEffect, useId, useMemo, useRef, useState, type CSSProperties, type FormEvent, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
 import { createPortal, flushSync } from 'react-dom'
 import { BrowserRouter, Link, useLocation, useNavigate } from 'react-router-dom'
+import leadraLogoDark from './assets/brand/leadra-logo-dark.jpeg'
+import leadraLogoLight from './assets/brand/leadra-logo-light.jpeg'
+import leadraMarkDark from './assets/brand/leadra-mark-dark.png'
+import leadraMarkLight from './assets/brand/leadra-mark-light.png'
 import { demoUsers, initialAppState, lookupValues } from './data/seed'
 import { buildPerformanceWorkspace } from './data/performanceSeed'
 import { buildAnalyticsCsv, buildAnalyticsDashboard, canAccessAnalytics, defaultAnalyticsFilters } from './lib/analytics'
@@ -83,7 +89,8 @@ import {
 import { authPasswordCandidates, createManagedUserProfile, updateManagedUserPassword, updateManagedUserProfile } from './lib/adminAuth'
 import { LeadraRepository } from './lib/repository'
 import { canUseDemoMode, isPerformanceDemoMode, isProductionMissingSupabaseConfig, isSupabaseConfigured, supabase } from './lib/supabase'
-import { loadSupabaseAnalyticsDashboard, loadSupabaseAppState, loadSupabaseProfile, markSupabaseLogin } from './lib/supabaseState'
+import { loadSupabaseAnalyticsDashboard, loadSupabaseAppState, loadSupabaseProfile, markSupabaseLogin, setSupabaseThemePreference } from './lib/supabaseState'
+import { useTheme } from './lib/theme'
 import {
   addAnalyticsEventWorkflow,
   archiveUnitWorkflow,
@@ -136,6 +143,7 @@ import type {
   NotificationItem,
   PaymentMethod,
   TeamDirectoryItem,
+  ThemePreference,
   InstallmentType,
   UnitEditInput,
   UnitFilters,
@@ -291,6 +299,10 @@ const roleOrder: Record<LeadraUser['role'], number> = {
   manager: 2,
   sales: 3,
 }
+const leadraBrandAssets: Record<ThemePreference, { logo: string; mark: string }> = {
+  light: { logo: leadraLogoLight, mark: leadraMarkLight },
+  dark: { logo: leadraLogoDark, mark: leadraMarkDark },
+}
 
 function motionStyle(index: number, delay = 0): CSSProperties {
   return {
@@ -322,6 +334,7 @@ export default function App() {
 
 function LeadraApp() {
   const { locale, t } = useLocale()
+  const { themePreference, setThemePreference } = useTheme()
   const location = useLocation()
   const routerNavigate = useNavigate()
   const route = parseAppRoute(location.pathname, location.search, location.hash)
@@ -349,6 +362,7 @@ function LeadraApp() {
   const [downloadingMediaId, setDownloadingMediaId] = useState<string | null>(null)
   const [generatedPdfs, setGeneratedPdfs] = useState<Record<number, { blob: Blob; fileName: string }>>({})
   const completingAuthUserRef = useRef<string | null>(null)
+  const brandAssets = leadraBrandAssets[themePreference]
 
   const completeSupabaseLogin = useCallback(async (authUser: SupabaseUser) => {
     if (!supabase) return
@@ -466,6 +480,10 @@ function LeadraApp() {
       listener.subscription.unsubscribe()
     }
   }, [completeSupabaseLogin])
+
+  useEffect(() => {
+    if (currentUser?.themePreference) setThemePreference(currentUser.themePreference)
+  }, [currentUser?.id, currentUser?.themePreference, setThemePreference])
 
   if (!currentUser) {
     return (
@@ -1049,10 +1067,49 @@ function LeadraApp() {
     }
   }
 
+  async function handleThemePreferenceChange(nextThemePreference: ThemePreference) {
+    const previousThemePreference = themePreference
+    const previousUser = currentUser
+
+    setThemePreference(nextThemePreference)
+    if (previousUser) {
+      setCurrentUser({ ...previousUser, themePreference: nextThemePreference })
+      setAppState((state) => ({
+        ...state,
+        users: state.users.map((item) => (item.id === previousUser.id ? { ...item, themePreference: nextThemePreference } : item)),
+      }))
+    }
+
+    if (!previousUser || !supabase || !isSupabaseConfigured) return
+
+    try {
+      const updatedUser = await setSupabaseThemePreference(supabase, nextThemePreference)
+      setCurrentUser((existing) => (existing?.id === updatedUser.id ? { ...existing, themePreference: updatedUser.themePreference } : existing))
+      setAppState((state) => ({
+        ...state,
+        users: state.users.map((item) => (item.id === updatedUser.id ? { ...item, themePreference: updatedUser.themePreference } : item)),
+      }))
+    } catch (error) {
+      setThemePreference(previousThemePreference)
+      setCurrentUser(previousUser)
+      setAppState((state) => ({
+        ...state,
+        users: state.users.map((item) => (item.id === previousUser.id ? { ...item, themePreference: previousThemePreference } : item)),
+      }))
+      setFlash({
+        text: error instanceof Error ? error.message : 'Theme update failed.',
+        messageKey: null,
+        messageParams: null,
+      })
+    }
+  }
+
   return (
     <div className="app-shell">
       <aside className="side-rail" aria-label={t('nav.desktop')}>
-        <div className="brand-mark">L</div>
+        <Link className="brand-mark" to={pathForView('dashboard')} aria-label="Leadra home">
+          <img src={brandAssets.mark} alt="Leadra" />
+        </Link>
         <NavButton active={activeView === 'dashboard'} label={t('nav.dashboard')} to={pathForView('dashboard')} onClick={closeNavigation} icon={<Home />} className="motion-stage" style={motionStyle(0)} />
         <NavButton active={activeView === 'units'} label={t('nav.units')} to={pathForView('units')} onClick={closeNavigation} icon={<Building2 />} className="motion-stage" style={motionStyle(1)} />
         <NavButton active={activeView === 'create'} label={t('nav.create')} to={pathForView('create')} onClick={closeNavigation} icon={<Plus />} className="motion-stage" style={motionStyle(2)} />
@@ -1073,6 +1130,7 @@ function LeadraApp() {
             <h1>{getViewTitle(activeView, user, locale)}</h1>
           </div>
           <div className="topbar-actions">
+            <ThemeToggle compact onThemeChange={(theme) => void handleThemePreferenceChange(theme)} />
             <Link className="user-chip" to={pathForView('profile')} onClick={closeNavigation}>
               <span>{getUserInitials(user.fullName)}</span>
               <strong>{getRoleLabel(locale, user.role)}</strong>
@@ -1215,7 +1273,7 @@ function LeadraApp() {
         )}
         {activeView === 'profile' && (
           <div className="page-transition-frame" key={activeView}>
-            <ProfilePage user={user} />
+            <ProfilePage user={user} onThemePreferenceChange={handleThemePreferenceChange} />
           </div>
         )}
         {activeView === 'analytics' && canUseAnalytics && (
@@ -1593,6 +1651,7 @@ function LeadraApp() {
 
       {mobileMenuOpen && (
         <div className="mobile-more-sheet" role="menu" aria-label={t('nav.mobileMore')}>
+          <ThemeToggle onThemeChange={(theme) => void handleThemePreferenceChange(theme)} />
           <NavButton active={activeView === 'notifications'} label={t('nav.alerts', { count: unreadCount })} to={pathForView('notifications')} onClick={closeNavigation} icon={<Bell />} className="motion-stage" style={motionStyle(0)} />
           {canUseAnalytics && (
             <NavButton active={activeView === 'analytics'} label={t('nav.analytics')} to={pathForView('analytics')} onClick={closeNavigation} icon={<BarChart3 />} className="motion-stage" style={motionStyle(1)} />
@@ -1640,6 +1699,8 @@ function LoginScreen({
   onPasswordLogin: (email: string, password: string) => void
 }) {
   const { locale, t } = useLocale()
+  const { themePreference } = useTheme()
+  const brandAssets = leadraBrandAssets[themePreference]
   const [step, setStep] = useState<'intro' | 'login'>('intro')
   const [isCompactViewport, setIsCompactViewport] = useState(() => (
     typeof window !== 'undefined' ? window.innerWidth <= 860 : false
@@ -1685,7 +1746,8 @@ function LoginScreen({
         <section className="login-card login-card-intro">
           <div className="login-brand-panel motion-stage motion-hero" style={motionStyle(0)}>
             <div className="login-brand-top">
-              <div className="login-mark">L</div>
+              <img className="login-mark" src={brandAssets.logo} alt="Leadra" />
+              <ThemeToggle compact />
             </div>
             <p className="eyebrow">{t('login.brandEyebrow')}</p>
             <h1>{t('login.brandTitle')}</h1>
@@ -1729,6 +1791,7 @@ function LoginScreen({
               <button className="ghost-button login-back-button" type="button" onClick={() => setStep('intro')}>
                 {introContent.back}
               </button>
+              <ThemeToggle compact />
             </div>
             <div className="login-access-copy">
               <p className="eyebrow">{t('login.accessEyebrow')}</p>
@@ -1796,15 +1859,17 @@ function LoginStoryItem({ icon, title, body, index }: { icon: ReactNode; title: 
 }
 
 function PaletteSamplePage() {
+  const { themePreference } = useTheme()
+  const brandAssets = leadraBrandAssets[themePreference]
   const sampleStats = [
-    ['Active listings', '248', 'Champagne metrics on Onyx'],
-    ['Qualified buyers', '1,420', 'Ivory text on Graphite'],
+    ['Active listings', '248', 'Champagne metrics on rich black'],
+    ['Qualified buyers', '1,420', 'Ivory text on dark slate'],
     ['Booked tours', '36', 'Gold accent states'],
   ]
   const sampleUnits = [
-    ['Seaview Villa', 'Charcoal card / Ivory copy', 'Gold Accent'],
-    ['Ras El Hekma Chalet', 'Graphite section / Champagne border', 'Onyx CTA'],
-    ['North Coast Residence', 'Onyx surface / Champagne status', 'Deep Navy'],
+    ['Seaview Villa', 'Charcoal card / Ivory copy', 'Gold accent'],
+    ['Ras El Hekma Chalet', 'Dark slate section / Champagne border', 'Navy CTA'],
+    ['North Coast Residence', 'Rich black surface / Champagne status', 'Deep navy'],
   ]
 
   return (
@@ -1815,19 +1880,19 @@ function PaletteSamplePage() {
           <h2>Dark luxury workspace</h2>
           <p>Sample page only. This version uses the primary dark identity from the reference: Onyx, Graphite, Charcoal, and Champagne Gold.</p>
         </div>
-        <div className="palette-sample-logo" aria-hidden="true">L</div>
+        <img className="palette-sample-logo" src={brandAssets.mark} alt="" aria-hidden="true" />
       </div>
 
       <div className="palette-swatch-grid motion-stage" style={motionStyle(1, 40)}>
         {[
-          ['Onyx', '#0D0D0F'],
-          ['Champagne Gold', '#D4AF37'],
-          ['Graphite', '#1A1A1D'],
-          ['Charcoal', '#2A2A2E'],
-          ['Royal Ivory', '#F7F3E9'],
+          ['Rich Black', '#0D0D0F'],
+          ['Champagne Gold', '#D6B06F'],
+          ['Charcoal', '#17171A'],
+          ['Dark Slate', '#1F1F23'],
+          ['Warm Ivory', '#F6F1EA'],
           ['Deep Navy', '#0F1B2D'],
-          ['Soft Grey', '#E6E8EC'],
-          ['Light Grey', '#F1F3F6'],
+          ['Soft Linen', '#EFE7DD'],
+          ['Taupe Grey', '#7D7468'],
         ].map(([name, value], index) => (
           <div className="palette-swatch motion-stage" key={name} style={motionStyle(index, 80)}>
             <span style={{ background: value }} />
@@ -4331,7 +4396,7 @@ function BarChart({ title, points }: { title: string; points: AnalyticsChartPoin
   )
 }
 
-function ProfilePage({ user }: { user: LeadraUser }) {
+function ProfilePage({ user, onThemePreferenceChange }: { user: LeadraUser; onThemePreferenceChange: (theme: ThemePreference) => void | Promise<void> }) {
   const { locale, t } = useLocale()
   return (
     <section className="page-stack page-entrance profile-page">
@@ -4362,6 +4427,13 @@ function ProfilePage({ user }: { user: LeadraUser }) {
           <p>{t('profile.languageHelp')}</p>
         </div>
         <LocaleSwitcher />
+      </section>
+      <section className="content-card profile-language-card motion-stage" style={motionStyle(3, 150)}>
+        <div className="profile-language-copy">
+          <h2>{t('profile.themeSettings')}</h2>
+          <p>{t('profile.themeHelp')}</p>
+        </div>
+        <ThemeToggle onThemeChange={onThemePreferenceChange} />
       </section>
     </section>
   )
@@ -5479,6 +5551,36 @@ function LocaleSwitcher() {
   )
 }
 
+function ThemeToggle({
+  compact = false,
+  onThemeChange,
+}: {
+  compact?: boolean
+  onThemeChange?: (theme: ThemePreference) => void | Promise<void>
+}) {
+  const { themePreference, setThemePreference } = useTheme()
+  const { t } = useLocale()
+  const nextThemePreference: ThemePreference = themePreference === 'dark' ? 'light' : 'dark'
+
+  return (
+    <button
+      className={`theme-toggle ${compact ? 'compact' : ''}`}
+      type="button"
+      aria-label={themePreference === 'dark' ? t('theme.switchToLight') : t('theme.switchToDark')}
+      aria-pressed={themePreference === 'dark'}
+      onClick={() => {
+        setThemePreference(nextThemePreference)
+        void onThemeChange?.(nextThemePreference)
+      }}
+    >
+      <span className="theme-toggle-track" aria-hidden="true">
+        <span className="theme-toggle-thumb">{themePreference === 'dark' ? <Moon size={14} /> : <Sun size={14} />}</span>
+      </span>
+      <span className="theme-toggle-label">{themePreference === 'dark' ? t('theme.dark') : t('theme.light')}</span>
+    </button>
+  )
+}
+
 function fileToMedia(file: File): Promise<LeadraMediaFile> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader()
@@ -5522,12 +5624,19 @@ function BrandedSelect({
   const menuId = useId()
   const rootRef = useRef<HTMLDivElement | null>(null)
   const menuRef = useRef<HTMLDivElement | null>(null)
+  const optionRefs = useRef<Record<string, HTMLButtonElement | null>>({})
+  const lastTypeaheadKey = useRef('')
   const isControlled = value !== undefined
   const [open, setOpen] = useState(false)
   const [menuStyle, setMenuStyle] = useState<CSSProperties>({})
   const [internalValue, setInternalValue] = useState(defaultValue ?? options[0]?.value ?? '')
+  const [highlightedValue, setHighlightedValue] = useState('')
   const selectedValue = isControlled ? value ?? options[0]?.value ?? '' : internalValue
   const selectedOption = options.find((option) => option.value === selectedValue) ?? options[0]
+  const menuHighlightedValue = open ? highlightedValue || selectedValue : ''
+  const highlightedOption = options.find((option) => option.value === menuHighlightedValue)
+  const highlightedIndex = highlightedOption ? options.indexOf(highlightedOption) : -1
+  const highlightedOptionId = open && highlightedIndex >= 0 ? `${menuId}-option-${highlightedIndex}` : undefined
 
   useEffect(() => {
     if (!open) return undefined
@@ -5586,12 +5695,16 @@ function BrandedSelect({
         menuRef.current &&
         !menuRef.current.contains(target)
       ) {
+        setHighlightedValue('')
+        lastTypeaheadKey.current = ''
         setOpen(false)
       }
     }
 
-    function handleEscape(event: KeyboardEvent) {
+    function handleEscape(event: globalThis.KeyboardEvent) {
       if (event.key === 'Escape') {
+        setHighlightedValue('')
+        lastTypeaheadKey.current = ''
         setOpen(false)
       }
     }
@@ -5618,18 +5731,70 @@ function BrandedSelect({
     })
   }, [open])
 
+  useEffect(() => {
+    if (!open || !highlightedValue) return
+    window.requestAnimationFrame(() => {
+      const highlightedElement = optionRefs.current[highlightedValue]
+      if (typeof highlightedElement?.scrollIntoView === 'function') {
+        highlightedElement.scrollIntoView({ block: 'nearest', inline: 'nearest' })
+      }
+    })
+  }, [highlightedValue, open])
+
   function choose(nextValue: string) {
     if (!isControlled) {
       setInternalValue(nextValue)
     }
     onValueChange?.(nextValue)
+    setHighlightedValue('')
+    lastTypeaheadKey.current = ''
     setOpen(false)
+  }
+
+  function handleTypeahead(key: string) {
+    const normalizedKey = key.toLocaleLowerCase()
+    const matches = options
+      .map((option, index) => ({ option, index }))
+      .filter(({ option }) => option.label.trim().toLocaleLowerCase().startsWith(normalizedKey))
+
+    if (matches.length === 0) return
+
+    const currentIndex = options.findIndex((option) => option.value === (highlightedValue || selectedValue))
+    const shouldCycle = lastTypeaheadKey.current === normalizedKey
+    const nextMatch = shouldCycle ? matches.find((match) => match.index > currentIndex) ?? matches[0] : matches[0]
+
+    lastTypeaheadKey.current = normalizedKey
+    setHighlightedValue(nextMatch.option.value)
+  }
+
+  function handleTriggerKeyDown(event: ReactKeyboardEvent<HTMLButtonElement>) {
+    if (event.key === 'Escape' && open) {
+      event.preventDefault()
+      setHighlightedValue('')
+      lastTypeaheadKey.current = ''
+      setOpen(false)
+      return
+    }
+
+    if (event.key === 'Enter' && open) {
+      event.preventDefault()
+      choose(highlightedValue || selectedValue)
+      return
+    }
+
+    if (!open || event.ctrlKey || event.altKey || event.metaKey || event.key.length !== 1 || event.key.trim() === '') {
+      return
+    }
+
+    event.preventDefault()
+    handleTypeahead(event.key)
   }
 
   return (
     <div className={`brand-select ${open ? 'is-open' : ''} ${disabled ? 'is-disabled' : ''}`} ref={rootRef}>
       {name && <input name={name} type="hidden" value={selectedOption?.value ?? ''} />}
       <button
+        aria-activedescendant={highlightedOptionId}
         aria-controls={menuId}
         aria-expanded={open}
         aria-haspopup="listbox"
@@ -5638,7 +5803,12 @@ function BrandedSelect({
         disabled={disabled}
         role="combobox"
         type="button"
-        onClick={() => setOpen((current) => !current)}
+        onClick={() => {
+          setHighlightedValue('')
+          lastTypeaheadKey.current = ''
+          setOpen((current) => !current)
+        }}
+        onKeyDown={handleTriggerKeyDown}
       >
         <span className="brand-select-value">{selectedOption?.label ?? ''}</span>
         <ChevronDown size={18} />
@@ -5653,16 +5823,22 @@ function BrandedSelect({
             role="listbox"
             style={menuStyle}
           >
-            {options.map((option) => {
+            {options.map((option, index) => {
               const active = option.value === selectedValue
+              const highlighted = option.value === menuHighlightedValue
               return (
                 <button
                   key={option.value}
                   aria-selected={active}
-                  className={`brand-select-option ${active ? 'is-active' : ''}`}
+                  className={`brand-select-option ${active ? 'is-active' : ''} ${highlighted ? 'is-highlighted' : ''}`}
+                  id={`${menuId}-option-${index}`}
+                  ref={(element) => {
+                    optionRefs.current[option.value] = element
+                  }}
                   role="option"
                   type="button"
                   onClick={() => choose(option.value)}
+                  onMouseEnter={() => setHighlightedValue(option.value)}
                 >
                   <span>{option.label}</span>
                   {active && <Check size={16} />}

@@ -20,6 +20,7 @@ import type {
   MessageParams,
   NotificationItem,
   TeamDirectoryItem,
+  ThemePreference,
   UserRole,
 } from './types'
 
@@ -61,6 +62,14 @@ export async function loadSupabaseProfile(client: SupabaseClient, authUser: User
 export async function markSupabaseLogin(client: SupabaseClient): Promise<void> {
   const { error } = await client.rpc('mark_own_login')
   if (error) console.warn('Supabase login timestamp was not updated:', error.message)
+}
+
+export async function setSupabaseThemePreference(client: SupabaseClient, themePreference: ThemePreference): Promise<LeadraUser> {
+  const { data, error } = await client.rpc('set_own_theme_preference', { theme: themePreference })
+  if (error) throw new Error(`Theme update failed: ${error.message}`)
+  const profile = Array.isArray(data) ? data[0] : data
+  if (!profile) throw new Error('Theme update failed.')
+  return toLeadraUser(profile as Record<string, unknown>)
 }
 
 export async function loadSupabaseAppState(client: SupabaseClient): Promise<RemoteState> {
@@ -231,6 +240,7 @@ function toLeadraUser(row: Record<string, unknown>): LeadraUser {
     teamId: String(row.team_id ?? ''),
     branchId: String(row.branch_id ?? ''),
     status: row.status === 'inactive' ? 'inactive' : 'active',
+    themePreference: row.theme_preference === 'dark' ? 'dark' : 'light',
     createdAt: typeof row.created_at === 'string' ? row.created_at : undefined,
     lastLoginAt: typeof row.last_login_at === 'string' ? row.last_login_at : null,
     deletedAt: typeof row.deleted_at === 'string' ? row.deleted_at : null,

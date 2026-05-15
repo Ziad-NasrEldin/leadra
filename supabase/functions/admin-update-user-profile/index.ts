@@ -143,7 +143,7 @@ serve(async (request) => {
       status,
     })
     .eq('id', userId)
-    .select('id, full_name, email, role, job_title, phone_number, team_id, branch_id, status, created_at, last_login_at')
+    .select('id, full_name, email, role, job_title, phone_number, team_id, branch_id, status, theme_preference, created_at, last_login_at')
     .single()
 
   if (updateError || !updatedProfile) {

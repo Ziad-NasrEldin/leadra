@@ -28,6 +28,7 @@ interface ManagedUserProfileResponse extends PasswordUpdateResponse {
     team_id: string | null
     branch_id: string | null
     status: LeadraUser['status']
+    theme_preference?: LeadraUser['themePreference'] | null
     created_at?: string
     last_login_at?: string | null
   }
@@ -129,7 +130,7 @@ async function updateManagedProfileRow(
       status: updates.status,
     })
     .eq('id', userId)
-    .select('id, full_name, email, role, job_title, phone_number, team_id, branch_id, status, created_at, last_login_at')
+    .select('id, full_name, email, role, job_title, phone_number, team_id, branch_id, status, theme_preference, created_at, last_login_at')
     .single<NonNullable<ManagedUserProfileResponse['profile']>>()
 
   if (error || !data) throw new Error(error?.message ?? 'User update failed.')
@@ -147,6 +148,7 @@ function toLeadraUser(profile: NonNullable<ManagedUserProfileResponse['profile']
     teamId: profile.team_id ?? '',
     branchId: profile.branch_id ?? '',
     status: profile.status,
+    themePreference: profile.theme_preference === 'dark' ? 'dark' : 'light',
     createdAt: profile.created_at,
     lastLoginAt: profile.last_login_at ?? null,
   }

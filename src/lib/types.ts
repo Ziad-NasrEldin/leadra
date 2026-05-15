@@ -27,6 +27,7 @@ export type AnalyticsEventType =
 export type AnalyticsTargetScope = 'company' | 'team' | 'user'
 export type AnalyticsTargetPeriod = 'monthly' | 'quarterly'
 export type MessageParams = Record<string, string | number | boolean | null | undefined>
+export type ThemePreference = 'light' | 'dark'
 
 export interface LeadraUser {
   id: string
@@ -38,6 +39,7 @@ export interface LeadraUser {
   teamId: string
   branchId: string
   status: AccountStatus
+  themePreference?: ThemePreference
   createdAt?: string
   lastLoginAt?: string | null
   deletedAt?: string | null

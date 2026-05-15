@@ -2,15 +2,32 @@
 @import "tailwindcss";
 
 :root {
-  --ink: #14211d;
-  --muted: #65736e;
-  --paper: #f5efe1;
-  --panel: rgba(255, 252, 244, 0.88);
-  --line: rgba(20, 33, 29, 0.14);
-  --copper: #b4643d;
-  --olive: #4d6b56;
-  --mint: #dce8d5;
-  --sand: #ead7b5;
+  --brand-ivory: #f6f1ea;
+  --brand-linen: #efe7dd;
+  --brand-gold: #d6b06f;
+  --brand-gold-soft: #e7c98e;
+  --brand-warm-gold: #b7893c;
+  --brand-charcoal: #2a2623;
+  --brand-navy: #0f1b2d;
+  --brand-taupe: #7d7468;
+  --brand-black: #0d0d0f;
+  --brand-slate: #1f1f23;
+  --ink: var(--brand-charcoal);
+  --muted: var(--brand-taupe);
+  --paper: var(--brand-ivory);
+  --panel: rgba(255, 252, 246, 0.9);
+  --panel-strong: rgba(255, 252, 246, 0.98);
+  --line: rgba(42, 38, 35, 0.14);
+  --line-strong: rgba(42, 38, 35, 0.22);
+  --copper: var(--brand-gold);
+  --olive: var(--brand-navy);
+  --mint: var(--brand-linen);
+  --sand: var(--brand-gold-soft);
+  --surface-soft: rgba(239, 231, 221, 0.7);
+  --surface-muted: rgba(246, 241, 234, 0.68);
+  --shadow-soft: 0 18px 45px rgba(42, 38, 35, 0.08);
+  --shadow-strong: 0 30px 90px rgba(42, 38, 35, 0.16);
+  --on-dark: #fffaf0;
   --danger: #9e3c31;
   --space-1: 0.25rem;
   --space-2: 0.5rem;
@@ -33,6 +50,26 @@
   -webkit-font-smoothing: antialiased;
 }
 
+:root[data-theme="dark"] {
+  --ink: var(--brand-ivory);
+  --muted: #b8b0a4;
+  --paper: var(--brand-black);
+  --panel: rgba(31, 31, 35, 0.88);
+  --panel-strong: rgba(23, 23, 26, 0.98);
+  --line: rgba(231, 201, 142, 0.18);
+  --line-strong: rgba(231, 201, 142, 0.28);
+  --copper: var(--brand-gold);
+  --olive: var(--brand-gold-soft);
+  --mint: rgba(214, 176, 111, 0.14);
+  --sand: var(--brand-warm-gold);
+  --surface-soft: rgba(31, 31, 35, 0.74);
+  --surface-muted: rgba(23, 23, 26, 0.72);
+  --shadow-soft: 0 18px 45px rgba(0, 0, 0, 0.28);
+  --shadow-strong: 0 30px 90px rgba(0, 0, 0, 0.42);
+  --on-dark: #fffaf0;
+  --danger: #e07a6f;
+}
+
 * {
   box-sizing: border-box;
 }
@@ -43,8 +80,7 @@ body {
   min-height: 100vh;
   padding-bottom: var(--brand-select-page-bottom-space, 0);
   background:
-    radial-gradient(circle at top left, rgba(180, 100, 61, 0.26), transparent 32rem),
-    linear-gradient(135deg, rgba(77, 107, 86, 0.12), transparent 34rem),
+    linear-gradient(135deg, color-mix(in oklch, var(--paper), var(--copper) 8%), var(--paper) 44%, color-mix(in oklch, var(--paper), var(--olive) 7%)),
     var(--paper);
 }
 
@@ -174,9 +210,7 @@ h2 {
   align-content: center;
   padding: clamp(1rem, 3vw, 3rem);
   background:
-    radial-gradient(circle at 18% 18%, rgba(180, 98, 60, 0.13), transparent 22rem),
-    radial-gradient(circle at 82% 14%, rgba(77, 107, 86, 0.18), transparent 28rem),
-    linear-gradient(135deg, #f5eddd 0%, #ece4d2 45%, #edf3e6 100%);
+    linear-gradient(135deg, color-mix(in oklch, var(--paper), var(--copper) 9%) 0%, var(--paper) 48%, color-mix(in oklch, var(--paper), var(--olive) 8%) 100%);
 }
 
 .login-card {
@@ -188,9 +222,9 @@ h2 {
   grid-template-columns: minmax(0, 1.2fr) minmax(360px, 0.8fr);
   gap: clamp(1rem, 2vw, 1.4rem);
   background:
-    linear-gradient(135deg, rgba(255, 252, 244, 0.9), rgba(255, 252, 244, 0.58)),
-    repeating-linear-gradient(90deg, transparent 0 23px, rgba(20, 33, 29, 0.035) 24px);
-  box-shadow: 0 30px 90px rgba(20, 33, 29, 0.17);
+    linear-gradient(135deg, var(--panel-strong), var(--surface-muted)),
+    repeating-linear-gradient(90deg, transparent 0 23px, color-mix(in oklch, var(--ink), transparent 94%) 24px);
+  box-shadow: var(--shadow-strong);
   overflow: clip;
 }
 
@@ -209,9 +243,9 @@ h2 {
   overflow: hidden;
   position: relative;
   background:
-    linear-gradient(135deg, rgba(20, 33, 29, 0.94), rgba(58, 86, 66, 0.86)),
-    radial-gradient(circle at 82% 18%, rgba(234, 215, 181, 0.3), transparent 19rem);
-  color: #fffaf0;
+    linear-gradient(135deg, rgba(13, 13, 15, 0.94), rgba(31, 31, 35, 0.88)),
+    linear-gradient(115deg, rgba(214, 176, 111, 0.14), transparent 44%);
+  color: var(--on-dark);
 }
 
 .login-brand-top {
@@ -237,16 +271,12 @@ h2 {
 }
 
 .login-mark {
-  width: 54px;
-  height: 54px;
-  display: grid;
-  place-items: center;
+  width: 88px;
+  height: 88px;
   border-radius: 1.1rem;
-  background: var(--sand);
-  color: var(--ink);
-  font-family: Fraunces, serif;
-  font-size: 1.9rem;
-  font-weight: 900;
+  object-fit: cover;
+  border: 1px solid rgba(231, 201, 142, 0.34);
+  box-shadow: 0 18px 34px rgba(0, 0, 0, 0.24);
 }
 
 .login-card h1 {
@@ -264,8 +294,8 @@ h2 {
   display: grid;
   align-content: center;
   gap: var(--space-3);
-  background: rgba(255, 252, 244, 0.86);
-  border: 1px solid rgba(20, 33, 29, 0.1);
+  background: var(--panel);
+  border: 1px solid var(--line);
 }
 
 .login-access-panel h2 {
@@ -291,9 +321,9 @@ h2 {
   display: grid;
   align-content: center;
   gap: var(--space-4);
-  border: 1px solid rgba(20, 33, 29, 0.1);
+  border: 1px solid var(--line);
   border-radius: 1.65rem;
-  background: rgba(255, 252, 244, 0.86);
+  background: var(--panel);
 }
 
 .login-intro-panel > p,
@@ -315,7 +345,7 @@ h2 {
   padding: 0.95rem 1rem;
   border: 1px solid var(--line);
   border-radius: 1rem;
-  background: rgba(255, 252, 244, 0.6);
+  background: var(--surface-muted);
 }
 
 .login-story-item strong {
@@ -508,7 +538,7 @@ h2 {
   border: 1px solid var(--line);
   border-radius: 1.4rem;
   background: var(--panel);
-  box-shadow: 0 18px 45px rgba(20, 33, 29, 0.08);
+  box-shadow: var(--shadow-soft);
 }
 
 .role-card,
@@ -562,7 +592,9 @@ h2 {
   height: 100vh;
   padding: 1rem 0.6rem;
   border-inline-end: 1px solid var(--line);
-  background: rgba(20, 33, 29, 0.92);
+  background:
+    linear-gradient(180deg, rgba(13, 13, 15, 0.98), rgba(31, 31, 35, 0.96)),
+    var(--brand-black);
   display: flex;
   flex-direction: column;
   align-items: stretch;
@@ -576,11 +608,16 @@ h2 {
   display: grid;
   place-items: center;
   border-radius: 1rem;
-  background: var(--sand);
-  color: var(--ink);
-  font-family: Fraunces, serif;
-  font-size: 1.7rem;
-  box-shadow: 0 10px 26px rgba(20, 33, 29, 0.18);
+  overflow: hidden;
+  border: 1px solid rgba(231, 201, 142, 0.28);
+  background: var(--brand-black);
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.22);
+}
+
+.brand-mark img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
 }
 
 .main-panel {
@@ -630,20 +667,21 @@ h2 {
   display: inline-flex;
   align-items: center;
   gap: var(--space-2);
-  background: rgba(255, 252, 244, 0.72);
+  background: var(--panel);
   color: var(--ink);
-  box-shadow: 0 10px 24px rgba(20, 33, 29, 0.05);
+  box-shadow: 0 10px 24px color-mix(in oklch, var(--ink), transparent 92%);
 }
 
-.locale-switcher {
+.locale-switcher,
+.theme-toggle {
   display: inline-flex;
   align-items: center;
   gap: 0.2rem;
   padding: 0.2rem;
   border: 1px solid var(--line);
   border-radius: 999px;
-  background: rgba(255, 252, 244, 0.78);
-  box-shadow: 0 10px 24px rgba(20, 33, 29, 0.04);
+  background: var(--panel);
+  box-shadow: 0 10px 24px color-mix(in oklch, var(--ink), transparent 94%);
 }
 
 .locale-button {
@@ -661,9 +699,57 @@ h2 {
   font-size: 0.8rem;
 }
 
+.theme-toggle {
+  gap: 0.45rem;
+  border-color: var(--line-strong);
+  min-height: 44px;
+  color: var(--muted);
+  font-weight: 800;
+  font-size: 0.8rem;
+}
+
+.theme-toggle.compact .theme-toggle-label {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip: rect(0 0 0 0);
+  white-space: nowrap;
+}
+
+.theme-toggle-track {
+  width: 3.1rem;
+  height: 1.75rem;
+  display: inline-flex;
+  align-items: center;
+  padding: 0.2rem;
+  border-radius: 999px;
+  background: color-mix(in oklch, var(--ink), transparent 88%);
+}
+
+.theme-toggle-thumb {
+  width: 1.35rem;
+  height: 1.35rem;
+  display: grid;
+  place-items: center;
+  border-radius: 999px;
+  background: var(--copper);
+  color: var(--brand-black);
+  transform: translateX(0);
+  box-shadow: 0 6px 14px color-mix(in oklch, var(--ink), transparent 78%);
+}
+
+.theme-toggle[aria-pressed="true"] .theme-toggle-thumb {
+  transform: translateX(1.35rem);
+}
+
+[dir="rtl"] .theme-toggle[aria-pressed="true"] .theme-toggle-thumb {
+  transform: translateX(-1.35rem);
+}
+
 .locale-button.active {
   background: var(--ink);
-  color: #fffaf0;
+  color: var(--paper);
 }
 
 .profile-language-card {
@@ -694,6 +780,12 @@ h2 {
   justify-content: stretch;
   gap: 0.3rem;
   padding: 0.3rem;
+}
+
+.profile-language-card .theme-toggle {
+  width: 100%;
+  justify-content: space-between;
+  padding: 0.35rem 0.75rem;
 }
 
 .profile-language-card .locale-button {
@@ -788,9 +880,9 @@ h2 {
   align-content: end;
   gap: 0.85rem;
   background:
-    linear-gradient(135deg, rgba(20, 33, 29, 0.92), rgba(77, 107, 86, 0.84)),
-    radial-gradient(circle at 80% 20%, rgba(234, 215, 181, 0.34), transparent 18rem);
-  color: #fffaf0;
+    linear-gradient(135deg, color-mix(in oklch, var(--brand-navy), black 8%), color-mix(in oklch, var(--brand-charcoal), var(--brand-gold) 12%)),
+    linear-gradient(115deg, rgba(214, 176, 111, 0.18), transparent 44%);
+  color: var(--on-dark);
 }
 
 .hero-panel p {
@@ -903,19 +995,20 @@ h2 {
 .ghost-button:hover,
 .secondary-link:hover,
 .user-chip:hover {
-  box-shadow: 0 12px 28px rgba(20, 33, 29, 0.12);
+  box-shadow: 0 12px 28px color-mix(in oklch, var(--ink), transparent 88%);
   transform: translateY(-2px) scale(1.01);
 }
 
 .primary-button {
-  background: var(--ink);
-  color: #fffaf0;
+  border-color: color-mix(in oklch, var(--copper), var(--olive) 22%);
+  background: var(--olive);
+  color: var(--paper);
 }
 
 .secondary-button,
 .secondary-link,
 .ghost-button {
-  background: rgba(255, 252, 244, 0.72);
+  background: var(--panel);
   color: var(--ink);
 }
 
@@ -966,20 +1059,18 @@ h2 {
   z-index: 5;
   grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
   align-items: end;
-  border: 1px solid rgba(38, 64, 51, 0.1);
+  border: 1px solid var(--line);
   border-radius: 1.35rem;
   padding: 0.9rem;
-  background:
-    linear-gradient(135deg, rgba(255, 252, 244, 0.9), rgba(242, 232, 213, 0.82));
-  box-shadow: 0 18px 42px rgba(31, 47, 38, 0.08);
+  background: linear-gradient(135deg, var(--panel-strong), var(--surface-soft));
+  box-shadow: var(--shadow-soft);
 }
 
 .units-filter-shell {
-  border: 1px solid rgba(38, 64, 51, 0.12);
+  border: 1px solid var(--line);
   border-radius: 1.35rem;
-  background:
-    linear-gradient(135deg, rgba(255, 252, 244, 0.92), rgba(242, 232, 213, 0.78));
-  box-shadow: 0 16px 38px rgba(31, 47, 38, 0.08);
+  background: linear-gradient(135deg, var(--panel-strong), var(--surface-soft));
+  box-shadow: var(--shadow-soft);
   overflow: hidden;
 }
 
@@ -1085,7 +1176,7 @@ textarea {
   width: 100%;
   border: 1px solid var(--line);
   border-radius: 0.9rem;
-  background: rgba(255, 252, 244, 0.82);
+  background: var(--panel);
   color: var(--ink);
   padding: 0.82rem;
 }
@@ -1117,11 +1208,10 @@ select {
   min-height: 52px;
   border: 1px solid var(--line);
   border-radius: 0.9rem;
-  background:
-    linear-gradient(180deg, rgba(255, 252, 244, 0.96), rgba(250, 244, 233, 0.92));
+  background: linear-gradient(180deg, var(--panel-strong), var(--surface-soft));
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.7),
-    0 10px 24px rgba(20, 33, 29, 0.05);
+    inset 0 1px 0 color-mix(in oklch, white, transparent 55%),
+    0 10px 24px color-mix(in oklch, var(--ink), transparent 94%);
   transition:
     border-color var(--duration-feedback) var(--ease-out),
     box-shadow var(--duration-feedback) var(--ease-out);
@@ -1157,7 +1247,7 @@ select {
 }
 
 .owner-phone-country .brand-select.is-open .brand-select-trigger {
-  background: rgba(255, 252, 244, 0.98);
+  background: var(--panel-strong);
   box-shadow: 0 0 0 3px rgba(180, 100, 61, 0.12);
 }
 
@@ -1213,8 +1303,7 @@ select {
   min-height: 52px;
   border: 1px solid var(--line);
   border-radius: 0.9rem;
-  background:
-    linear-gradient(180deg, rgba(255, 252, 244, 0.96), rgba(250, 244, 233, 0.92));
+  background: linear-gradient(180deg, var(--panel-strong), var(--surface-soft));
   color: var(--ink);
   padding: 0.82rem 0.95rem;
   display: flex;
@@ -1224,8 +1313,8 @@ select {
   text-align: start;
   font-weight: 700;
   box-shadow:
-    inset 0 1px 0 rgba(255, 255, 255, 0.7),
-    0 10px 24px rgba(20, 33, 29, 0.05);
+    inset 0 1px 0 color-mix(in oklch, white, transparent 55%),
+    0 10px 24px color-mix(in oklch, var(--ink), transparent 94%);
 }
 
 .brand-select-trigger svg {
@@ -1236,7 +1325,7 @@ select {
 
 .brand-select.is-open .brand-select-trigger {
   border-color: var(--copper);
-  background: rgba(255, 252, 244, 0.98);
+  background: var(--panel-strong);
   box-shadow:
     0 0 0 4px rgba(180, 100, 61, 0.12),
     0 18px 34px rgba(20, 33, 29, 0.1);
@@ -1261,11 +1350,10 @@ select {
   padding: 0.45rem;
   border: 1px solid color-mix(in oklch, var(--copper), var(--line) 55%);
   border-radius: 1.05rem;
-  background:
-    linear-gradient(180deg, rgba(255, 253, 247, 0.99), rgba(249, 243, 232, 0.98));
+  background: linear-gradient(180deg, var(--panel-strong), var(--surface-soft));
   box-shadow:
-    0 24px 44px rgba(20, 33, 29, 0.16),
-    0 1px 0 rgba(255, 255, 255, 0.7) inset;
+    0 24px 44px color-mix(in oklch, var(--ink), transparent 84%),
+    0 1px 0 color-mix(in oklch, white, transparent 55%) inset;
   backdrop-filter: blur(14px);
   overflow-y: auto;
   overscroll-behavior: contain;
@@ -1291,7 +1379,8 @@ select {
 }
 
 .brand-select-option:hover,
-.brand-select-option:focus-visible {
+.brand-select-option:focus-visible,
+.brand-select-option.is-highlighted {
   background: rgba(180, 100, 61, 0.1);
   color: color-mix(in oklch, var(--ink), var(--copper) 18%);
 }
@@ -1311,7 +1400,7 @@ input:focus,
 select:focus,
 textarea:focus {
   border-color: var(--copper);
-  background: rgba(255, 252, 244, 0.96);
+  background: var(--panel-strong);
   box-shadow: 0 0 0 4px rgba(180, 100, 61, 0.12), 0 12px 30px rgba(20, 33, 29, 0.08);
   transform: translateY(-1px);
 }
@@ -1327,13 +1416,13 @@ textarea {
 
 .palette-sample {
   --palette-onyx: #0d0d0f;
-  --palette-gold: #d4af37;
-  --palette-graphite: #1a1a1d;
-  --palette-charcoal: #2a2a2e;
-  --palette-ivory: #f7f3e9;
+  --palette-gold: #d6b06f;
+  --palette-graphite: #17171a;
+  --palette-charcoal: #1f1f23;
+  --palette-ivory: #f6f1ea;
   --palette-navy: #0f1b2d;
-  --palette-soft: #e6e8ec;
-  --palette-light: #f1f3f6;
+  --palette-soft: #efe7dd;
+  --palette-light: #7d7468;
   display: grid;
   gap: var(--space-6);
   padding: clamp(1rem, 2vw, 1.5rem);
@@ -1395,17 +1484,12 @@ textarea {
 .palette-sample-logo {
   width: 5.2rem;
   height: 5.2rem;
-  display: grid;
-  place-items: center;
   border-radius: 1.45rem;
   position: relative;
   z-index: 1;
   border: 1px solid rgba(212, 175, 55, 0.34);
-  background: linear-gradient(135deg, var(--palette-graphite), var(--palette-onyx));
-  color: var(--palette-gold);
-  font-family: Fraunces, Georgia, serif;
-  font-size: 2.6rem;
-  font-weight: 900;
+  object-fit: cover;
+  background: var(--palette-onyx);
   box-shadow: 0 24px 42px rgba(0, 0, 0, 0.28);
 }
 
@@ -4898,6 +4982,109 @@ dd,
     justify-self: stretch;
     min-height: 36px;
   }
+}
+
+:root[data-theme="dark"] .app-shell,
+:root[data-theme="dark"] .main-panel {
+  background:
+    linear-gradient(180deg, rgba(13, 13, 15, 0.98), rgba(23, 23, 26, 0.96)),
+    var(--paper);
+}
+
+:root[data-theme="dark"] .login-screen {
+  background: linear-gradient(135deg, var(--brand-black) 0%, #17171a 54%, #1f1f23 100%);
+}
+
+:root[data-theme="dark"] .login-card,
+:root[data-theme="dark"] .login-access-panel,
+:root[data-theme="dark"] .login-intro-panel,
+:root[data-theme="dark"] .login-story-item,
+:root[data-theme="dark"] .role-card,
+:root[data-theme="dark"] .project-card,
+:root[data-theme="dark"] .content-card,
+:root[data-theme="dark"] .metric-card,
+:root[data-theme="dark"] .details-hero,
+:root[data-theme="dark"] .profile-hero,
+:root[data-theme="dark"] .review-panel,
+:root[data-theme="dark"] .unit-row,
+:root[data-theme="dark"] .notification-row,
+:root[data-theme="dark"] .admin-row,
+:root[data-theme="dark"] .note-card,
+:root[data-theme="dark"] .user-management-card,
+:root[data-theme="dark"] .user-management-tools,
+:root[data-theme="dark"] .user-card,
+:root[data-theme="dark"] .analytics-control-card,
+:root[data-theme="dark"] .analytics-signal-card,
+:root[data-theme="dark"] .target-card,
+:root[data-theme="dark"] .media-card,
+:root[data-theme="dark"] .media-card-actions,
+:root[data-theme="dark"] .master-data-workspace,
+:root[data-theme="dark"] .master-data-card,
+:root[data-theme="dark"] .settings-form,
+:root[data-theme="dark"] .units-filter-shell,
+:root[data-theme="dark"] .advanced-filter-bar,
+:root[data-theme="dark"] .bottom-nav,
+:root[data-theme="dark"] .mobile-more-sheet {
+  border-color: var(--line);
+  background: var(--panel);
+  color: var(--ink);
+  box-shadow: var(--shadow-soft);
+}
+
+:root[data-theme="dark"] .hero-panel,
+:root[data-theme="dark"] .login-brand-panel,
+:root[data-theme="dark"] .analytics-hero {
+  background:
+    linear-gradient(135deg, rgba(13, 13, 15, 0.96), rgba(31, 31, 35, 0.92)),
+    linear-gradient(115deg, rgba(214, 176, 111, 0.16), transparent 46%);
+  color: var(--on-dark);
+}
+
+:root[data-theme="dark"] input,
+:root[data-theme="dark"] select,
+:root[data-theme="dark"] textarea,
+:root[data-theme="dark"] .brand-select-trigger,
+:root[data-theme="dark"] .brand-select-menu,
+:root[data-theme="dark"] .owner-phone-shell,
+:root[data-theme="dark"] .locale-switcher,
+:root[data-theme="dark"] .theme-toggle,
+:root[data-theme="dark"] .secondary-button,
+:root[data-theme="dark"] .secondary-link,
+:root[data-theme="dark"] .ghost-button,
+:root[data-theme="dark"] .user-chip {
+  border-color: var(--line);
+  background: var(--panel-strong);
+  color: var(--ink);
+}
+
+:root[data-theme="dark"] .primary-button {
+  border-color: rgba(231, 201, 142, 0.38);
+  background: linear-gradient(135deg, var(--brand-gold), var(--brand-warm-gold));
+  color: var(--brand-black);
+}
+
+:root[data-theme="dark"] .status-pill {
+  background: rgba(231, 201, 142, 0.15);
+  color: var(--brand-gold-soft);
+}
+
+:root[data-theme="dark"] .status-pill.hold {
+  background: rgba(183, 137, 60, 0.22);
+  color: var(--brand-gold);
+}
+
+:root[data-theme="dark"] .status-pill.sold,
+:root[data-theme="dark"] .status-pill.sold_by_us,
+:root[data-theme="dark"] .status-pill.sold_by_others,
+:root[data-theme="dark"] .danger-button {
+  background: rgba(224, 122, 111, 0.18);
+  color: var(--danger);
+  border-color: rgba(224, 122, 111, 0.34);
+}
+
+:root[data-theme="dark"] .thumb,
+:root[data-theme="dark"] input[type="checkbox"] {
+  background: rgba(214, 176, 111, 0.12);
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -4,6 +4,7 @@ import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import App from './App'
 import { LocaleProvider } from './lib/i18n'
+import { ThemeProvider } from './lib/theme'
 
 const originalCreateObjectURL = URL.createObjectURL
 const originalRevokeObjectURL = URL.revokeObjectURL
@@ -14,11 +15,13 @@ function renderApp() {
   })
 
   return render(
-    <LocaleProvider>
-      <QueryClientProvider client={queryClient}>
-        <App />
-      </QueryClientProvider>
-    </LocaleProvider>,
+    <ThemeProvider>
+      <LocaleProvider>
+        <QueryClientProvider client={queryClient}>
+          <App />
+        </QueryClientProvider>
+      </LocaleProvider>
+    </ThemeProvider>,
   )
 }
 
@@ -62,6 +65,8 @@ async function openSeedUnitDetails(user: ReturnType<typeof userEvent.setup>) {
 describe('Leadra app shell', () => {
   afterEach(() => {
     window.history.replaceState(null, '', '/')
+    window.localStorage.clear()
+    delete document.documentElement.dataset.theme
     vi.restoreAllMocks()
     vi.unstubAllGlobals()
     Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: originalCreateObjectURL })
@@ -110,6 +115,29 @@ describe('Leadra app shell', () => {
 
     expect(await screen.findByRole('heading', { name: /sara command/i })).toBeInTheDocument()
     expect(screen.queryByRole('heading', { name: /user management/i })).not.toBeInTheDocument()
+  })
+
+  it('toggles the account theme from the shell and profile settings', async () => {
+    renderApp()
+    const user = userEvent.setup()
+
+    await openLoginPage(user)
+    await signInAs(user, /continue as admin/i)
+
+    expect(await screen.findByRole('heading', { name: /admin command/i })).toBeInTheDocument()
+    expect(document.documentElement.dataset.theme).toBe('light')
+
+    await user.click(screen.getByRole('button', { name: /switch to dark theme/i }))
+    await waitFor(() => expect(document.documentElement.dataset.theme).toBe('dark'))
+    expect(window.localStorage.getItem('leadra.theme')).toBe('dark')
+
+    navigateTestPath('/profile')
+    const themeSettingsHeading = await screen.findByRole('heading', { name: /theme settings/i })
+    const themeSettingsCard = themeSettingsHeading.closest('.profile-language-card')
+    expect(themeSettingsCard).not.toBeNull()
+    await user.click(within(themeSettingsCard as HTMLElement).getByRole('button', { name: /switch to light theme/i }))
+    await waitFor(() => expect(document.documentElement.dataset.theme).toBe('light'))
+    expect(window.localStorage.getItem('leadra.theme')).toBe('light')
   })
 
   it('honors legacy units hash links after login and updates full routes during navigation', async () => {
@@ -231,6 +259,33 @@ describe('Leadra app shell', () => {
     await user.click(screen.getByRole('button', { name: /filters/i }))
     await chooseFromSelect(user, /project/i, /new cairo estates/i)
     expect(screen.getByRole('button', { name: /csv/i })).toBeInTheDocument()
+  })
+
+  it('highlights dropdown options by first letter before selecting with Enter', async () => {
+    renderApp()
+    const user = userEvent.setup()
+
+    await openLoginPage(user)
+    await signInAs(user, /continue as admin/i)
+    await user.click(screen.getByRole('link', { name: /^create$/i }))
+
+    const unitTypeSelect = await screen.findByRole('combobox', { name: /unit type/i })
+    await user.click(unitTypeSelect)
+    await user.keyboard('s')
+
+    const standAloneOption = screen.getByRole('option', { name: /^stand alone$/i })
+    expect(standAloneOption).toHaveClass('is-highlighted')
+    expect(standAloneOption).not.toHaveAttribute('aria-selected', 'true')
+    expect(unitTypeSelect).toHaveTextContent(/apartment/i)
+
+    await user.keyboard('s')
+    const seniorChaletOption = screen.getByRole('option', { name: /^senior chalet$/i })
+    expect(seniorChaletOption).toHaveClass('is-highlighted')
+    expect(standAloneOption).not.toHaveClass('is-highlighted')
+
+    await user.keyboard('{Enter}')
+    expect(unitTypeSelect).toHaveTextContent(/senior chalet/i)
+    expect(screen.queryByRole('option', { name: /^senior chalet$/i })).not.toBeInTheDocument()
   })
 
   it('uses a create-unit wizard and still submits the complete form', async () => {
