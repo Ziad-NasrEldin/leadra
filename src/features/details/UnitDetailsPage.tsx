@@ -563,24 +563,36 @@ function UnitDetailsDeepSections({
         {unit.paymentMethod === 'installment' && unit.installmentType !== 'custom' && installmentSchedule.length > 0 && (
           <div className="installment-schedule" role="table" aria-label={t('details.installmentsTable')}>
             <div className="installment-summary" aria-live="polite">
-              <span>Paid from timetable: {formatCurrency(paidInstallmentTotal, locale)}</span>
-              <strong>Remaining from timetable: {formatCurrency(timetableRemaining, locale)}</strong>
+              <span className="installment-summary-item">
+                <span>{t('details.installmentsPaid')}</span>
+                <strong>{formatCurrency(paidInstallmentTotal, locale)}</strong>
+              </span>
+              <span className="installment-summary-item">
+                <span>{t('details.installmentsRemaining')}</span>
+                <strong>{formatCurrency(timetableRemaining, locale)}</strong>
+              </span>
             </div>
             {installmentSchedule.slice(0, 12).map((row) => (
               <div className="installment-row" role="row" key={row.paymentNumber}>
-                <span>{formatCount(locale, row.paymentNumber)}</span>
-                <span>{row.periodLabel}</span>
-                <strong>{formatCurrency(row.amount, locale)}</strong>
-                <span className={row.paid ? 'installment-status paid' : 'installment-status'}>{row.paid ? 'Paid' : 'Unpaid'}</span>
-                <button
-                  className="secondary-button installment-action-button"
-                  type="button"
-                  disabled={updatingPaymentScheduleId === row.id}
-                  onClick={() => onPaymentScheduleChange(row.id, !row.paid)}
-                >
-                  {updatingPaymentScheduleId === row.id ? t('common.saving') : row.paid ? 'Mark unpaid' : 'Mark paid'}
-                </button>
-                {row.paidAt && <small>{formatDateTime(locale, row.paidAt)} / {row.paidByName ?? t('common.notSet')}</small>}
+                <span className="installment-number" role="cell" aria-label={t('details.installmentNumber', { count: formatCount(locale, row.paymentNumber) })}>
+                  {formatCount(locale, row.paymentNumber)}
+                </span>
+                <span className="installment-main" role="cell">
+                  <span className="installment-period">{row.periodLabel}</span>
+                  <strong>{formatCurrency(row.amount, locale)}</strong>
+                  {row.paidAt && <small>{formatDateTime(locale, row.paidAt)} / {row.paidByName ?? t('common.notSet')}</small>}
+                </span>
+                <span className="installment-controls" role="cell">
+                  <span className={row.paid ? 'installment-status paid' : 'installment-status'}>{row.paid ? t('details.installmentPaid') : t('details.installmentUnpaid')}</span>
+                  <button
+                    className="secondary-button installment-action-button"
+                    type="button"
+                    disabled={updatingPaymentScheduleId === row.id}
+                    onClick={() => onPaymentScheduleChange(row.id, !row.paid)}
+                  >
+                    {updatingPaymentScheduleId === row.id ? t('common.saving') : row.paid ? t('details.markInstallmentUnpaid') : t('details.markInstallmentPaid')}
+                  </button>
+                </span>
               </div>
             ))}
             {installmentSchedule.length > 12 && <small>{t('details.scheduleTruncated', { count: formatCount(locale, installmentSchedule.length) })}</small>}
@@ -659,38 +671,44 @@ function UnitDetailsDeepSections({
                     <div className={`media-file-placeholder ${file.type}`}>{file.type === 'pdf' ? 'PDF' : 'Blocked'}</div>
                   )}
                 </div>
-                <div className="media-card-actions">
-                  {canRemoveMedia && file.type === 'image' && (
+                <div className="media-card-body">
+                  <div className="media-card-copy">
+                    <strong dir="auto">{file.name}</strong>
+                    <small>{file.type === 'image' ? t('details.mediaImage') : t('details.mediaFile')}</small>
+                  </div>
+                  <div className="media-card-actions">
+                    {canRemoveMedia && file.type === 'image' && (
+                      <button
+                        className="pdf-visibility-toggle media-pdf-toggle"
+                        type="button"
+                        aria-pressed={file.includeInPdf !== false}
+                        onClick={() => onMediaPdfVisibilityChange(file.id, file.includeInPdf === false)}
+                      >
+                        <span className="pdf-visibility-indicator" aria-hidden="true" />
+                        <span>{file.includeInPdf !== false ? t('media.includeInPdf') : t('media.excludeFromPdf')}</span>
+                      </button>
+                    )}
                     <button
-                      className="pdf-visibility-toggle media-pdf-toggle"
+                      className="media-download-button secondary-button"
                       type="button"
-                      aria-pressed={file.includeInPdf !== false}
-                      onClick={() => onMediaPdfVisibilityChange(file.id, file.includeInPdf === false)}
+                      aria-label={t('details.downloadMedia', { name: file.name })}
+                      disabled={downloadingMediaId === file.id}
+                      onClick={() => onMediaDownload(file)}
                     >
-                      <span className="pdf-visibility-indicator" aria-hidden="true" />
-                      <span>{file.includeInPdf !== false ? t('media.includeInPdf') : t('media.excludeFromPdf')}</span>
+                      <Download size={17} /> {downloadingMediaId === file.id ? t('common.saving') : t('common.download')}
                     </button>
-                  )}
-                  <button
-                    className="media-download-button secondary-button"
-                    type="button"
-                    aria-label={t('details.downloadMedia', { name: file.name })}
-                    disabled={downloadingMediaId === file.id}
-                    onClick={() => onMediaDownload(file)}
-                  >
-                    <Download size={17} /> {downloadingMediaId === file.id ? t('common.saving') : t('common.download')}
-                  </button>
-                  {canRemoveMedia && (
-                    <button
-                      className="media-remove-button danger-button"
-                      type="button"
-                      aria-label={t('details.removeMediaNamed', { name: file.name })}
-                      disabled={removingMediaId === file.id}
-                      onClick={() => onRemoveMedia(file.id)}
-                    >
-                      <Trash2 size={17} /> {removingMediaId === file.id ? t('common.saving') : t('details.removeMedia')}
-                    </button>
-                  )}
+                    {canRemoveMedia && (
+                      <button
+                        className="media-remove-button danger-button"
+                        type="button"
+                        aria-label={t('details.removeMediaNamed', { name: file.name })}
+                        disabled={removingMediaId === file.id}
+                        onClick={() => onRemoveMedia(file.id)}
+                      >
+                        <Trash2 size={17} /> {removingMediaId === file.id ? t('common.saving') : t('details.removeMedia')}
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
             ))}

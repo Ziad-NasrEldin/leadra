@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { demoUsers, seedUnits } from '../data/seed'
 import { LeadraRepository } from './repository'
+import type { SafeUnitRpcRow } from './supabaseMapper'
 import type { CreateUnitInput, LeadraUser, UnitEditInput } from './types'
 
 function salesUser(overrides: Partial<LeadraUser> = {}): LeadraUser {
@@ -18,7 +19,123 @@ function salesUser(overrides: Partial<LeadraUser> = {}): LeadraUser {
   }
 }
 
+function safeUnitRpcRow(overrides: Partial<SafeUnitRpcRow> = {}): SafeUnitRpcRow {
+  return {
+    id: 101,
+    unit_code: 'ZE4BR',
+    developer_id: 'developer-1',
+    developer_label: 'Ora',
+    project_id: 'project-zed-east',
+    project_label: 'Zed East',
+    destination_id: 'dest-sheikh-zayed',
+    destination_label: 'Sheikh Zayed',
+    unit_type: 'Apartment',
+    floor: '4th',
+    bua: 180,
+    roof_garden_area: null,
+    garden_area: null,
+    terrace_area: null,
+    view_id: 'view-1',
+    view_label: 'Garden',
+    bedrooms: 4,
+    bathrooms: 3,
+    elevator: true,
+    land_area: null,
+    furnished: false,
+    finish: 'Fully Finished',
+    payment_method: 'cash',
+    total_amount: 5_000_000,
+    down_payment: null,
+    remaining_payment: null,
+    transfer_fees: null,
+    maintenance_paid: false,
+    maintenance_cost: null,
+    maintenance_due_date: null,
+    commission_percentage: 1.5,
+    commission_amount: 75_000,
+    installment_type: null,
+    installment_years: null,
+    installment_start_month: null,
+    installment_end_month: null,
+    custom_installment_text: null,
+    installment_amount: null,
+    delivery_month: null,
+    delivery_year: 2029,
+    original_owner_name: null,
+    country_code: null,
+    original_owner_phone: null,
+    normalized_owner_phone: null,
+    sales_notes: null,
+    status: 'available',
+    archived: false,
+    created_by: 'sales-1',
+    creator_full_name: 'Sales User',
+    team_id: 'team-1',
+    branch_id: 'branch-1',
+    created_at: '2026-05-04T00:00:00.000Z',
+    updated_at: '2026-05-04T01:00:00.000Z',
+    unit_media: [],
+    unit_notes: [],
+    unit_payment_schedule: [],
+    unit_payment_history: [],
+    ...overrides,
+  }
+}
+
 describe('LeadraRepository', () => {
+  it('keeps remote unit search scoped to the requested project and destination', async () => {
+    const calls: Array<{ fn: string; args: unknown }> = []
+    const client = {
+      rpc(fn: string, args: unknown) {
+        calls.push({ fn, args })
+        return Promise.resolve({
+          error: null,
+          data: [
+            safeUnitRpcRow({ id: 101, unit_code: 'ZE4BR' }),
+            safeUnitRpcRow({ id: 102, unit_code: 'NC3BR', project_id: 'project-new-cairo' }),
+            safeUnitRpcRow({ id: 103, unit_code: 'SV3BR', destination_id: 'dest-new-cairo' }),
+          ],
+        })
+      },
+      from(table: string) {
+        expect(['unit_payment_schedule', 'unit_payment_history']).toContain(table)
+        return {
+          select() {
+            return {
+              in(column: string, values: number[]) {
+                expect(column).toBe('unit_id')
+                expect(values).toEqual([101])
+                return {
+                  order() {
+                    return Promise.resolve({ data: [], error: null })
+                  },
+                }
+              },
+            }
+          },
+        }
+      },
+    }
+
+    const result = await new LeadraRepository(client as never).searchUnits({
+      destinationId: 'dest-sheikh-zayed',
+      projectId: 'project-zed-east',
+      status: 'all',
+    })
+
+    expect(calls).toEqual([
+      {
+        fn: 'search_units_safe',
+        args: {
+          filters: { destinationId: 'dest-sheikh-zayed', projectId: 'project-zed-east' },
+          limit_count: 500,
+          offset_count: 0,
+        },
+      },
+    ])
+    expect(result.map((unit) => unit.unitCode)).toEqual(['ZE4BR'])
+  })
+
   it('creates units without sending a display code and uses the database-generated PRD code', async () => {
     const inserts: unknown[] = []
     const input: CreateUnitInput = {

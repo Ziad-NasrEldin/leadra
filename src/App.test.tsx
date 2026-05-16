@@ -132,15 +132,15 @@ describe('Leadra app shell', () => {
     await user.click(await screen.findByRole('checkbox', { name: /select NC3BR/i }))
     expect(screen.getByText(/1 selected/i)).toBeInTheDocument()
 
-    await user.click(screen.getByRole('button', { name: /generate PDFs/i }))
+    await user.click(screen.getByRole('button', { name: /generate selected PDFs/i }))
     expect(await screen.findByText(/generated 1 PDF/i)).toBeInTheDocument()
     expect(mockGenerateUnitPdfFile).toHaveBeenCalledTimes(1)
 
-    await user.click(screen.getByRole('button', { name: /download PDFs/i }))
+    await user.click(screen.getByRole('button', { name: /download selected PDFs/i }))
     await waitFor(() => expect(mockDownloadGeneratedPdf).toHaveBeenCalledTimes(1))
     expect(await screen.findByText(/downloaded 1 PDF/i)).toBeInTheDocument()
 
-    await user.click(screen.getByRole('button', { name: /share PDFs/i }))
+    await user.click(screen.getByRole('button', { name: /share selected PDFs/i }))
     await waitFor(() => expect(mockShareGeneratedPdfs).toHaveBeenCalledTimes(1))
     expect(await screen.findByText(/PDF share sheet opened for 1 unit/i)).toBeInTheDocument()
 
@@ -846,7 +846,7 @@ describe('Leadra app shell', () => {
     expect(await screen.findByText(/media removed from this unit/i)).toBeInTheDocument()
     expect(screen.queryByRole('img', { name: /living-room\.jpg/i })).not.toBeInTheDocument()
     expect(await screen.findByText(/installments table/i)).toBeInTheDocument()
-    expect(screen.getByText(/remaining from timetable/i)).toBeInTheDocument()
+    expect(screen.getByText(/^remaining$/i)).toBeInTheDocument()
     expect(screen.getAllByText(/^unpaid$/i).length).toBeGreaterThan(0)
     expect(screen.queryByRole('button', { name: /^unpaid$/i })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /^paid$/i })).not.toBeInTheDocument()

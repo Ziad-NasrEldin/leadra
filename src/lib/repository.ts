@@ -62,6 +62,7 @@ export class LeadraRepository {
     const units = ((data ?? []) as unknown as SafeUnitRpcRow[])
       .map(toSafeUnitViewModel)
       .filter((unit) => !unit.archived)
+      .filter((unit) => matchesUnitFilters(unit, filters))
       .sort((first, second) => new Date(second.createdAt).getTime() - new Date(first.createdAt).getTime())
     return this.withPaymentRecords(units)
   }
@@ -295,4 +296,35 @@ function compactUnitFilters(filters: UnitFilters): Record<string, unknown> {
   return Object.fromEntries(
     Object.entries(filters).filter(([, value]) => value !== undefined && value !== '' && value !== 'all'),
   )
+}
+
+function matchesUnitFilters(unit: LeadraUnit, filters: UnitFilters): boolean {
+  if (filters.projectId && unit.projectId !== filters.projectId) return false
+  if (filters.destinationId && unit.destinationId !== filters.destinationId) return false
+  if (filters.status && filters.status !== 'all' && unit.status !== filters.status) return false
+  if (filters.developerId && unit.developerId !== filters.developerId) return false
+  if (filters.unitType && unit.unitType !== filters.unitType) return false
+  if (filters.bedrooms && filters.bedrooms !== 'all' && unit.bedrooms !== filters.bedrooms) return false
+  if (filters.bathrooms && filters.bathrooms !== 'all' && unit.bathrooms !== filters.bathrooms) return false
+  if (filters.paymentMethod && filters.paymentMethod !== 'all' && unit.paymentMethod !== filters.paymentMethod) return false
+  if (filters.deliveryYear && filters.deliveryYear !== 'all' && unit.deliveryExpectancy.year !== filters.deliveryYear) return false
+  if (filters.deliveryMonth && filters.deliveryMonth !== 'all' && unit.deliveryExpectancy.month !== filters.deliveryMonth) return false
+  if (filters.unitCode && !unit.unitCode.toLowerCase().includes(filters.unitCode.toLowerCase())) return false
+  if (!matchesRange(unit.bua, filters.buaFrom, filters.buaTo)) return false
+  if (!matchesRange(unit.landArea, filters.landAreaFrom, filters.landAreaTo)) return false
+  if (!matchesRange(unit.gardenArea, filters.gardenAreaFrom, filters.gardenAreaTo)) return false
+  if (!matchesRange(unit.terraceArea, filters.terraceAreaFrom, filters.terraceAreaTo)) return false
+  if (!matchesRange(unit.totalAmount, filters.priceFrom, filters.priceTo)) return false
+  if (!matchesRange(unit.paymentMethod === 'cash' ? unit.totalAmount : null, filters.cashPriceFrom, filters.cashPriceTo)) return false
+  if (!matchesRange(unit.downPayment, filters.downPaymentFrom, filters.downPaymentTo)) return false
+  if (!matchesRange(unit.remainingPayment, filters.remainingPaymentFrom, filters.remainingPaymentTo)) return false
+  if (filters.installmentType && filters.installmentType !== 'all' && unit.installmentType !== filters.installmentType) return false
+  if (!matchesRange(unit.installmentAmount, filters.installmentAmountFrom, filters.installmentAmountTo)) return false
+  return true
+}
+
+function matchesRange(value: number | null, from?: number, to?: number): boolean {
+  if (from !== undefined && (value === null || value < from)) return false
+  if (to !== undefined && (value === null || value > to)) return false
+  return true
 }

@@ -199,92 +199,123 @@ export function UnitsPage({
 
       {filtersOpen && (
       <div id="units-advanced-filters" className="filter-bar advanced-filter-bar motion-stage" style={motionStyle(4, 60)}>
-        <label>
-          {t('units.unitCode')}
-          <input value={filters.unitCode ?? ''} onChange={(event) => onFilterChange('unitCode', event.target.value)} placeholder="NC3BR" dir="auto" />
-        </label>
-        <ControlledSelectField
-          label={t('units.status')}
-          options={[
-            { value: 'all', label: t('common.all') },
-            { value: 'available', label: getStatusLabel(locale, 'available') },
-            { value: 'hold', label: getStatusLabel(locale, 'hold') },
-            { value: 'sold_by_us', label: getStatusLabel(locale, 'sold_by_us') },
-            { value: 'sold_by_others', label: getStatusLabel(locale, 'sold_by_others') },
-          ]}
-          value={filters.status ?? 'all'}
-          onValueChange={(value) => onFilterChange('status', value as UnitStatus | 'all')}
-        />
-        <ControlledSelectField
-          label={t('details.developer')}
-          options={[{ value: '', label: t('common.all') }, ...developerOptions.map((item) => ({ value: item.id, label: item.label }))]}
-          value={filters.developerId ?? ''}
-          onValueChange={(value) => onFilterChange('developerId', value || undefined)}
-        />
-        <ControlledSelectField
-          label={t('details.destination')}
-          options={[{ value: '', label: t('common.all') }, ...destinationOptions.map((item) => ({ value: item.id, label: item.label }))]}
-          value={filters.destinationId ?? ''}
-          onValueChange={(value) => onFilterChange('destinationId', value || undefined)}
-        />
-        <ControlledSelectField
-          label={t('details.project')}
-          options={[{ value: '', label: t('common.all') }, ...projectOptions.map((item) => ({ value: item.id, label: item.label }))]}
-          value={filters.projectId ?? ''}
-          onValueChange={(value) => onFilterChange('projectId', value || undefined)}
-        />
-        <ControlledSelectField
-          label={t('details.unitType')}
-          options={[{ value: '', label: t('common.all') }, ...unitTypeOptions.map((item) => ({ value: item, label: item }))]}
-          value={filters.unitType ?? ''}
-          onValueChange={(value) => onFilterChange('unitType', value || undefined)}
-        />
-        <NumberFilter label={t('details.bedrooms')} value={filters.bedrooms === 'all' ? undefined : filters.bedrooms} onChange={(value) => onFilterChange('bedrooms', value ?? 'all')} />
-        <NumberFilter label={t('details.bathrooms')} value={filters.bathrooms === 'all' ? undefined : filters.bathrooms} onChange={(value) => onFilterChange('bathrooms', value ?? 'all')} />
-        <RangeFilter label="BUA" from={filters.buaFrom} to={filters.buaTo} onFrom={(value) => onFilterChange('buaFrom', value)} onTo={(value) => onFilterChange('buaTo', value)} />
-        <RangeFilter label={t('details.landArea')} from={filters.landAreaFrom} to={filters.landAreaTo} onFrom={(value) => onFilterChange('landAreaFrom', value)} onTo={(value) => onFilterChange('landAreaTo', value)} />
-        <RangeFilter label={t('details.gardenArea')} from={filters.gardenAreaFrom} to={filters.gardenAreaTo} onFrom={(value) => onFilterChange('gardenAreaFrom', value)} onTo={(value) => onFilterChange('gardenAreaTo', value)} />
-        <RangeFilter label={t('details.terraceArea')} from={filters.terraceAreaFrom} to={filters.terraceAreaTo} onFrom={(value) => onFilterChange('terraceAreaFrom', value)} onTo={(value) => onFilterChange('terraceAreaTo', value)} />
-        <RangeFilter label={t('details.totalAmount')} from={filters.priceFrom} to={filters.priceTo} onFrom={(value) => onFilterChange('priceFrom', value)} onTo={(value) => onFilterChange('priceTo', value)} />
-        <ControlledSelectField
-          label={t('details.paymentMethod')}
-          options={[
-            { value: 'all', label: t('common.all') },
-            { value: 'cash', label: t('create.cash') },
-            { value: 'installment', label: t('create.installment') },
-          ]}
-          value={filters.paymentMethod ?? 'all'}
-          onValueChange={(value) => onFilterChange('paymentMethod', value as PaymentMethod | 'all')}
-        />
-        <RangeFilter label="Cash price" from={filters.cashPriceFrom} to={filters.cashPriceTo} onFrom={(value) => onFilterChange('cashPriceFrom', value)} onTo={(value) => onFilterChange('cashPriceTo', value)} />
-        <RangeFilter label={t('create.downPayment')} from={filters.downPaymentFrom} to={filters.downPaymentTo} onFrom={(value) => onFilterChange('downPaymentFrom', value)} onTo={(value) => onFilterChange('downPaymentTo', value)} />
-        <RangeFilter label={t('details.remainingPayment')} from={filters.remainingPaymentFrom} to={filters.remainingPaymentTo} onFrom={(value) => onFilterChange('remainingPaymentFrom', value)} onTo={(value) => onFilterChange('remainingPaymentTo', value)} />
-        <ControlledSelectField
-          label={t('details.installmentType')}
-          options={[
-            { value: 'all', label: t('common.all') },
-            { value: 'quarterly', label: t('create.quarterly') },
-            { value: 'semi_annual', label: t('create.semiAnnual') },
-            { value: 'annual', label: t('create.annual') },
-            { value: 'custom', label: t('create.customInstallments') },
-          ]}
-          value={filters.installmentType ?? 'all'}
-          onValueChange={(value) => onFilterChange('installmentType', value as InstallmentType | 'all')}
-        />
-        <RangeFilter label={t('details.installmentAmount')} from={filters.installmentAmountFrom} to={filters.installmentAmountTo} onFrom={(value) => onFilterChange('installmentAmountFrom', value)} onTo={(value) => onFilterChange('installmentAmountTo', value)} />
-        <NumberFilter label={t('details.expectedDelivery')} value={filters.deliveryYear === 'all' ? undefined : filters.deliveryYear} onChange={(value) => onFilterChange('deliveryYear', value ?? 'all')} />
-        {canUseOwnerPhoneSearch && (
+        <div className="filter-section-grid filter-section-grid--primary">
           <label>
-            {t('units.ownerPhone')}
-            <input
-              value={filters.ownerPhone ?? ''}
-              onChange={(event) => onFilterChange('ownerPhone', event.target.value)}
-              placeholder={t('units.ownerPhonePlaceholder')}
-              dir="auto"
-            />
+            {t('units.unitCode')}
+            <input value={filters.unitCode ?? ''} onChange={(event) => onFilterChange('unitCode', event.target.value)} placeholder="NC3BR" dir="auto" />
           </label>
-        )}
-        <button className="secondary-button" type="button" onClick={onResetFilters}>{t('analytics.reset')}</button>
+          <ControlledSelectField
+            label={t('units.status')}
+            options={[
+              { value: 'all', label: t('common.all') },
+              { value: 'available', label: getStatusLabel(locale, 'available') },
+              { value: 'hold', label: getStatusLabel(locale, 'hold') },
+              { value: 'sold_by_us', label: getStatusLabel(locale, 'sold_by_us') },
+              { value: 'sold_by_others', label: getStatusLabel(locale, 'sold_by_others') },
+            ]}
+            value={filters.status ?? 'all'}
+            onValueChange={(value) => onFilterChange('status', value as UnitStatus | 'all')}
+          />
+          <ControlledSelectField
+            label={t('details.developer')}
+            options={[{ value: '', label: t('common.all') }, ...developerOptions.map((item) => ({ value: item.id, label: item.label }))]}
+            value={filters.developerId ?? ''}
+            onValueChange={(value) => onFilterChange('developerId', value || undefined)}
+          />
+          <ControlledSelectField
+            label={t('details.destination')}
+            options={[{ value: '', label: t('common.all') }, ...destinationOptions.map((item) => ({ value: item.id, label: item.label }))]}
+            value={filters.destinationId ?? ''}
+            onValueChange={(value) => onFilterChange('destinationId', value || undefined)}
+          />
+          <ControlledSelectField
+            label={t('details.project')}
+            options={[{ value: '', label: t('common.all') }, ...projectOptions.map((item) => ({ value: item.id, label: item.label }))]}
+            value={filters.projectId ?? ''}
+            onValueChange={(value) => onFilterChange('projectId', value || undefined)}
+          />
+          <ControlledSelectField
+            label={t('details.unitType')}
+            options={[{ value: '', label: t('common.all') }, ...unitTypeOptions.map((item) => ({ value: item, label: item }))]}
+            value={filters.unitType ?? ''}
+            onValueChange={(value) => onFilterChange('unitType', value || undefined)}
+          />
+        </div>
+
+        <div className="filter-section-list">
+          <details className="filter-section">
+            <summary>{t('create.specs')}</summary>
+            <div className="filter-section-grid">
+              <NumberFilter label={t('details.bedrooms')} value={filters.bedrooms === 'all' ? undefined : filters.bedrooms} onChange={(value) => onFilterChange('bedrooms', value ?? 'all')} />
+              <NumberFilter label={t('details.bathrooms')} value={filters.bathrooms === 'all' ? undefined : filters.bathrooms} onChange={(value) => onFilterChange('bathrooms', value ?? 'all')} />
+              <NumberFilter label={t('details.expectedDelivery')} value={filters.deliveryYear === 'all' ? undefined : filters.deliveryYear} onChange={(value) => onFilterChange('deliveryYear', value ?? 'all')} />
+            </div>
+          </details>
+
+          <details className="filter-section">
+            <summary>{t('units.filterAreas')}</summary>
+            <div className="filter-section-grid">
+              <RangeFilter label="BUA" from={filters.buaFrom} to={filters.buaTo} onFrom={(value) => onFilterChange('buaFrom', value)} onTo={(value) => onFilterChange('buaTo', value)} />
+              <RangeFilter label={t('details.landArea')} from={filters.landAreaFrom} to={filters.landAreaTo} onFrom={(value) => onFilterChange('landAreaFrom', value)} onTo={(value) => onFilterChange('landAreaTo', value)} />
+              <RangeFilter label={t('details.gardenArea')} from={filters.gardenAreaFrom} to={filters.gardenAreaTo} onFrom={(value) => onFilterChange('gardenAreaFrom', value)} onTo={(value) => onFilterChange('gardenAreaTo', value)} />
+              <RangeFilter label={t('details.terraceArea')} from={filters.terraceAreaFrom} to={filters.terraceAreaTo} onFrom={(value) => onFilterChange('terraceAreaFrom', value)} onTo={(value) => onFilterChange('terraceAreaTo', value)} />
+            </div>
+          </details>
+
+          <details className="filter-section">
+            <summary>{t('units.filterPricing')}</summary>
+            <div className="filter-section-grid">
+              <RangeFilter label={t('details.totalAmount')} from={filters.priceFrom} to={filters.priceTo} onFrom={(value) => onFilterChange('priceFrom', value)} onTo={(value) => onFilterChange('priceTo', value)} />
+              <RangeFilter label="Cash price" from={filters.cashPriceFrom} to={filters.cashPriceTo} onFrom={(value) => onFilterChange('cashPriceFrom', value)} onTo={(value) => onFilterChange('cashPriceTo', value)} />
+              <RangeFilter label={t('create.downPayment')} from={filters.downPaymentFrom} to={filters.downPaymentTo} onFrom={(value) => onFilterChange('downPaymentFrom', value)} onTo={(value) => onFilterChange('downPaymentTo', value)} />
+              <RangeFilter label={t('details.remainingPayment')} from={filters.remainingPaymentFrom} to={filters.remainingPaymentTo} onFrom={(value) => onFilterChange('remainingPaymentFrom', value)} onTo={(value) => onFilterChange('remainingPaymentTo', value)} />
+            </div>
+          </details>
+
+          <details className="filter-section">
+            <summary>{t('create.payment')}</summary>
+            <div className="filter-section-grid">
+              <ControlledSelectField
+                label={t('details.paymentMethod')}
+                options={[
+                  { value: 'all', label: t('common.all') },
+                  { value: 'cash', label: t('create.cash') },
+                  { value: 'installment', label: t('create.installment') },
+                ]}
+                value={filters.paymentMethod ?? 'all'}
+                onValueChange={(value) => onFilterChange('paymentMethod', value as PaymentMethod | 'all')}
+              />
+              <ControlledSelectField
+                label={t('details.installmentType')}
+                options={[
+                  { value: 'all', label: t('common.all') },
+                  { value: 'quarterly', label: t('create.quarterly') },
+                  { value: 'semi_annual', label: t('create.semiAnnual') },
+                  { value: 'annual', label: t('create.annual') },
+                  { value: 'custom', label: t('create.customInstallments') },
+                ]}
+                value={filters.installmentType ?? 'all'}
+                onValueChange={(value) => onFilterChange('installmentType', value as InstallmentType | 'all')}
+              />
+              <RangeFilter label={t('details.installmentAmount')} from={filters.installmentAmountFrom} to={filters.installmentAmountTo} onFrom={(value) => onFilterChange('installmentAmountFrom', value)} onTo={(value) => onFilterChange('installmentAmountTo', value)} />
+            </div>
+          </details>
+        </div>
+
+        <div className="filter-tail">
+          {canUseOwnerPhoneSearch && (
+            <label className="filter-owner-phone">
+              {t('units.ownerPhone')}
+              <input
+                value={filters.ownerPhone ?? ''}
+                onChange={(event) => onFilterChange('ownerPhone', event.target.value)}
+                placeholder={t('units.ownerPhonePlaceholder')}
+                dir="auto"
+              />
+            </label>
+          )}
+          <button className="secondary-button filter-reset-action" type="button" onClick={onResetFilters}>{t('analytics.reset')}</button>
+        </div>
       </div>
       )}
 
@@ -294,17 +325,17 @@ export function UnitsPage({
           <button className="ghost-button compact-action" type="button" onClick={() => onSelectVisibleUnits(visibleUnits.map((unit) => unit.id))} disabled={visibleUnits.length === 0 || batchBusy}>
             Select visible
           </button>
-          <button className="secondary-button compact-action" type="button" onClick={onGenerateSelectedPdfs} disabled={selectedVisibleCount === 0 || batchBusy}>
-            <FileText size={16} /> {batchAction === 'generate' ? 'Generating...' : 'Generate PDFs'}
+          <button className="secondary-button compact-action" type="button" aria-label="Generate selected PDFs" onClick={onGenerateSelectedPdfs} disabled={selectedVisibleCount === 0 || batchBusy}>
+            <FileText size={14} /> {batchAction === 'generate' ? 'Generating...' : 'Generate'}
           </button>
-          <button className="secondary-button compact-action" type="button" onClick={onDownloadSelectedPdfs} disabled={selectedVisibleCount === 0 || batchBusy}>
-            <Download size={16} /> {batchAction === 'download' ? 'Downloading...' : 'Download PDFs'}
+          <button className="secondary-button compact-action" type="button" aria-label="Download selected PDFs" onClick={onDownloadSelectedPdfs} disabled={selectedVisibleCount === 0 || batchBusy}>
+            <Download size={14} /> {batchAction === 'download' ? 'Downloading...' : 'Download'}
           </button>
-          <button className="secondary-button compact-action" type="button" onClick={onShareSelectedPdfs} disabled={selectedVisibleCount === 0 || batchBusy}>
-            <Share2 size={16} /> {batchAction === 'share' ? 'Sharing...' : 'Share PDFs'}
+          <button className="secondary-button compact-action" type="button" aria-label="Share selected PDFs" onClick={onShareSelectedPdfs} disabled={selectedVisibleCount === 0 || batchBusy}>
+            <Share2 size={14} /> {batchAction === 'share' ? 'Sharing...' : 'Share'}
           </button>
           <button className="ghost-button compact-action" type="button" onClick={onClearSelection} disabled={selectedVisibleCount === 0 || batchBusy}>
-            <X size={16} /> Clear
+            <X size={14} /> Clear
           </button>
         </div>
       </div>
@@ -476,7 +507,7 @@ export const UnitListRow = memo(function UnitListRow({
       )}
       <button className="unit-row-open" type="button" aria-label={t('units.openUnit', { unitCode: unit.unitCode })} onClick={onOpen}>
         <span className="thumb">{thumbnail ? <img src={thumbnail.url} alt="" loading="lazy" decoding="async" /> : <ImageIcon />}</span>
-        <span>
+        <span className="unit-row-copy">
           <strong>{unit.unitCode}</strong>
           <p dir="auto">{unit.projectName} / {unit.unitType} / {t('units.areaBua', { bua: formatCount(locale, unit.bua) })}</p>
           <small dir="auto">{unit.createdByName}</small>
