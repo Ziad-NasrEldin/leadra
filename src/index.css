@@ -102,7 +102,7 @@ button {
 }
 
 button:disabled {
-  cursor: wait;
+  cursor: not-allowed;
   opacity: 0.68;
   transform: none;
 }
@@ -1770,7 +1770,7 @@ input.sr-only {
 
 @media (min-width: 720px) {
   .brand-select-option > span {
-    white-space: nowrap;
+    white-space: normal;
   }
 }
 
@@ -7571,4 +7571,134 @@ dd,
     opacity: 1;
     transform: translateY(0) scale(1);
   }
+}
+
+.app-shell,
+.main-panel,
+.page-stack,
+.content-card,
+.details-hero,
+.analytics-hero,
+.project-card,
+.unit-row,
+.admin-row,
+.analytics-row,
+.user-management-card,
+.mobile-more-sheet,
+.toast-region {
+  min-width: 0;
+  max-width: 100%;
+}
+
+.primary-button,
+.secondary-button,
+.danger-button,
+.ghost-button,
+.secondary-link,
+.compact-action,
+.wizard-step,
+.status-pill,
+.analytics-chip,
+.integration-badge,
+.brand-select-value,
+.brand-select-option > span,
+.user-chip strong,
+.nav-button span,
+.mobile-more-sheet .nav-button span {
+  max-width: 100%;
+  overflow-wrap: anywhere;
+  text-wrap: pretty;
+}
+
+.unit-row-open {
+  min-height: 46px;
+}
+
+.unit-row-select {
+  min-width: 46px;
+  min-height: 46px;
+}
+
+input[type="checkbox"] {
+  width: 46px !important;
+  min-width: 46px !important;
+  max-width: 46px;
+  height: 46px !important;
+  min-height: 46px !important;
+}
+
+.locale-button,
+.theme-toggle,
+.theme-toggle.compact,
+.compact-topbar .theme-toggle,
+.profile-language-card .locale-button,
+.profile-language-card .theme-toggle {
+  min-width: 52px;
+  min-height: 52px;
+}
+
+.batch-pdf-actions .compact-action,
+.create-page .wizard-actions .primary-button,
+.create-page .wizard-actions .secondary-button {
+  min-height: 46px;
+  height: auto;
+}
+
+.advanced-filter-bar input,
+.advanced-filter-bar .brand-select-trigger,
+.advanced-filter-bar .secondary-button,
+.advanced-filter-bar .range-filter input,
+.pdf-visibility-toggle,
+.pdf-visibility-indicator {
+  min-height: 52px;
+}
+
+.advanced-filter-bar .range-filter input {
+  min-width: 52px;
+}
+
+.analytics-page .analytics-range button,
+.analytics-page .analytics-control-actions .secondary-link,
+.analytics-page .analytics-filter-toggle,
+.analytics-page .analytics-control-actions .compact-action,
+.analytics-page .analytics-filter-field .brand-select-trigger {
+  min-height: 52px;
+  height: auto;
+}
+
+.content-card h2,
+.content-card h3,
+.details-hero h2,
+.analytics-hero h2,
+.project-card strong,
+.unit-row-copy strong,
+.unit-row-copy p,
+.unit-row-copy small,
+.notification-row strong,
+.notification-row p,
+.admin-row strong,
+.admin-row span,
+.admin-row small,
+.analytics-row strong,
+.analytics-row p,
+.analytics-row span,
+.user-card-main strong,
+.user-card-main p,
+.user-card-main small,
+.directory-card-copy strong,
+.directory-card-copy span,
+.media-card-copy strong,
+.target-card strong,
+.chart-title strong,
+.chart-title span,
+.empty-state strong,
+.empty-state p {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.details-page .details-actions .primary-button,
+.details-page .details-actions .secondary-button,
+.details-page .details-actions .danger-button {
+  height: auto;
 }

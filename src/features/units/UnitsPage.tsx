@@ -119,15 +119,15 @@ export function UnitsPage({
 
       {invalidDestination && (
         <section className="content-card motion-stage" style={motionStyle(1, 30)}>
-          <EmptyState title="Destination unavailable" body="This destination does not have visible units or no longer exists." />
-          <button className="secondary-button" type="button" onClick={onBackToDestinations}>Back to destinations</button>
+          <EmptyState title={t('units.destinationUnavailableTitle')} body={t('units.destinationUnavailableBody')} />
+          <button className="secondary-button" type="button" onClick={onBackToDestinations}>{t('units.backToDestinations')}</button>
         </section>
       )}
 
       {stage === 'projects' && currentDestination && (
         <>
           <div className="action-row motion-stage" style={motionStyle(1, 30)}>
-            <button className="secondary-button" type="button" onClick={onBackToDestinations}>Back to destinations</button>
+            <button className="secondary-button" type="button" onClick={onBackToDestinations}>{t('units.backToDestinations')}</button>
             <span className="integration-badge" dir="auto">{currentDestination.destinationName}</span>
           </div>
           <div className="project-grid compact motion-stage" style={motionStyle(2, 45)}>
@@ -155,15 +155,15 @@ export function UnitsPage({
 
       {invalidProject && (
         <section className="content-card motion-stage" style={motionStyle(1, 30)}>
-          <EmptyState title="Project unavailable" body="This project does not belong to the selected destination or no longer has visible units." />
-          <button className="secondary-button" type="button" onClick={currentDestination ? onBackToProjects : onBackToDestinations}>Back to projects</button>
+          <EmptyState title={t('units.projectUnavailableTitle')} body={t('units.projectUnavailableBody')} />
+          <button className="secondary-button" type="button" onClick={currentDestination ? onBackToProjects : onBackToDestinations}>{t('units.backToProjects')}</button>
         </section>
       )}
 
       {stage === 'units' && currentDestination && currentProject && (
         <>
           <div className="action-row motion-stage" style={motionStyle(1, 30)}>
-            <button className="secondary-button" type="button" onClick={onBackToProjects}>Back to projects</button>
+            <button className="secondary-button" type="button" onClick={onBackToProjects}>{t('units.backToProjects')}</button>
             <span className="integration-badge" dir="auto">{currentDestination.destinationName} / {currentProject.projectName}</span>
           </div>
 
@@ -266,7 +266,7 @@ export function UnitsPage({
             <summary>{t('units.filterPricing')}</summary>
             <div className="filter-section-grid">
               <RangeFilter label={t('details.totalAmount')} from={filters.priceFrom} to={filters.priceTo} onFrom={(value) => onFilterChange('priceFrom', value)} onTo={(value) => onFilterChange('priceTo', value)} />
-              <RangeFilter label="Cash price" from={filters.cashPriceFrom} to={filters.cashPriceTo} onFrom={(value) => onFilterChange('cashPriceFrom', value)} onTo={(value) => onFilterChange('cashPriceTo', value)} />
+              <RangeFilter label={t('units.cashPrice')} from={filters.cashPriceFrom} to={filters.cashPriceTo} onFrom={(value) => onFilterChange('cashPriceFrom', value)} onTo={(value) => onFilterChange('cashPriceTo', value)} />
               <RangeFilter label={t('create.downPayment')} from={filters.downPaymentFrom} to={filters.downPaymentTo} onFrom={(value) => onFilterChange('downPaymentFrom', value)} onTo={(value) => onFilterChange('downPaymentTo', value)} />
               <RangeFilter label={t('details.remainingPayment')} from={filters.remainingPaymentFrom} to={filters.remainingPaymentTo} onFrom={(value) => onFilterChange('remainingPaymentFrom', value)} onTo={(value) => onFilterChange('remainingPaymentTo', value)} />
             </div>
@@ -320,22 +320,22 @@ export function UnitsPage({
       )}
 
       <div className="batch-pdf-bar motion-stage" style={motionStyle(5, 70)}>
-        <strong>{formatCount(locale, selectedVisibleCount)} selected</strong>
+        <strong>{t('units.selectedCount', { count: formatCount(locale, selectedVisibleCount) })}</strong>
         <div className="batch-pdf-actions">
           <button className="ghost-button compact-action" type="button" onClick={() => onSelectVisibleUnits(visibleUnits.map((unit) => unit.id))} disabled={visibleUnits.length === 0 || batchBusy}>
-            Select visible
+            {t('units.selectVisible')}
           </button>
-          <button className="secondary-button compact-action" type="button" aria-label="Generate selected PDFs" onClick={onGenerateSelectedPdfs} disabled={selectedVisibleCount === 0 || batchBusy}>
-            <FileText size={14} /> {batchAction === 'generate' ? 'Generating...' : 'Generate'}
+          <button className="secondary-button compact-action" type="button" aria-label={t('units.generateSelectedPdfs')} onClick={onGenerateSelectedPdfs} disabled={selectedVisibleCount === 0 || batchBusy}>
+            <FileText size={14} /> {batchAction === 'generate' ? t('units.generating') : t('units.generate')}
           </button>
-          <button className="secondary-button compact-action" type="button" aria-label="Download selected PDFs" onClick={onDownloadSelectedPdfs} disabled={selectedVisibleCount === 0 || batchBusy}>
-            <Download size={14} /> {batchAction === 'download' ? 'Downloading...' : 'Download'}
+          <button className="secondary-button compact-action" type="button" aria-label={t('units.downloadSelectedPdfs')} onClick={onDownloadSelectedPdfs} disabled={selectedVisibleCount === 0 || batchBusy}>
+            <Download size={14} /> {batchAction === 'download' ? t('units.downloading') : t('common.download')}
           </button>
-          <button className="secondary-button compact-action" type="button" aria-label="Share selected PDFs" onClick={onShareSelectedPdfs} disabled={selectedVisibleCount === 0 || batchBusy}>
-            <Share2 size={14} /> {batchAction === 'share' ? 'Sharing...' : 'Share'}
+          <button className="secondary-button compact-action" type="button" aria-label={t('units.shareSelectedPdfs')} onClick={onShareSelectedPdfs} disabled={selectedVisibleCount === 0 || batchBusy}>
+            <Share2 size={14} /> {batchAction === 'share' ? t('units.sharing') : t('units.share')}
           </button>
           <button className="ghost-button compact-action" type="button" onClick={onClearSelection} disabled={selectedVisibleCount === 0 || batchBusy}>
-            <X size={14} /> Clear
+            <X size={14} /> {t('units.clearSelection')}
           </button>
         </div>
       </div>
@@ -364,7 +364,10 @@ export function UnitsPage({
               }))
             }
           >
-            Show {formatCount(locale, Math.min(unitListPageSize, units.length - visibleUnits.length))} more of {formatCount(locale, units.length)}
+            {t('common.showMoreOf', {
+              count: formatCount(locale, Math.min(unitListPageSize, units.length - visibleUnits.length)),
+              total: formatCount(locale, units.length),
+            })}
           </button>
         )}
       </section>

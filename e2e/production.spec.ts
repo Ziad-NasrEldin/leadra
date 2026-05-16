@@ -1,18 +1,38 @@
 import { expect, test, type Page } from '@playwright/test'
 
-const roles = ['admin', 'manager', 'sales'] as const
+const roles = ['admin', 'sub_admin', 'manager', 'sales'] as const
 const routes = [
   'dashboard',
   'units',
+  'units/destinations/not-a-real-destination',
+  'units/destinations/not-a-real-destination/projects/not-a-real-project',
+  'units/details/999999',
   'create',
+  'create/property',
+  'create/specs',
   'create/payment',
+  'create/owner',
+  'create/review',
   'notifications',
   'profile',
   'analytics',
+  'analytics/live',
+  'analytics/30d',
   'analytics/90d?filters=open',
+  'analytics/custom',
   'admin',
+  'admin/users',
+  'admin/master-data',
+  'admin/settings',
+  'admin/metrics',
   'admin/audit',
+  'admin/master-data/developers',
+  'admin/master-data/destinations',
+  'admin/master-data/projects',
+  'admin/master-data/views',
+  'admin/master-data/finishes',
   'admin/master-data/branches',
+  'admin/master-data/teams',
   'palette',
 ] as const
 const createSteps = ['Property', 'Specs', 'Payment', 'Owner', 'Review'] as const
@@ -25,7 +45,13 @@ async function completeSignIn(page: Page, role: (typeof roles)[number]) {
     await intro.first().click()
   }
 
-  const demoName = role === 'admin' ? /continue as admin/i : role === 'manager' ? /continue as mona hafez/i : /continue as sara amin/i
+  const demoName = role === 'admin'
+    ? /continue as admin/i
+    : role === 'sub_admin'
+      ? /continue as laila mansour/i
+      : role === 'manager'
+        ? /continue as mona hafez/i
+        : /continue as sara amin/i
   const demo = page.getByRole('button', { name: demoName })
   if (await demo.first().isVisible({ timeout: 2_000 }).catch(() => false)) {
     await demo.first().click()
@@ -70,15 +96,42 @@ async function assertPageHealth(page: Page) {
         return rect.width < 44 || rect.height < 44
       })
       .map((element) => (element.getAttribute('aria-label') || element.textContent || element.getAttribute('name') || '').trim().replace(/\s+/g, ' ').slice(0, 80))
+    const unnamedControls = [...document.querySelectorAll('button, a, input, textarea, select, [role="combobox"]')]
+      .filter(visible)
+      .filter((element) => !(element as HTMLButtonElement | HTMLInputElement).disabled)
+      .filter((element) => {
+        const id = element.getAttribute('id')
+        const labelText = id ? document.querySelector(`label[for="${CSS.escape(id)}"]`)?.textContent : ''
+        const wrappedLabel = element.closest('label')?.textContent
+        const name = element.getAttribute('aria-label') || element.getAttribute('title') || element.textContent || labelText || wrappedLabel || element.getAttribute('placeholder') || element.getAttribute('name')
+        return !name?.trim()
+      })
+      .map((element) => element.outerHTML.slice(0, 120))
     return {
       overflow: document.documentElement.scrollWidth > document.documentElement.clientWidth + 2,
       blank: document.body.innerText.trim().length < 20,
       smallTargets,
+      unnamedControls,
     }
   })
   expect(health.blank, 'page should not be blank').toBe(false)
   expect(health.overflow, 'page should not have horizontal overflow').toBe(false)
   expect(health.smallTargets, `small targets: ${health.smallTargets.join(', ')}`).toHaveLength(0)
+  expect(health.unnamedControls, `unnamed controls: ${health.unnamedControls.join(', ')}`).toHaveLength(0)
+
+  await page.keyboard.press('Tab')
+  const focusHealth = await page.evaluate(() => {
+    const active = document.activeElement
+    if (!active || active === document.body) return { ok: true, label: 'body' }
+    const style = getComputedStyle(active)
+    const outlineWidth = Number.parseFloat(style.outlineWidth || '0')
+    const hasFocusIndicator = outlineWidth >= 2 || style.boxShadow !== 'none'
+    return {
+      ok: hasFocusIndicator,
+      label: (active.getAttribute('aria-label') || active.textContent || active.getAttribute('name') || active.tagName).trim().replace(/\s+/g, ' ').slice(0, 80),
+    }
+  })
+  expect(focusHealth.ok, `focused control should show a visible focus indicator: ${focusHealth.label}`).toBe(true)
 }
 
 async function assertCurrentChecklistItem(page: Page, label: string) {
@@ -114,7 +167,7 @@ test.describe('production preview route and role sweep', () => {
         if (role === 'sales' && route.startsWith('analytics')) {
           await expect(page.getByRole('heading', { name: /analytics/i })).toHaveCount(0)
         }
-        if (role === 'sales' && route.startsWith('admin')) {
+        if ((role === 'sales' || role === 'manager') && route.startsWith('admin')) {
           await expect(page.getByRole('heading', { name: /user management/i })).toHaveCount(0)
         }
       }

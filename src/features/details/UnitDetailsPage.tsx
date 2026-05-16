@@ -127,13 +127,13 @@ export function UnitDetailsPage({
           <span>{t('details.generateBrief')}</span>
           <div className="action-row wrap">
           <button className="primary-button" type="button" onClick={onGeneratePdf} disabled={pdfGenerating || pdfSharing}>
-            <FileText size={18} /> {pdfGenerating ? 'Preparing PDF...' : pdfReady ? t('details.regeneratePdf') : t('details.generateBrief')}
+            <FileText size={18} /> {pdfGenerating ? t('details.preparingPdf') : pdfReady ? t('details.regeneratePdf') : t('details.generateBrief')}
           </button>
           <button className="secondary-button" type="button" onClick={onDownloadPdf} disabled={!pdfReady || pdfGenerating || pdfSharing}>
             <Download size={18} /> {t('details.downloadPdf')}
           </button>
           <button className="secondary-button" type="button" onClick={onSharePdf} disabled={!pdfReady || pdfGenerating || pdfSharing}>
-            <Share2 size={18} /> {pdfSharing ? 'Preparing share...' : t('details.sharePdf')}
+            <Share2 size={18} /> {pdfSharing ? t('details.preparingShare') : t('details.sharePdf')}
           </button>
           <button className="secondary-button" type="button" onClick={onCopyShareLink}>
             <Share2 size={18} /> {t('details.shareLink')}
@@ -178,7 +178,7 @@ export function UnitDetailsPage({
         />
       ) : (
         <section className="content-card motion-stage details-deferred-card" style={motionStyle(2, 70)}>
-          <p className="eyebrow">Preparing details</p>
+          <p className="eyebrow">{t('details.preparingDetails')}</p>
           <h2>{t('details.mainInfo')}</h2>
           <DetailsLoadingSkeleton />
         </section>
@@ -597,11 +597,18 @@ function UnitDetailsDeepSections({
             ))}
             {installmentSchedule.length > 12 && <small>{t('details.scheduleTruncated', { count: formatCount(locale, installmentSchedule.length) })}</small>}
             {(unit.paymentHistory?.length ?? 0) > 0 && (
-              <div className="payment-history-list" aria-label="Payment history">
-                <strong>Payment history</strong>
+              <div className="payment-history-list" aria-label={t('details.paymentHistory')}>
+                <strong>{t('details.paymentHistory')}</strong>
                 {(unit.paymentHistory ?? []).slice(0, 5).map((history) => (
                   <small key={history.id}>
-                    {history.actorName} marked {formatCurrency(history.amount, locale)} {history.action} on {formatDateTime(locale, history.createdAt)}. Remaining: {formatCurrency(history.previousRemainingValue, locale)} to {formatCurrency(history.newRemainingValue, locale)}
+                    {t('details.paymentHistoryItem', {
+                      actorName: history.actorName,
+                      amount: formatCurrency(history.amount, locale),
+                      action: history.action,
+                      date: formatDateTime(locale, history.createdAt),
+                      previous: formatCurrency(history.previousRemainingValue, locale),
+                      next: formatCurrency(history.newRemainingValue, locale),
+                    })}
                   </small>
                 ))}
               </div>

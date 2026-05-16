@@ -299,7 +299,7 @@ function LookupThumbnailPicker({
 
   return (
     <div className="lookup-thumbnail-field">
-      <span>{label}</span>
+      <label className="lookup-thumbnail-label" htmlFor={inputId}>{label}</label>
       <div className="lookup-thumbnail-control">
         <div className="directory-thumbnail-preview large">
           {previewSrc ? <img src={previewSrc} alt="" loading="lazy" /> : <ImageIcon size={20} />}
@@ -443,7 +443,7 @@ function DirectoryCard({
           </div>
         )}
         <div className="directory-card-copy">
-          <strong>{item.name}</strong>
+          <strong dir="auto">{item.name}</strong>
           <span>{item.meta}</span>
         </div>
       </div>

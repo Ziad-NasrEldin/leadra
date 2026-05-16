@@ -22,7 +22,7 @@ export function CreateUnitPage({
   lookupValues: LookupValue[]
   activeStep: CreateUnitStep
   onStepChange: (step: CreateUnitStep) => void
-  onSubmit: (event: FormEvent<HTMLFormElement>, uploadedMedia: LeadraMediaFile[]) => void
+  onSubmit: (event: FormEvent<HTMLFormElement>, uploadedMedia: LeadraMediaFile[]) => void | Promise<void>
   settings: AppSettings
 }) {
   const { locale, t } = useLocale()
@@ -39,6 +39,7 @@ export function CreateUnitPage({
   const [ownerPhone, setOwnerPhone] = useState('01012345678')
   const [selectedUnitType, setSelectedUnitType] = useState('Apartment')
   const [selectedFloor, setSelectedFloor] = useState('2nd')
+  const [submitting, setSubmitting] = useState(false)
   const activeStepIndex = createUnitSteps.indexOf(activeStep)
   const mediaValidation = validateMediaUpload(selectedMedia)
   const totalMediaMb = selectedMedia.reduce((total, file) => total + file.sizeBytes, 0) / (1024 * 1024)
@@ -86,7 +87,11 @@ export function CreateUnitPage({
       </div>
       <form
         className="wizard-shell"
-        onSubmit={(event) => {
+        onSubmit={async (event) => {
+          if (submitting) {
+            event.preventDefault()
+            return
+          }
           const validation = validateMediaUpload(selectedMedia)
           if (!validation.ok) {
             event.preventDefault()
@@ -99,7 +104,12 @@ export function CreateUnitPage({
           }
 
           setMediaError(null)
-          onSubmit(event, selectedMedia)
+          setSubmitting(true)
+          try {
+            await onSubmit(event, selectedMedia)
+          } finally {
+            setSubmitting(false)
+          }
         }}
       >
         <div className="wizard-steps motion-stage" aria-label={t('create.steps')} style={motionStyle(1, 90)}>
@@ -109,6 +119,7 @@ export function CreateUnitPage({
               className={`wizard-step ${step === activeStep ? 'active' : ''}`}
               type="button"
               aria-current={step === activeStep ? 'step' : undefined}
+              disabled={submitting}
               onClick={() => onStepChange(step)}
             >
               <span>{formatCount(locale, index + 1)}</span>
@@ -372,17 +383,17 @@ export function CreateUnitPage({
               ))}
             </div>
           </div>
-          <button className="primary-button" type="submit">
-            {t('create.createAndNotify')}
+          <button className="primary-button" type="submit" disabled={submitting}>
+            {submitting ? t('common.saving') : t('create.createAndNotify')}
           </button>
         </section>
 
         <div className="wizard-actions motion-stage" style={motionStyle(3, 140)}>
-          <button className="secondary-button" type="button" disabled={activeStepIndex === 0} onClick={() => goToRelativeStep(-1)}>
+          <button className="secondary-button" type="button" disabled={submitting || activeStepIndex === 0} onClick={() => goToRelativeStep(-1)}>
             {t('common.back')}
           </button>
           {activeStep !== 'Review' && (
-            <button className="primary-button" type="button" onClick={() => goToRelativeStep(1)}>
+            <button className="primary-button" type="button" disabled={submitting} onClick={() => goToRelativeStep(1)}>
               {t('common.next')}
             </button>
           )}

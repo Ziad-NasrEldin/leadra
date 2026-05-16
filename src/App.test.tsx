@@ -660,7 +660,7 @@ describe('Leadra app shell', () => {
     await waitFor(() => expect(window.location.pathname).toContain('/admin/master-data/destinations'))
     await user.type(screen.getByRole('textbox', { name: /value label/i }), 'North Coast')
     const destinationThumb = new File(['destination'], 'north-coast.png', { type: 'image/png' })
-    await user.upload(screen.getByLabelText(/thumbnail image/i), destinationThumb)
+    await user.upload(await screen.findByLabelText(/thumbnail image/i), destinationThumb)
     await user.click(screen.getByRole('button', { name: /add value/i }))
     expect(await screen.findByText(/north coast/i, undefined, { timeout: 3000 })).toBeInTheDocument()
 
@@ -669,7 +669,7 @@ describe('Leadra app shell', () => {
     await user.type(screen.getByRole('textbox', { name: /value label/i }), 'Zim')
     expect(screen.queryByRole('textbox', { name: /thumbnail url/i })).not.toBeInTheDocument()
     const projectThumb = new File(['project'], 'zim.png', { type: 'image/png' })
-    await user.upload(screen.getByLabelText(/thumbnail image/i), projectThumb)
+    await user.upload(await screen.findByLabelText(/thumbnail image/i), projectThumb)
     await user.click(screen.getByRole('button', { name: /add value/i }))
     expect(await screen.findByText(/zim/i, undefined, { timeout: 3000 })).toBeInTheDocument()
 

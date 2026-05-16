@@ -1515,7 +1515,7 @@ function LeadraApp() {
         {activeView === 'details' && !selectedUnit && (
           <div className="page-transition-frame" key="details-denied">
             <section className="content-card page-entrance">
-              <EmptyState title="Unit unavailable" body="This internal link only works for logged-in users with permission to view the unit." />
+              <EmptyState title={t('details.unavailableTitle')} body={t('details.unavailableBody')} />
             </section>
           </div>
         )}
@@ -2680,7 +2680,10 @@ function NotificationsPage({ notifications, user }: { notifications: Notificatio
       ))}
       {visibleRows.length < visibleNotifications.length && (
         <button className="secondary-button list-load-more" type="button" onClick={() => setVisibleCount((count) => Math.min(count + notificationPageSize, visibleNotifications.length))}>
-          Show {formatCount(locale, Math.min(notificationPageSize, visibleNotifications.length - visibleRows.length))} more of {formatCount(locale, visibleNotifications.length)}
+          {t('common.showMoreOf', {
+            count: formatCount(locale, Math.min(notificationPageSize, visibleNotifications.length - visibleRows.length)),
+            total: formatCount(locale, visibleNotifications.length),
+          })}
         </button>
       )}
     </section>
@@ -2761,7 +2764,7 @@ function AnalyticsPage({
       } catch {
         if (!cancelled) {
           setRpcDashboard(null)
-          setAnalyticsError('Live analytics could not be refreshed. Showing the latest loaded workspace data.')
+          setAnalyticsError(t('analytics.refreshError'))
         }
       } finally {
         if (!cancelled) setAnalyticsLoading(false)
@@ -2772,7 +2775,7 @@ function AnalyticsPage({
     return () => {
       cancelled = true
     }
-  }, [filters])
+  }, [filters, t])
 
   function updateAnalyticsRoute(nextFilters: LeadraAnalyticsFilters, options: { replace?: boolean; filtersOpen?: boolean } = {}) {
     setFilterState({ routeKey: routeStateKey, filters: nextFilters })
@@ -2850,30 +2853,30 @@ function AnalyticsPage({
       <section className={`analytics-control-card motion-stage ${filterOpen ? 'is-open' : ''}`} style={motionStyle(1, 30)}>
         <div className="analytics-control-header">
           <div>
-            <p className="eyebrow">Filters</p>
-            <h2>Focus analytics</h2>
-            <p>{activeFilterCount === 0 ? 'Showing all aggregate activity.' : `${activeFilterCount} filter${activeFilterCount === 1 ? '' : 's'} active.`}</p>
+            <p className="eyebrow">{t('analytics.filters')}</p>
+            <h2>{t('analytics.focusHeading')}</h2>
+            <p>{activeFilterCount === 0 ? t('analytics.allActivity') : t('analytics.activeFilterCount', { count: activeFilterCount })}</p>
           </div>
           <div className="analytics-control-actions">
-            {analyticsLoading && <span className="analytics-chip">Refreshing</span>}
-            <button className="secondary-link" type="button" onClick={() => updateAnalyticsRoute(defaultAnalyticsFilters, { replace: true })}>Reset</button>
+            {analyticsLoading && <span className="analytics-chip">{t('analytics.refreshing')}</span>}
+            <button className="secondary-link" type="button" onClick={() => updateAnalyticsRoute(defaultAnalyticsFilters, { replace: true })}>{t('analytics.reset')}</button>
             <button className="ghost-button analytics-filter-toggle" type="button" aria-expanded={filterOpen} onClick={() => onRouteChange(analyticsRouteForFilters(filters, !filterOpen))}>
-              <SlidersHorizontal size={17} /> {filterOpen ? 'Close filters' : 'Filters'}
+              <SlidersHorizontal size={17} /> {filterOpen ? t('analytics.closeFilters') : t('analytics.filters')}
               {activeFilterCount > 0 && <span>{activeFilterCount}</span>}
             </button>
             <button className="primary-button compact-action" type="button" onClick={exportCsv}>
-              <Download size={17} /> CSV
+              <Download size={17} /> {t('analytics.csv')}
             </button>
           </div>
         </div>
         {filters.dateWindow === 'custom' && (
           <div className="analytics-custom-range">
             <label>
-              Start
+              {t('analytics.start')}
               <input type="date" value={filters.startDate ?? ''} onChange={(event) => updateAnalyticsRoute({ ...filters, startDate: event.target.value || undefined }, { replace: true })} />
             </label>
             <label>
-              End
+              {t('analytics.end')}
               <input type="date" value={filters.endDate ?? ''} onChange={(event) => updateAnalyticsRoute({ ...filters, endDate: event.target.value || undefined }, { replace: true })} />
             </label>
           </div>
@@ -2906,7 +2909,7 @@ function AnalyticsPage({
             </div>
           </div>
           {topSales.length === 0 && <EmptyState title={t('analytics.noSalesTitle')} body={t('analytics.noSalesBody')} />}
-          {topSales.length > 0 && <LeaderboardChart rows={topSales.map((row) => ({ label: row.userName, value: row.activityCount, suffix: ' events' }))} />}
+          {topSales.length > 0 && <LeaderboardChart rows={topSales.map((row) => ({ label: row.userName, value: row.activityCount, suffix: t('analytics.eventsSuffix') }))} />}
           {topSales.map((row, index) => (
             <div className="analytics-row motion-stage" key={row.userId} style={motionStyle(index, 160)}>
               <div>
@@ -2952,8 +2955,8 @@ function AnalyticsPage({
         />
       ) : (
         <section className="content-card motion-stage analytics-deferred-card" style={motionStyle(4, 140)}>
-          <p className="eyebrow">Preparing charts</p>
-          <h2>Loading detailed analytics</h2>
+          <p className="eyebrow">{t('analytics.preparingCharts')}</p>
+          <h2>{t('analytics.loadingDetailed')}</h2>
           <AnalyticsSkeleton />
         </section>
       )}
@@ -3003,7 +3006,7 @@ function AnalyticsDeepSections({
               <span className="analytics-chip">{t('analytics.availableChip', { count: formatCount(locale, project.availableUnits) })}</span>
               <span className="analytics-chip warning">{t('analytics.holdChip', { ratio: formatCount(locale, project.holdRatio) })}</span>
               <span className="analytics-chip success">{t('analytics.mediaChip', { ratio: formatCount(locale, project.mediaCompleteness) })}</span>
-              <span className="analytics-chip">{formatCurrency(project.averagePrice, locale)} avg</span>
+              <span className="analytics-chip">{t('analytics.averagePriceChip', { value: formatCurrency(project.averagePrice, locale) })}</span>
             </div>
           ))}
         </div>
@@ -3038,7 +3041,7 @@ function AnalyticsDeepSections({
               <h2>{t('analytics.timelineHeading')}</h2>
             </div>
           </div>
-          <LineChart title="Sold value trend" points={dashboard.soldValueTrend} currency locale={locale} />
+          <LineChart title={t('analytics.soldValueTrend')} points={dashboard.soldValueTrend} currency locale={locale} />
           <div className="timeline-chart" aria-label={t('analytics.timelineLabel')}>
             {latestTimeline.length === 0 && <EmptyState title={t('analytics.timelineEmptyTitle')} body={t('analytics.timelineEmptyBody')} />}
             {latestTimeline.slice(-30).map((point, index) => (
@@ -3048,7 +3051,7 @@ function AnalyticsDeepSections({
               </div>
             ))}
           </div>
-          <BarChart title="PDF export trend" points={dashboard.pdfExportTrend.slice(-30)} />
+          <BarChart title={t('analytics.pdfExportTrend')} points={dashboard.pdfExportTrend.slice(-30)} />
         </section>
       </div>
     </>
@@ -3068,30 +3071,31 @@ function AnalyticsFiltersPanel({
   managerMode: boolean
   onChange: (key: keyof LeadraAnalyticsFilters, value: string) => void
 }) {
+  const { locale, t } = useLocale()
   return (
     <div className={`analytics-filter-panel ${open ? 'open' : ''}`}>
-      <SelectFilter label="Team" value={filters.teamIds[0] ?? ''} disabled={managerMode} options={dashboard.filterOptions.teams} onChange={(value) => onChange('teamIds', value)} />
-      <SelectFilter label="User" value={filters.userIds[0] ?? ''} options={dashboard.filterOptions.users} onChange={(value) => onChange('userIds', value)} />
-      <SelectFilter label="Project" value={filters.projectIds[0] ?? ''} options={dashboard.filterOptions.projects} onChange={(value) => onChange('projectIds', value)} />
-      <SelectFilter label="Developer" value={filters.developerIds[0] ?? ''} options={dashboard.filterOptions.developers} onChange={(value) => onChange('developerIds', value)} />
-      <SelectFilter label="Destination" value={filters.destinationIds[0] ?? ''} options={dashboard.filterOptions.destinations} onChange={(value) => onChange('destinationIds', value)} />
+      <SelectFilter label={t('profile.team')} value={filters.teamIds[0] ?? ''} disabled={managerMode} options={dashboard.filterOptions.teams} onChange={(value) => onChange('teamIds', value)} />
+      <SelectFilter label={t('profile.name')} value={filters.userIds[0] ?? ''} options={dashboard.filterOptions.users} onChange={(value) => onChange('userIds', value)} />
+      <SelectFilter label={t('analytics.project')} value={filters.projectIds[0] ?? ''} options={dashboard.filterOptions.projects} onChange={(value) => onChange('projectIds', value)} />
+      <SelectFilter label={t('details.developer')} value={filters.developerIds[0] ?? ''} options={dashboard.filterOptions.developers} onChange={(value) => onChange('developerIds', value)} />
+      <SelectFilter label={t('details.destination')} value={filters.destinationIds[0] ?? ''} options={dashboard.filterOptions.destinations} onChange={(value) => onChange('destinationIds', value)} />
       <SelectFilter
-        label="Status"
+        label={t('details.status')}
         value={filters.statuses[0] ?? ''}
         options={[
-          { id: 'available', label: 'Available' },
-          { id: 'hold', label: 'Hold' },
-          { id: 'sold_by_us', label: 'Sold by Us' },
-          { id: 'sold_by_others', label: 'Sold by Others' },
+          { id: 'available', label: getStatusLabel(locale, 'available') },
+          { id: 'hold', label: getStatusLabel(locale, 'hold') },
+          { id: 'sold_by_us', label: getStatusLabel(locale, 'sold_by_us') },
+          { id: 'sold_by_others', label: getStatusLabel(locale, 'sold_by_others') },
         ]}
         onChange={(value) => onChange('statuses', value)}
       />
       <SelectFilter
-        label="Payment"
+        label={t('details.paymentMethod')}
         value={filters.paymentMethods[0] ?? ''}
         options={[
-          { id: 'cash', label: 'Cash' },
-          { id: 'installment', label: 'Installment' },
+          { id: 'cash', label: t('payment.cash') },
+          { id: 'installment', label: t('payment.installment') },
         ]}
         onChange={(value) => onChange('paymentMethods', value)}
       />
@@ -3126,6 +3130,7 @@ function SelectFilter({
 }
 
 function StatusDonutChart({ dashboard }: { dashboard: AnalyticsDashboard }) {
+  const { t } = useLocale()
   const total = Math.max(1, dashboard.overview.availableUnits + dashboard.overview.holdUnits + dashboard.overview.soldUnits)
   const available = Math.round((dashboard.overview.availableUnits / total) * 100)
   const hold = Math.round((dashboard.overview.holdUnits / total) * 100)
@@ -3133,16 +3138,17 @@ function StatusDonutChart({ dashboard }: { dashboard: AnalyticsDashboard }) {
     <div className="status-donut" style={{ '--available': `${available}%`, '--hold': `${hold}%` } as CSSProperties}>
       <div>
         <strong>{available}%</strong>
-        <span>available mix</span>
+        <span>{t('analytics.availableMix')}</span>
       </div>
     </div>
   )
 }
 
 function LeaderboardChart({ rows }: { rows: { label: string; value: number; suffix?: string }[] }) {
+  const { t } = useLocale()
   const max = Math.max(1, ...rows.map((row) => row.value))
   return (
-    <div className="leaderboard-chart" aria-label="Sales leaderboard chart">
+    <div className="leaderboard-chart" aria-label={t('analytics.leaderboardChart')}>
       {rows.map((row) => (
         <div key={row.label}>
           <span>{row.label}</span>
@@ -3174,8 +3180,8 @@ function LineChart({ title, points, currency = false, locale }: { title: string;
       </div>
       <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label={title}>
         <path className="chart-grid" d={`M0 ${height - 8} H${width} M0 ${height / 2} H${width} M0 8 H${width}`} />
-        <path className="line-chart-area" d={`${path} L ${width} ${height - 8} L 0 ${height - 8} Z`} />
-        <path className="line-chart-line" d={path} />
+        {path && <path className="line-chart-area" d={`${path} L ${width} ${height - 8} L 0 ${height - 8} Z`} />}
+        {path && <path className="line-chart-line" d={path} />}
         {coordinates.map((point) => (
           <circle key={point.date} cx={point.x} cy={point.y} r="3.5">
             <title>{point.label}: {currency ? formatCurrency(point.value, locale) : point.value}</title>
@@ -3187,12 +3193,13 @@ function LineChart({ title, points, currency = false, locale }: { title: string;
 }
 
 function BarChart({ title, points }: { title: string; points: AnalyticsChartPoint[] }) {
+  const { t } = useLocale()
   const max = Math.max(1, ...points.map((point) => point.value))
   return (
     <div className="bar-chart-card" aria-label={title}>
       <div className="chart-title">
         <strong>{title}</strong>
-        <span>{max} max</span>
+        <span>{t('analytics.maxLabel', { value: max })}</span>
       </div>
       <div className="bar-chart-grid">
         {points.map((point) => (
