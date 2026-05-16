@@ -52,7 +52,7 @@ export const PRD_UNIT_TYPE_SPECS: PrdUnitTypeSpec[] = PRD_UNIT_TYPES.map((unitTy
           ? 'land'
           : 'floor',
 }))
-export const PRD_FLOOR_OPTIONS = ['Ground', ...Array.from({ length: 40 }, (_, index) => formatOrdinalFloor(index + 1))] as const
+export const PRD_FLOOR_OPTIONS = ['Ground', 'Last Floor', ...Array.from({ length: 40 }, (_, index) => formatOrdinalFloor(index + 1))] as const
 
 const paymentsPerYear = {
   quarterly: 4,
@@ -761,7 +761,7 @@ export function formatCurrency(value: number | null | undefined, locale: LocaleC
 export function formatDeliveryExpectancy(unit: LeadraUnit, locale: LocaleCode = 'en'): string {
   const { deliveryExpectancy } = unit
   if (deliveryExpectancy.mode === 'year') {
-    return new Intl.NumberFormat(getIntlLocale(locale), { maximumFractionDigits: 0 }).format(deliveryExpectancy.year)
+    return new Intl.NumberFormat(getIntlLocale(locale), { maximumFractionDigits: 0, useGrouping: false }).format(deliveryExpectancy.year)
   }
 
   const date = new Date(deliveryExpectancy.year, (deliveryExpectancy.month ?? 1) - 1, 1)

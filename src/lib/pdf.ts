@@ -20,7 +20,6 @@ export function buildPermissionSafePdfText(
     settings.companyName,
     `${translate(locale, 'export.generatedBy')}: ${user.fullName}`,
     ...pdfData.rows.map((row) => `${row.label}: ${row.value}`),
-    ...pdfData.installments.map((row) => `Installment ${row.paymentNumber}: ${row.periodLabel} / ${formatCurrency(row.amount, locale)}${row.paid ? ' / Paid' : ''}`),
     settings.footerText,
     settings.contactDetails,
   ].filter(Boolean)
@@ -52,8 +51,6 @@ export async function buildPermissionSafePdfBlob(
     settings,
     unit: safeUnit,
     rows: pdfData.rows,
-    installments: pdfData.installments,
-    locale,
   })
 
   for (let index = 0; index < images.length; index += 4) {
@@ -86,11 +83,8 @@ export async function generateUnitPdfFile(
 
 function buildPdfUnitDetails(user: LeadraUser, unit: LeadraUnit, locale: LocaleCode) {
   const areaFields = getApplicableUnitAreaFields(unit.unitType, unit.floor)
-  const thumbnail = unit.media.find((file) => file.type === 'image' && file.includeInPdf !== false)
   const rows: PdfDetailRow[] = [
     { label: translate(locale, 'units.unitCode'), value: unit.unitCode, kind: 'hero' },
-    { label: 'Unit Thumbnail', value: thumbnail?.name ?? 'No PDF-visible image selected' },
-    { label: 'Uploader Name', value: unit.createdByName },
     { label: 'Unit Status', value: getStatusLabel(locale, unit.status) },
     { label: translate(locale, 'export.destination'), value: unit.destinationName },
     { label: translate(locale, 'details.developer'), value: unit.developerName },
@@ -117,12 +111,11 @@ function buildPdfUnitDetails(user: LeadraUser, unit: LeadraUnit, locale: LocaleC
 
   rows.push({ label: 'Finishing Status *', value: unit.finish })
 
-  let installments: ReturnType<typeof buildPaymentTimetable> = []
   if (unit.paymentMethod === 'cash') {
     rows.push({ label: 'Cash Price', value: formatCurrency(unit.totalAmount, locale), kind: 'money' })
   }
   if (unit.paymentMethod === 'installment') {
-    installments = buildPaymentTimetable(unit, locale)
+    const installments = buildPaymentTimetable(unit, locale)
     rows.push(
       { label: 'Total Amount', value: formatCurrency(unit.totalAmount, locale), kind: 'money' },
       { label: translate(locale, 'create.downPayment'), value: formatNullableCurrency(unit.downPayment, locale), kind: 'money' },
@@ -140,9 +133,9 @@ function buildPdfUnitDetails(user: LeadraUser, unit: LeadraUnit, locale: LocaleC
   if (canIncludeSalesExportData(user, unit)) {
     rows.push({ label: translate(locale, 'export.commission'), value: `${formatCurrency(unit.commissionAmount, locale)} (${unit.commissionPercentage}%)`, kind: 'money' })
   }
-  if ((unit.transferFees ?? 0) > 0) rows.push({ label: translate(locale, 'details.transferFees'), value: formatCurrency(unit.transferFees, locale), kind: 'money' })
+  rows.push({ label: translate(locale, 'details.transferFees'), value: translate(locale, 'details.transferFeesNotice') })
 
-  return { rows: rows.filter((row) => Boolean(row.value)), installments }
+  return { rows: rows.filter((row) => Boolean(row.value)) }
 }
 
 type PdfDetailRow = {
@@ -195,11 +188,9 @@ function drawCoverPage(
     settings: AppSettings
     unit: LeadraUnit
     rows: PdfDetailRow[]
-    installments: ReturnType<typeof buildPaymentTimetable>
-    locale: LocaleCode
   },
 ) {
-  const { font, bold, logo, thumbnail, settings, unit, rows, installments, locale } = options
+  const { font, bold, logo, thumbnail, settings, unit, rows } = options
   const { width, height } = page.getSize()
 
   page.drawRectangle({ x: 0, y: 0, width, height, color: palette.paper })
@@ -214,7 +205,6 @@ function drawCoverPage(
     drawPdfText(page, settings.companyName || 'Leadra', { x: 48, y: height - 62, size: 17, font: bold, color: palette.white, maxWidth: 150 })
   }
 
-  drawPdfText(page, 'PRIVATE RESALE BRIEF', { x: 48, y: height - 108, size: 8, font: bold, color: palette.goldSoft })
   drawPdfText(page, unit.unitCode, { x: 48, y: height - 145, size: 30, font: bold, color: palette.white, maxWidth: 275 })
   drawPdfText(page, `${unit.destinationName} / ${unit.projectName}`, { x: 50, y: height - 166, size: 10, font, color: palette.linen, maxWidth: 285 })
 
@@ -232,10 +222,6 @@ function drawCoverPage(
   const leftRows = rows.slice(0, 14)
   const rightRows = rows.slice(14)
   drawDetailColumns(page, leftRows, rightRows, { y: height - 232, font, bold })
-
-  if (installments.length > 0) {
-    drawInstallmentTable(page, installments, { x: 62, y: 182, width: 480, font, bold, locale })
-  }
 
   drawPdfText(page, `${settings.footerText}${settings.contactDetails ? ` / ${settings.contactDetails}` : ''}`, {
     x: 62,
@@ -309,38 +295,6 @@ function drawMeasuredDetailRow(
   drawWrappedPdfText(page, measured.valueLines, { x: options.x + options.labelWidth, y: options.y - 1, size: measured.valueSize, font: measured.valueFont, color: measured.valueColor })
 }
 
-function drawInstallmentTable(
-  page: PDFPage,
-  installments: ReturnType<typeof buildPaymentTimetable>,
-  options: { x: number; y: number; width: number; font: PDFFont; bold: PDFFont; locale: LocaleCode },
-) {
-  const rows = installments.slice(0, 8)
-  drawPdfText(page, 'INSTALLMENTS TABLE', { x: options.x, y: options.y + 28, size: 8, font: options.bold, color: palette.slate })
-  drawPdfText(page, installments.length > rows.length ? `${installments.length - rows.length} more installments remain in system records.` : 'Visible because payment method is Installment.', {
-    x: options.x + 154,
-    y: options.y + 28,
-    size: 7,
-    font: options.font,
-    color: palette.muted,
-    maxWidth: 320,
-  })
-  page.drawRectangle({ x: options.x, y: options.y + 4, width: options.width, height: 19, color: palette.slate })
-  drawPdfText(page, '#', { x: options.x + 12, y: options.y + 10, size: 7, font: options.bold, color: palette.white })
-  drawPdfText(page, 'Period', { x: options.x + 44, y: options.y + 10, size: 7, font: options.bold, color: palette.white })
-  drawPdfText(page, 'Amount', { x: options.x + 220, y: options.y + 10, size: 7, font: options.bold, color: palette.white })
-  drawPdfText(page, 'Status', { x: options.x + 374, y: options.y + 10, size: 7, font: options.bold, color: palette.white })
-
-  let rowY = options.y - 15
-  for (const row of rows) {
-    page.drawRectangle({ x: options.x, y: rowY - 4, width: options.width, height: 18, color: row.paymentNumber % 2 === 0 ? palette.paper : palette.linen })
-    drawPdfText(page, String(row.paymentNumber), { x: options.x + 12, y: rowY, size: 7.2, font: options.bold, color: palette.charcoal })
-    drawPdfText(page, row.periodLabel, { x: options.x + 44, y: rowY, size: 7.2, font: options.font, color: palette.charcoal, maxWidth: 130 })
-    drawPdfText(page, formatCurrency(row.amount, options.locale), { x: options.x + 220, y: rowY, size: 7.2, font: options.bold, color: palette.slate, maxWidth: 120 })
-    drawPdfText(page, row.paid ? 'Paid' : 'Upcoming', { x: options.x + 374, y: rowY, size: 7.2, font: options.font, color: row.paid ? palette.muted : palette.slate })
-    rowY -= 18
-  }
-}
-
 async function drawImagePage(
   page: PDFPage,
   options: { pdf: PDFDocument; font: PDFFont; bold: PDFFont; unitCode: string; images: LeadraUnit['media']; pageNumber: number },
@@ -403,7 +357,10 @@ function drawImageFrame(
 function installmentSummary(unit: LeadraUnit, installments: ReturnType<typeof buildPaymentTimetable>, locale: LocaleCode) {
   if (unit.installmentType === 'custom') return unit.customInstallmentText || translate(locale, 'details.customInstallmentMessage')
   const next = installments.find((row) => !row.paid)
-  if (next) return `Next #${next.paymentNumber} ${next.periodLabel}: ${formatCurrency(next.amount, locale)}`
+  if (next) {
+    const amount = formatCurrency(next.amount, locale)
+    return next.dueMonth ? `${next.periodLabel}: ${amount}` : amount
+  }
   if (unit.installmentAmount != null) return formatCurrency(unit.installmentAmount, locale)
   return 'No scheduled installments'
 }

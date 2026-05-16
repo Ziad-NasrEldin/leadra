@@ -475,6 +475,17 @@ describe('Leadra product workflows', () => {
     })
   })
 
+  it('preserves legacy transfer fees when edit input no longer includes that field', () => {
+    const unit = seedUnits[0]
+    const input = editInput(unit, { totalAmount: unit.totalAmount + 250_000 })
+    delete input.transferFees
+
+    const result = updateUnitWorkflow(state(), sales, unit.id, input)
+
+    expect(result.ok).toBe(true)
+    expect(result.state.units.find((item) => item.id === unit.id)?.transferFees).toBe(unit.transferFees ?? null)
+  })
+
   it('blocks manager edits outside team scope and pricing edits inside team scope', () => {
     const otherTeamUnit = seedUnits[1]
     const outsideTeam = updateUnitWorkflow(state(), manager, otherTeamUnit.id, editInput(otherTeamUnit, { bua: otherTeamUnit.bua + 10 }))

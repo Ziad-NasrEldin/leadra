@@ -17,7 +17,7 @@ const routes = [
 ] as const
 const createSteps = ['Property', 'Specs', 'Payment', 'Owner', 'Review'] as const
 const adminSections = ['Users', 'Master Data', 'Settings', 'Metrics', 'Audit'] as const
-const masterDataDirectories = ['Developers', 'Destinations', 'Projects', 'Views', 'Finishes', 'Unit types', 'Branch Management', 'Team Management'] as const
+const masterDataDirectories = ['Developers', 'Destinations', 'Projects', 'Views', 'Finishes', 'Branch Management', 'Team Management'] as const
 
 async function completeSignIn(page: Page, role: (typeof roles)[number]) {
   const intro = page.getByRole('button', { name: /continue to sign in/i })
@@ -175,7 +175,7 @@ test.describe('production preview route and role sweep', () => {
     await page.getByRole('button', { name: /^master data$/i }).click()
     for (const directory of masterDataDirectories) {
       await page.getByRole('button', { name: new RegExp(directory, 'i') }).click()
-      const directorySlug = directory.toLowerCase().replace('unit types', 'unit-types').replace('branch management', 'branches').replace('team management', 'teams').replace(/\s+/g, '-')
+      const directorySlug = directory.toLowerCase().replace('branch management', 'branches').replace('team management', 'teams').replace(/\s+/g, '-')
       await expect(page).toHaveURL(new RegExp(`/admin/master-data/${directorySlug}$`))
       await assertCurrentChecklistItem(page, `master data ${directory}`)
     }

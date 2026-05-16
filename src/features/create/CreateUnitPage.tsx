@@ -49,12 +49,18 @@ export function CreateUnitPage({
       : null
 
   const unitTypeOptions = PRD_UNIT_TYPES.map((unitType) => ({ value: unitType, label: unitType }))
+  const lookupViewOptions = lookupValues
+    .filter((item) => item.kind === 'view')
+    .map((item) => ({ value: item.id, label: item.label }))
   const viewOptions = [
-    { value: 'view-sea', label: t('create.viewSea') },
-    { value: 'view-lagoon', label: t('create.viewLagoon') },
-    { value: 'view-pool', label: t('create.viewPool') },
-    { value: 'view-landscape', label: t('create.viewLandscape') },
-    { value: 'view-street', label: t('create.viewStreet') },
+    { value: '', label: t('create.selectView') },
+    ...lookupViewOptions,
+  ]
+  const finishOptions = [
+    { value: '', label: t('create.selectFinish') },
+    ...lookupValues
+      .filter((item) => item.kind === 'finish')
+      .map((item) => ({ value: item.label, label: item.label })),
   ]
   const floorOptions = PRD_FLOOR_OPTIONS.map((floor) => ({ value: floor, label: floor === 'Ground' ? t('create.ground') : floor }))
   const areaFields = getApplicableUnitAreaFields(selectedUnitType, selectedFloor)
@@ -147,10 +153,10 @@ export function CreateUnitPage({
         <fieldset className="unit-form wizard-panel" data-active={activeStep === 'Specs'} aria-hidden={activeStep !== 'Specs'}>
           <legend>{t('create.legend.specs')}</legend>
           <NamedSelectField
-            defaultValue="view-landscape"
             label={t('create.view')}
             name="viewId"
             options={viewOptions}
+            required
           />
           <NumberField name="bedrooms" label={t('create.bedrooms')} defaultValue={3} min={1} max={10} required />
           <NumberField name="bathrooms" label={t('create.bathrooms')} defaultValue={2} min={1} max={10} required />
@@ -165,15 +171,10 @@ export function CreateUnitPage({
             ]}
           />
           <NamedSelectField
-            defaultValue="Fully Finished"
             label={t('create.finish')}
             name="finish"
             required
-            options={[
-              { value: 'Fully Finished', label: t('create.fullyFinished') },
-              { value: 'Semi Finished', label: t('create.semiFinished') },
-              { value: 'Core & Shell', label: t('create.coreAndShell') },
-            ]}
+            options={finishOptions}
           />
         </fieldset>
 
@@ -193,10 +194,6 @@ export function CreateUnitPage({
           <label>
             <RequiredLabel label={t('create.totalAmount')} required />
             <input name="totalAmount" type="number" min={0} required value={totalAmount} onChange={(event) => setTotalAmount(Number(event.target.value))} />
-          </label>
-          <label>
-            {t('create.transferFees')}
-            <input name="transferFees" type="number" min={0} step="0.01" />
           </label>
           <label className="toggle-line">
             <input

@@ -59,7 +59,7 @@ describe('routes', () => {
     expect(parseAppRoute(adminSectionPath('audit'))).toMatchObject({ view: 'admin', adminSection: 'audit' })
     expect(parseAppRoute('/admin/unknown')).toMatchObject({ view: 'admin', adminSection: 'users' })
 
-    for (const directory of ['developers', 'destinations', 'projects', 'views', 'finishes', 'unit-types', 'branches', 'teams'] as const) {
+    for (const directory of ['developers', 'destinations', 'projects', 'views', 'finishes', 'branches', 'teams'] as const) {
       expect(parseAppRoute(masterDataPath(directory))).toMatchObject({
         view: 'admin',
         adminSection: 'master-data',
@@ -67,6 +67,7 @@ describe('routes', () => {
       })
     }
     expect(parseAppRoute('/admin/master-data')).toMatchObject({ masterDataDirectory: 'developers' })
+    expect(parseAppRoute('/admin/master-data/unit-types')).toMatchObject({ masterDataDirectory: 'developers' })
     expect(parseAppRoute('/admin/master-data/unknown')).toMatchObject({ masterDataDirectory: 'developers' })
   })
 

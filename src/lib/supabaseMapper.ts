@@ -283,7 +283,7 @@ export function toUnitUpdatePayload(
           total_amount: input.totalAmount,
           ...(input.paymentMethod === 'installment' ? { down_payment: input.downPayment ?? null } : {}),
           ...(input.paymentMethod === 'cash' ? { down_payment: null } : {}),
-          transfer_fees: input.transferFees ?? null,
+          ...(input.transferFees !== undefined ? { transfer_fees: input.transferFees } : {}),
           maintenance_paid: input.maintenancePaid ?? false,
           maintenance_cost: input.maintenancePaid ? input.maintenanceCost ?? null : null,
           maintenance_due_date: input.maintenancePaid ? input.maintenanceDueDate ?? null : null,

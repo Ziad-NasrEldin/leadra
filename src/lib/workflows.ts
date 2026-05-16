@@ -280,7 +280,7 @@ export function createUnitWorkflow(
   if (!installmentFields.ok) {
     return { ok: false, state, error: installmentFields.error, errorKey: null, errorParams: null }
   }
-  if ((input.transferFees ?? 0) < 0) {
+  if (input.transferFees != null && input.transferFees < 0) {
     return { ok: false, state, error: 'Transfer fees cannot be negative.', errorKey: null, errorParams: null }
   }
   if ((input.maintenanceCost ?? 0) < 0) {
@@ -624,7 +624,7 @@ export function updateUnitWorkflow(
     : unit.downPayment
   const nextTotalAmount = canEditPricing ? input.totalAmount : unit.totalAmount
   const nextMaintenancePaid = canEditPricing ? input.maintenancePaid ?? false : unit.maintenancePaid ?? false
-  if (canEditPricing && (input.transferFees ?? 0) < 0) {
+  if (canEditPricing && input.transferFees != null && input.transferFees < 0) {
     return { ok: false, state, error: 'Transfer fees cannot be negative.', errorKey: null, errorParams: null }
   }
   if (canEditPricing && (input.maintenanceCost ?? 0) < 0) {
@@ -689,7 +689,7 @@ export function updateUnitWorkflow(
     totalAmount: nextTotalAmount,
     downPayment: nextDownPayment,
     remainingPayment: unit.remainingPayment,
-    transferFees: canEditPricing ? input.transferFees ?? null : unit.transferFees ?? null,
+    transferFees: canEditPricing ? input.transferFees ?? unit.transferFees ?? null : unit.transferFees ?? null,
     maintenancePaid: nextMaintenancePaid,
     maintenanceCost: nextMaintenanceCost,
     maintenanceDueDate: nextMaintenanceDueDate,

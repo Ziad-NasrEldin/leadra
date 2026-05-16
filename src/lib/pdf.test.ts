@@ -109,6 +109,7 @@ describe('pdf generation', () => {
     const user = demoUsers[0]
     const unit = {
       ...seedUnits[0],
+      finish: 'White Box',
       furnished: true,
       elevator: true,
       transferFees: 125_000,
@@ -120,9 +121,11 @@ describe('pdf generation', () => {
 
     const text = buildPermissionSafePdfText(user, unit, initialAppState.settings)
 
-    expect(text.indexOf('Unit code: NC3BR')).toBeLessThan(text.indexOf('Unit Thumbnail: living-room.jpg'))
-    expect(text.indexOf('Unit Thumbnail: living-room.jpg')).toBeLessThan(text.indexOf('Uploader Name: Sara Amin'))
-    expect(text.indexOf('Uploader Name: Sara Amin')).toBeLessThan(text.indexOf('Unit Status: Available'))
+    expect(text).not.toContain('Unit Thumbnail')
+    expect(text).not.toContain('Uploader Name')
+    expect(text).not.toContain('living-room.jpg')
+    expect(text).not.toContain('Sara Amin')
+    expect(text.indexOf('Unit code: NC3BR')).toBeLessThan(text.indexOf('Unit Status: Available'))
     expect(text.indexOf('Unit Status: Available')).toBeLessThan(text.indexOf('Destination: New Cairo'))
     expect(text.indexOf('Destination: New Cairo')).toBeLessThan(text.indexOf('Developer: Palm Hills'))
     expect(text).toContain('Project: New Cairo Estates')
@@ -134,21 +137,44 @@ describe('pdf generation', () => {
     expect(text).toContain('Bathrooms: 2')
     expect(text).toContain('Elevator: Yes')
     expect(text).toContain('Furnished: Furnished')
-    expect(text).toContain('Finishing Status *: Fully Finished')
+    expect(text).toContain('Finishing Status *: White Box')
     expect(text).toContain('Total Amount: EGP\u00a05,000,000')
     expect(text).toContain('Down Payment: EGP\u00a01,000,000')
     expect(text).toContain('Remaining Value: EGP\u00a04,000,000')
-    expect(text).toContain('Installments: Next #2 Sep 2026: EGP\u00a0345,678')
-    expect(text).toContain('Installment 1: Jun 2026 / EGP\u00a0123,456 / Paid')
-    expect(text).toContain('Installment 2: Sep 2026 / EGP\u00a0345,678')
+    expect(text).toContain('Installments: Sep 2026: EGP\u00a0345,678')
+    expect(text).not.toContain('Installment 1:')
+    expect(text).not.toContain('Installment 2:')
     expect(text).toContain('Delivery Expectancy: March 2028')
     expect(text).toContain('Commission: EGP\u00a075,000 (1.5%)')
-    expect(text).toContain('Transfer Fees: EGP\u00a0125,000')
+    expect(text).toContain('Transfer Fees: If Applicable')
+    expect(text).not.toContain('Transfer Fees: EGP\u00a0125,000')
     expect(text.indexOf('Installments:')).toBeLessThan(text.indexOf('Delivery Expectancy:'))
     expect(text.indexOf('Delivery Expectancy:')).toBeLessThan(text.indexOf('Commission:'))
     expect(text.indexOf('Commission:')).toBeLessThan(text.indexOf('Transfer Fees:'))
     expect(text).not.toContain('Payment method')
     expect(text).not.toContain('Payment Method')
+  })
+
+  it('keeps legacy PDF installment summary free of payment numbers and period labels when no due date exists', () => {
+    const user = demoUsers[0]
+    const unit = {
+      ...seedUnits[0],
+      paymentMethod: 'installment' as const,
+      installmentType: 'semi_annual' as const,
+      installmentAmount: 345_678,
+      installmentYears: 1,
+      installmentStartMonth: null,
+      installmentEndMonth: null,
+      paymentSchedule: [
+        { id: 'legacy-next-1', unitId: seedUnits[0].id, paymentNumber: 1, dueMonth: null, amount: 345_678, paid: false, paidAt: null, paidBy: null, paidByName: null },
+      ],
+    }
+
+    const text = buildPermissionSafePdfText(user, unit, initialAppState.settings)
+
+    expect(text).toContain('Installments: EGP\u00a0345,678')
+    expect(text).not.toContain('Installments: Next #1')
+    expect(text).not.toContain('Installments: Half 1')
   })
 
   it('omits furnished and elevator facts unless selected and exports custom installment text', () => {
@@ -170,13 +196,13 @@ describe('pdf generation', () => {
     expect(text).toContain('Elevator: No')
   })
 
-  it('omits zero transfer fees because they are not applicable', () => {
+  it('shows the fixed transfer-fee notice even when no numeric fee is stored', () => {
     const user = demoUsers[0]
     const unit = { ...seedUnits[0], transferFees: 0 }
 
     const text = buildPermissionSafePdfText(user, unit, initialAppState.settings)
 
-    expect(text).not.toContain('Transfer Fees:')
+    expect(text).toContain('Transfer Fees: If Applicable')
   })
 
   it('embeds the uploaded company logo in generated pdf exports', async () => {

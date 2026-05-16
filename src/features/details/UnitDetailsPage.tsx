@@ -216,6 +216,12 @@ function UnitDetailsEditForm({
   const [ownerPhone, setOwnerPhone] = useState(unit.originalOwnerPhone ?? '')
   const [maintenancePaid, setMaintenancePaid] = useState(unit.maintenancePaid ?? false)
   const areaFields = getApplicableUnitAreaFields(unitType, floor)
+  const lookupFinishOptions = lookupValues
+    .filter((item) => item.kind === 'finish')
+    .map((item) => ({ value: item.label, label: item.label }))
+  const finishOptions = lookupFinishOptions.some((option) => option.value === unit.finish)
+    ? lookupFinishOptions
+    : [{ value: unit.finish, label: unit.finish }, ...lookupFinishOptions]
   const ownerPhoneCountryOptions = getOwnerPhoneCountryOptions(locale)
   const selectedOwnerPhoneCountry = getOwnerPhoneCountryMeta(ownerCountryCode, locale)
   const deliveryYearOptions = Array.from({ length: 10 }, (_, index) => String(2026 + index))
@@ -281,11 +287,7 @@ function UnitDetailsEditForm({
             label={t('create.finish')}
             defaultValue={unit.finish}
             required
-            options={[
-              { value: 'Fully Finished', label: t('create.fullyFinished') },
-              { value: 'Semi Finished', label: t('create.semiFinished') },
-              { value: 'Core & Shell', label: t('create.coreAndShell') },
-            ]}
+            options={finishOptions}
           />
           <NamedSelectField
             name="deliveryYear"
@@ -317,10 +319,6 @@ function UnitDetailsEditForm({
           <label>
             <RequiredLabel label={t('create.totalAmount')} required />
             <input name="totalAmount" type="number" min={0} defaultValue={unit.totalAmount} disabled={!canEditPricing || saving} required={canEditPricing} />
-          </label>
-          <label>
-            {t('create.transferFees')}
-            <input name="transferFees" type="number" min={0} step="0.01" defaultValue={unit.transferFees ?? ''} disabled={!canEditPricing || saving} />
           </label>
           <label className="toggle-line">
             <input
@@ -511,7 +509,6 @@ function UnitDetailsDeepSections({
   const installmentRows: [string, string | number | null][] = []
   const postDeliveryRows: [string, string | number | null][] = [
     [t('details.commission'), `${formatCurrency(unit.commissionAmount, locale)} (${unit.commissionPercentage}%)`],
-    [t('details.transferFees'), unit.transferFees != null && unit.transferFees > 0 ? formatCurrency(unit.transferFees, locale) : t('common.notSet')],
   ]
   if (unit.maintenancePaid) {
     pricingRows.push(
@@ -604,7 +601,7 @@ function UnitDetailsDeepSections({
         <InfoPanel title={t('details.delivery')} rows={[[t('details.expectedDelivery'), formatDeliveryExpectancy(unit, locale)]]} />
       </section>
       <section className="content-card motion-stage details-post-delivery-card" style={motionStyle(5, 160)}>
-        <InfoPanel title={`${t('details.commission')} / ${t('details.transferFees')}`} rows={postDeliveryRows} />
+        <InfoPanel title={t('details.commission')} rows={postDeliveryRows} />
       </section>
       <div className="details-secondary-grid">
         <section className="content-card motion-stage details-notes-card" style={motionStyle(6, 190)}>

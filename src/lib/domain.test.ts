@@ -22,6 +22,7 @@ import {
   summarizeProjects,
   buildInstallmentSchedule,
   deriveProjectAbbreviation,
+  formatDeliveryExpectancy,
   getApplicableUnitAreaFields,
   getOwnerPhoneCountryMeta,
   getOwnerPhoneCountryOptions,
@@ -143,6 +144,10 @@ describe('Leadra domain rules', () => {
     expect(getOwnerPhoneCountryMeta('+20', 'en')).toMatchObject({ code: '+20', label: 'Egypt +20', placeholder: '01012345678' })
     expect(getOwnerPhoneCountryMeta('+971', 'ar')).toMatchObject({ code: '+971', label: 'الإمارات +971', placeholder: '0501234567' })
     expect(getOwnerPhoneCountryOptions('en').some((option) => option.value === '+44')).toBe(true)
+  })
+
+  it('formats delivery expectancy years without thousands separators', () => {
+    expect(formatDeliveryExpectancy({ ...baseUnit, deliveryExpectancy: { mode: 'year', year: 2029 } }, 'en')).toBe('2029')
   })
 
   it('validates and formats owner phones against the selected country', () => {
@@ -406,16 +411,24 @@ describe('Leadra domain rules', () => {
       'Cabin',
       'Penthouse',
     ])
-    expect(getApplicableUnitAreaFields('Stand Alone')).toMatchObject({ showFloor: false, showLandArea: true, showGardenArea: false, showTerraceArea: false })
-    expect(getApplicableUnitAreaFields('Apartment', 'Ground')).toMatchObject({ showFloor: true, showLandArea: false, showGardenArea: true, showTerraceArea: false })
+
+    for (const unitType of ['One Story Villa', 'Stand Alone', 'Twin House', 'Town House']) {
+      expect(getApplicableUnitAreaFields(unitType)).toMatchObject({ showFloor: false, showLandArea: true, showGardenArea: false, showTerraceArea: false })
+    }
+    for (const unitType of ['Apartment', 'Chalet', 'Duplex', 'Senior Chalet', 'Junior Chalet', 'Loft']) {
+      expect(getApplicableUnitAreaFields(unitType, '2nd')).toMatchObject({ showFloor: true, showLandArea: false, showGardenArea: false, showTerraceArea: false })
+      expect(getApplicableUnitAreaFields(unitType, 'Ground')).toMatchObject({ showFloor: true, showLandArea: false, showGardenArea: true, showTerraceArea: false })
+    }
     expect(getApplicableUnitAreaFields('Cabin')).toMatchObject({ showFloor: false, showLandArea: false, showGardenArea: false, showTerraceArea: false })
     expect(getApplicableUnitAreaFields('Penthouse')).toMatchObject({ showFloor: false, showLandArea: false, showGardenArea: false, showTerraceArea: true })
   })
 
-  it('supports only Ground and floors 1 through 40 for floor-based unit types', () => {
+  it('supports Ground, floors 1 through 40, and Last Floor for floor-based unit types', () => {
     expect(PRD_FLOOR_OPTIONS[0]).toBe('Ground')
-    expect(PRD_FLOOR_OPTIONS).toHaveLength(41)
+    expect(PRD_FLOOR_OPTIONS[1]).toBe('Last Floor')
+    expect(PRD_FLOOR_OPTIONS).toHaveLength(42)
     expect(PRD_FLOOR_OPTIONS).toContain('40th')
+    expect(PRD_FLOOR_OPTIONS.at(-1)).toBe('40th')
     expect(PRD_FLOOR_OPTIONS).not.toContain('Roof')
   })
 

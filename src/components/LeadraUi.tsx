@@ -61,10 +61,16 @@ export function BrandedSelect({
       const rect = root.getBoundingClientRect()
       const gap = 8
       const viewportPadding = 12
+      const maxMenuWidth = Math.max(120, window.innerWidth - viewportPadding * 2)
+      const contentWidth = menuRef.current?.scrollWidth ?? rect.width
+      const shouldFitContent = typeof window.matchMedia === 'function'
+        ? window.matchMedia('(min-width: 720px)').matches
+        : window.innerWidth >= 720
+      const menuWidth = Math.min(maxMenuWidth, Math.max(rect.width, shouldFitContent ? contentWidth : rect.width))
       const estimatedHeight = Math.min(360, Math.max(116, filteredOptions.length * 50 + 76))
       const availableBelow = window.innerHeight - rect.bottom - viewportPadding
       const maxHeight = Math.max(120, Math.min(estimatedHeight, availableBelow - gap))
-      const left = Math.min(Math.max(viewportPadding, rect.left), window.innerWidth - rect.width - viewportPadding)
+      const left = Math.min(Math.max(viewportPadding, rect.left), window.innerWidth - menuWidth - viewportPadding)
       const top = rect.bottom + gap
 
       setMenuStyle({
@@ -72,7 +78,8 @@ export function BrandedSelect({
         top,
         bottom: 'auto',
         left,
-        width: rect.width,
+        width: menuWidth,
+        maxWidth: maxMenuWidth,
         maxHeight,
       })
     }

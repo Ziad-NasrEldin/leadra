@@ -6,7 +6,6 @@ export const masterDataDirectorySlugs = [
   'projects',
   'views',
   'finishes',
-  'unit-types',
   'branches',
   'teams',
 ] as const

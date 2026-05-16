@@ -2,11 +2,13 @@ import type { LeadraUser, LookupKind, PaymentMethod, UnitStatus } from '../../li
 
 export const createUnitSteps = ['Property', 'Specs', 'Payment', 'Owner', 'Review'] as const
 export const adminSections = ['Users', 'Master Data', 'Settings', 'Metrics', 'Audit'] as const
-export const lookupKindOptions: LookupKind[] = ['developer', 'destination', 'project', 'view', 'finish', 'unit_type']
+export type EditableLookupKind = Exclude<LookupKind, 'unit_type'>
+
+export const lookupKindOptions: EditableLookupKind[] = ['developer', 'destination', 'project', 'view', 'finish']
 
 export type CreateUnitStep = (typeof createUnitSteps)[number]
 export type AdminSection = (typeof adminSections)[number]
-export type MasterDataDirectory = LookupKind | 'branches' | 'teams'
+export type MasterDataDirectory = EditableLookupKind | 'branches' | 'teams'
 export type LookupThumbnailChange = { file?: File | null; remove?: boolean }
 
 export const unitStatusValues: UnitStatus[] = ['available', 'hold', 'sold', 'sold_by_us', 'sold_by_others']
@@ -24,6 +26,6 @@ export const roleOrder: Record<LeadraUser['role'], number> = {
   sales: 3,
 }
 
-export function supportsLookupThumbnail(directory: MasterDataDirectory): directory is 'destination' | 'project' {
+export function supportsLookupThumbnail(directory: LookupKind | 'branches' | 'teams'): directory is 'destination' | 'project' {
   return directory === 'destination' || directory === 'project'
 }

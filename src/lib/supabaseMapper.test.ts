@@ -187,6 +187,19 @@ describe('Supabase mappers', () => {
     expect(payload).toMatchObject({ bua: 180, sales_notes: 'Updated notes.' })
   })
 
+  it('omits transfer fee updates when the legacy field is absent from edit input', () => {
+    const inputWithoutTransferFees: UnitEditInput = { ...editInput }
+    delete inputWithoutTransferFees.transferFees
+
+    const payload = toUnitUpdatePayload(inputWithoutTransferFees, {
+      canEditOwner: true,
+      canEditPricing: true,
+      canEditCommission: true,
+    })
+
+    expect(payload).not.toHaveProperty('transfer_fees')
+  })
+
   it('maps joined Supabase rows back to the app unit model', () => {
     const row: SupabaseUnitRow = {
       id: 105,

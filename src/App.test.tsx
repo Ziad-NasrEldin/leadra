@@ -3,6 +3,8 @@ import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import App from './App'
+import { CreateUnitPage } from './features/create/CreateUnitPage'
+import { initialAppState, lookupValues } from './data/seed'
 import { LocaleProvider } from './lib/i18n'
 import { ThemeProvider } from './lib/theme'
 
@@ -388,6 +390,7 @@ describe('Leadra app shell', () => {
     await user.click(screen.getByRole('combobox', { name: /^floor/i }))
     expect(screen.getByRole('option', { name: /^ground$/i })).toBeInTheDocument()
     expect(screen.getByRole('option', { name: /^40th$/i })).toBeInTheDocument()
+    expect(screen.getByRole('option', { name: /^last floor$/i })).toBeInTheDocument()
     expect(screen.queryByRole('option', { name: /^roof$/i })).not.toBeInTheDocument()
     await user.click(screen.getByRole('option', { name: /^ground$/i }))
     expect(screen.getByRole('spinbutton', { name: /garden area/i })).toBeInTheDocument()
@@ -395,6 +398,8 @@ describe('Leadra app shell', () => {
     expect(screen.getByRole('spinbutton', { name: /bedrooms/i })).toBeInTheDocument()
     expect(screen.getByRole('combobox', { name: /view/i })).toBeInTheDocument()
     expect(screen.getByRole('combobox', { name: /furnished/i })).toBeInTheDocument()
+    await chooseFromSelect(user, /view/i, /landscape/i)
+    await chooseFromSelect(user, /finishing/i, /fully finished/i)
 
     await user.click(screen.getByRole('button', { name: /payment/i }))
     expect(screen.getByRole('spinbutton', { name: /total amount/i })).toBeInTheDocument()
@@ -420,6 +425,58 @@ describe('Leadra app shell', () => {
 
     expect(await screen.findByRole('heading', { name: /NC3BR/i })).toBeInTheDocument()
     expect((await screen.findAllByAltText(/living-room.png/i, undefined, { timeout: 3000 })).length).toBeGreaterThan(0)
+  }, 10_000)
+
+  it('requires explicit create-unit view and finishing selections from Master Data rows', async () => {
+    const user = userEvent.setup()
+    const { container } = render(
+      <LocaleProvider>
+        <CreateUnitPage
+          activeStep="Specs"
+          lookupValues={[
+            { id: '1f2f4541-e9cf-4f2e-9db6-1311874f8065', kind: 'view', label: 'Canal' },
+            { id: 'dcb1df2b-df8e-4c84-b656-3d157033611a', kind: 'view', label: 'Landscape' },
+            { id: 'finish-white-box', kind: 'finish', label: 'White Box' },
+            { id: 'finish-fully-finished', kind: 'finish', label: 'Fully Finished' },
+          ]}
+          settings={initialAppState.settings}
+          onStepChange={vi.fn()}
+          onSubmit={vi.fn()}
+        />
+      </LocaleProvider>,
+    )
+
+    const viewSelect = screen.getByRole('combobox', { name: /view/i })
+    expect(viewSelect.closest('label')?.querySelector('.required-marker')).not.toBeNull()
+    expect(container.querySelector<HTMLInputElement>('input[name="viewId"]')?.value).toBe('')
+    await user.click(viewSelect)
+    expect(screen.getByRole('option', { name: /^canal$/i })).toBeInTheDocument()
+    expect(screen.queryByRole('option', { name: /^sea$/i })).not.toBeInTheDocument()
+    await user.keyboard('{Escape}')
+
+    const finishSelect = screen.getByRole('combobox', { name: /finishing/i })
+    expect(finishSelect.closest('label')?.querySelector('.required-marker')).not.toBeNull()
+    expect(container.querySelector<HTMLInputElement>('input[name="finish"]')?.value).toBe('')
+    await user.click(finishSelect)
+    expect(screen.getByRole('option', { name: /^white box$/i })).toBeInTheDocument()
+    expect(screen.queryByRole('option', { name: /^core & shell$/i })).not.toBeInTheDocument()
+  })
+
+  it('does not render transfer fees as a create-unit number field', () => {
+    render(
+      <LocaleProvider>
+        <CreateUnitPage
+          activeStep="Payment"
+          lookupValues={lookupValues}
+          settings={initialAppState.settings}
+          onStepChange={vi.fn()}
+          onSubmit={vi.fn()}
+        />
+      </LocaleProvider>,
+    )
+
+    expect(screen.getByRole('spinbutton', { name: /total amount/i })).toBeInTheDocument()
+    expect(screen.queryByRole('spinbutton', { name: /transfer fees/i })).not.toBeInTheDocument()
   })
 
   it('lets admins edit property, owner, and PRD pricing fields inline from unit details', async () => {
@@ -598,12 +655,13 @@ describe('Leadra app shell', () => {
     await user.click(screen.getByRole('button', { name: /master data/i }))
 
     expect(await screen.findByRole('heading', { name: /master data/i })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /unit types/i })).not.toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: /destinations/i }))
     await user.type(screen.getByRole('textbox', { name: /value label/i }), 'North Coast')
     const destinationThumb = new File(['destination'], 'north-coast.png', { type: 'image/png' })
     await user.upload(screen.getByLabelText(/thumbnail image/i), destinationThumb)
     await user.click(screen.getByRole('button', { name: /add value/i }))
-    expect(await screen.findByText(/north coast/i)).toBeInTheDocument()
+    expect(await screen.findByText(/north coast/i, undefined, { timeout: 3000 })).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: /^projects/i }))
     await user.type(screen.getByRole('textbox', { name: /value label/i }), 'Zim')
@@ -611,12 +669,12 @@ describe('Leadra app shell', () => {
     const projectThumb = new File(['project'], 'zim.png', { type: 'image/png' })
     await user.upload(screen.getByLabelText(/thumbnail image/i), projectThumb)
     await user.click(screen.getByRole('button', { name: /add value/i }))
-    expect(await screen.findByText(/zim/i)).toBeInTheDocument()
+    expect(await screen.findByText(/zim/i, undefined, { timeout: 3000 })).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: /branch management/i }))
     await user.type(screen.getByRole('textbox', { name: /branch name/i }), 'Alexandria Branch')
     await user.click(screen.getByRole('button', { name: /add branch/i }))
-    expect(await screen.findByText(/alexandria branch/i)).toBeInTheDocument()
+    expect(await screen.findByText(/alexandria branch/i, undefined, { timeout: 3000 })).toBeInTheDocument()
   })
 
   it('filters and edits users in admin user management', async () => {

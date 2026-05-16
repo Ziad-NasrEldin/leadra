@@ -23,6 +23,8 @@ import leadraLogoDark from './assets/brand/leadra-logo-dark.jpeg'
 import leadraLogoLight from './assets/brand/leadra-logo-light.jpeg'
 import leadraMarkDark from './assets/brand/leadra-mark-dark.png'
 import leadraMarkLight from './assets/brand/leadra-mark-light.png'
+import leadraSidebarLogoDark from './assets/brand/leadra-sidebar-logo-dark.png'
+import leadraSidebarLogoLight from './assets/brand/leadra-sidebar-logo-light.png'
 import { demoUsers, initialAppState, lookupValues } from './data/seed'
 import { buildPerformanceWorkspace } from './data/performanceSeed'
 import { buildAnalyticsCsv, buildAnalyticsDashboard, canAccessAnalytics, defaultAnalyticsFilters } from './lib/analytics'
@@ -216,7 +218,6 @@ const masterDataDirectoryFromSlug: Record<MasterDataDirectorySlug, MasterDataDir
   projects: 'project',
   views: 'view',
   finishes: 'finish',
-  'unit-types': 'unit_type',
   branches: 'branches',
   teams: 'teams',
 }
@@ -227,7 +228,6 @@ const masterDataDirectoryToSlug: Record<MasterDataDirectory, MasterDataDirectory
   project: 'projects',
   view: 'views',
   finish: 'finishes',
-  unit_type: 'unit-types',
   branches: 'branches',
   teams: 'teams',
 }
@@ -265,9 +265,9 @@ function analyticsRouteForFilters(filters: LeadraAnalyticsFilters, filtersOpen: 
   })
 }
 const notificationPageSize = 60
-const leadraBrandAssets: Record<ThemePreference, { logo: string; mark: string }> = {
-  light: { logo: leadraLogoLight, mark: leadraMarkLight },
-  dark: { logo: leadraLogoDark, mark: leadraMarkDark },
+const leadraBrandAssets: Record<ThemePreference, { logo: string; mark: string; sidebarLogo: string }> = {
+  light: { logo: leadraLogoLight, mark: leadraMarkLight, sidebarLogo: leadraSidebarLogoLight },
+  dark: { logo: leadraLogoDark, mark: leadraMarkDark, sidebarLogo: leadraSidebarLogoDark },
 }
 
 
@@ -629,17 +629,12 @@ function LeadraApp() {
     const destinationId = String(formData.get('destinationId'))
     const developerId = String(formData.get('developerId'))
     const viewId = String(formData.get('viewId'))
-    const staticViewOptions: Record<string, string> = {
-      'view-sea': 'Sea',
-      'view-lagoon': 'Lagoon',
-      'view-pool': 'Pool',
-      'view-landscape': 'Landscape',
-      'view-street': 'Street',
-    }
+    const finish = String(formData.get('finish'))
     const project = activeLookupValues.find((item) => item.id === projectId)
     const destination = activeLookupValues.find((item) => item.id === destinationId)
     const developer = activeLookupValues.find((item) => item.id === developerId)
     const viewLookup = activeLookupValues.find((item) => item.id === viewId)
+    const finishLookup = activeLookupValues.find((item) => item.kind === 'finish' && item.label === finish)
     const rawOwnerPhone = String(formData.get('ownerPhone'))
     const selectedCountryCode = String(formData.get('countryCode') ?? '+20')
     const ownerPhoneValidation = validateOwnerPhoneForCountry(rawOwnerPhone, selectedCountryCode, locale)
@@ -651,6 +646,21 @@ function LeadraApp() {
     const installmentEndMonth = paymentMethod === 'installment' && isAutomaticInstallmentType(installmentType)
       ? parseOptionalFormMonthDate(formData, 'installmentEndMonth')
       : null
+
+    if (!viewId) {
+      setFlash(createFlashMessage('error.viewRequired', 'Select a view before creating the unit.'))
+      return
+    }
+
+    if (!viewLookup || viewLookup.kind !== 'view') {
+      setFlash(createFlashMessage('error.viewRequired', 'Select a view from Master Data before creating the unit.'))
+      return
+    }
+
+    if (!finish || !finishLookup) {
+      setFlash(createFlashMessage('error.finishRequired', 'Select finishing from Master Data before creating the unit.'))
+      return
+    }
 
     if (!ownerPhoneValidation.ok) {
       setFlash(
@@ -677,17 +687,16 @@ function LeadraApp() {
       gardenArea: Number(formData.get('gardenArea')) || null,
       terraceArea: Number(formData.get('terraceArea')) || null,
       viewId,
-      viewName: viewLookup?.label ?? staticViewOptions[viewId] ?? 'Landscape',
+      viewName: viewLookup.label,
       bedrooms: Number(formData.get('bedrooms')),
       bathrooms: Number(formData.get('bathrooms')),
       elevator: formData.get('elevator') === 'on',
       landArea: Number(formData.get('landArea')) || null,
       furnished: String(formData.get('furnished')) === 'true',
-      finish: String(formData.get('finish')),
+      finish,
       paymentMethod,
       totalAmount: Number(formData.get('totalAmount')),
       downPayment: paymentMethod === 'installment' ? Number(formData.get('downPayment')) : null,
-      transferFees: parseOptionalFormNumber(formData, 'transferFees'),
       maintenancePaid,
       maintenanceCost: maintenancePaid ? parseOptionalFormNumber(formData, 'maintenanceCost') : null,
       maintenanceDueDate: maintenancePaid ? parseOptionalFormDate(formData, 'maintenanceDueDate') : null,
@@ -749,10 +758,12 @@ function LeadraApp() {
     const destinationId = String(formData.get('destinationId'))
     const developerId = String(formData.get('developerId'))
     const viewId = String(formData.get('viewId'))
+    const finish = String(formData.get('finish'))
     const project = activeLookupValues.find((item) => item.id === projectId)
     const destination = activeLookupValues.find((item) => item.id === destinationId)
     const developer = activeLookupValues.find((item) => item.id === developerId)
     const viewLookup = activeLookupValues.find((item) => item.id === viewId)
+    const finishLookup = activeLookupValues.find((item) => item.kind === 'finish' && item.label === finish)
     const maintenancePaid = formData.get('maintenancePaid') === 'on'
     const submittedPaymentMethodValue = formData.get('paymentMethod')
     const submittedPaymentMethod = submittedPaymentMethodValue === 'cash' || submittedPaymentMethodValue === 'installment'
@@ -779,6 +790,11 @@ function LeadraApp() {
     const installmentEndMonth = shouldSubmitInstallmentPeriod
       ? submittedInstallmentEndMonth ?? storedInstallmentEndMonth
       : null
+    if (!finish || (finish !== unit.finish && !finishLookup)) {
+      setFlash(createFlashMessage('error.finishRequired', 'Select finishing from Master Data before updating the unit.'))
+      return false
+    }
+
     const input: UnitEditInput = {
       developerId,
       developerName: developer?.label ?? unit.developerName,
@@ -799,7 +815,7 @@ function LeadraApp() {
       elevator: formData.get('elevator') === 'on',
       landArea: Number(formData.get('landArea')) || null,
       furnished: String(formData.get('furnished')) === 'true',
-      finish: String(formData.get('finish')),
+      finish,
       paymentMethod: submittedPaymentMethod,
       downPayment: submittedPaymentMethod === 'installment' ? parseOptionalFormNumber(formData, 'downPayment') ?? unit.downPayment ?? 0 : null,
       deliveryExpectancy: {
@@ -811,7 +827,6 @@ function LeadraApp() {
       originalOwnerPhone: String(formData.get('ownerPhone') ?? unit.originalOwnerPhone ?? ''),
       salesNotes: String(formData.get('salesNotes') ?? unit.salesNotes),
       totalAmount: Number(formData.get('totalAmount')),
-      transferFees: parseOptionalFormNumber(formData, 'transferFees'),
       maintenancePaid,
       maintenanceCost: maintenancePaid ? parseOptionalFormNumber(formData, 'maintenanceCost') : null,
       maintenanceDueDate: maintenancePaid ? parseOptionalFormDate(formData, 'maintenanceDueDate') : null,
@@ -1333,7 +1348,7 @@ function LeadraApp() {
     <div className="app-shell">
       <aside className="side-rail" aria-label={t('nav.desktop')}>
         <Link className="brand-mark" to={pathForView('dashboard')} aria-label="Leadra home">
-          <img src={brandAssets.mark} alt="Leadra" />
+          <img src={brandAssets.sidebarLogo} alt="Leadra" />
         </Link>
         <NavButton active={activeView === 'dashboard'} label={t('nav.dashboard')} to={pathForView('dashboard')} onClick={closeNavigation} icon={<Home />} className="motion-stage" style={motionStyle(0)} />
         <NavButton active={activeView === 'units'} label={t('nav.units')} to={pathForView('units')} onClick={closeNavigation} icon={<Building2 />} className="motion-stage" style={motionStyle(1)} />
