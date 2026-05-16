@@ -657,6 +657,7 @@ describe('Leadra app shell', () => {
     expect(await screen.findByRole('heading', { name: /master data/i })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /unit types/i })).not.toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: /destinations/i }))
+    await waitFor(() => expect(window.location.pathname).toContain('/admin/master-data/destinations'))
     await user.type(screen.getByRole('textbox', { name: /value label/i }), 'North Coast')
     const destinationThumb = new File(['destination'], 'north-coast.png', { type: 'image/png' })
     await user.upload(screen.getByLabelText(/thumbnail image/i), destinationThumb)
@@ -664,6 +665,7 @@ describe('Leadra app shell', () => {
     expect(await screen.findByText(/north coast/i, undefined, { timeout: 3000 })).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: /^projects/i }))
+    await waitFor(() => expect(window.location.pathname).toContain('/admin/master-data/projects'))
     await user.type(screen.getByRole('textbox', { name: /value label/i }), 'Zim')
     expect(screen.queryByRole('textbox', { name: /thumbnail url/i })).not.toBeInTheDocument()
     const projectThumb = new File(['project'], 'zim.png', { type: 'image/png' })
@@ -672,6 +674,7 @@ describe('Leadra app shell', () => {
     expect(await screen.findByText(/zim/i, undefined, { timeout: 3000 })).toBeInTheDocument()
 
     await user.click(screen.getByRole('button', { name: /branch management/i }))
+    await waitFor(() => expect(window.location.pathname).toContain('/admin/master-data/branches'))
     await user.type(screen.getByRole('textbox', { name: /branch name/i }), 'Alexandria Branch')
     await user.click(screen.getByRole('button', { name: /add branch/i }))
     expect(await screen.findByText(/alexandria branch/i, undefined, { timeout: 3000 })).toBeInTheDocument()

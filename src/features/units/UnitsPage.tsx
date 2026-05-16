@@ -1,4 +1,4 @@
-import { Download, FileText, Image as ImageIcon, Search, Share2, SlidersHorizontal, X } from 'lucide-react'
+import { Download, FileText, Image as ImageIcon, Share2, SlidersHorizontal, X } from 'lucide-react'
 import { memo, useState, type CSSProperties } from 'react'
 import { canViewOwnerData, getThumbnailMedia, summarizeDestinations, summarizeProjects } from '../../lib/domain'
 import { compareText, formatCount, getStatusLabel, useLocale } from '../../lib/i18n'
@@ -93,7 +93,6 @@ export function UnitsPage({
           <p className="eyebrow">{t('units.eyebrow')}</p>
           <h2>{t('units.heading')}</h2>
         </div>
-        <Search size={22} />
       </div>
 
       {stage === 'destinations' && (

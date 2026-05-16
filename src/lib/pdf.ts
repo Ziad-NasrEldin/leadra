@@ -1,6 +1,6 @@
 import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFImage, type PDFPage } from 'pdf-lib'
 import { buildPaymentTimetable, canViewSalesSensitiveData, formatCurrency, formatDeliveryExpectancy, getApplicableUnitAreaFields, sanitizeUnitForPdf } from './domain'
-import { getStatusLabel, translate, type LocaleCode } from './i18n'
+import { translate, type LocaleCode } from './i18n'
 import type { AppSettings, LeadraUnit, LeadraUser } from './types'
 
 export interface GeneratedPdf {
@@ -85,7 +85,6 @@ function buildPdfUnitDetails(user: LeadraUser, unit: LeadraUnit, locale: LocaleC
   const areaFields = getApplicableUnitAreaFields(unit.unitType, unit.floor)
   const rows: PdfDetailRow[] = [
     { label: translate(locale, 'units.unitCode'), value: unit.unitCode, kind: 'hero' },
-    { label: 'Unit Status', value: getStatusLabel(locale, unit.status) },
     { label: translate(locale, 'export.destination'), value: unit.destinationName },
     { label: translate(locale, 'details.developer'), value: unit.developerName },
     { label: translate(locale, 'export.project'), value: unit.projectName },

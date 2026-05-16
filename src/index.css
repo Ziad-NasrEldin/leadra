@@ -1953,6 +1953,7 @@ input[type="checkbox"]:checked::after {
 
 .unit-row.selectable {
   grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
 }
 
 .unit-row.selected {
@@ -1962,6 +1963,8 @@ input[type="checkbox"]:checked::after {
 .unit-row-select {
   display: grid;
   place-items: center;
+  align-self: start;
+  min-height: 74px;
 }
 
 .unit-row-open {
@@ -4664,6 +4667,11 @@ dd,
   .unit-row-open {
     grid-template-columns: 62px minmax(0, 1fr);
     gap: var(--space-3);
+    align-items: start;
+  }
+
+  .unit-row-select {
+    min-height: 62px;
   }
 
   .content-card > .unit-row + .unit-row {
@@ -5408,6 +5416,10 @@ dd,
     height: 58px;
   }
 
+  .unit-row-select {
+    min-height: 58px;
+  }
+
   .upload-preview-grid,
   .media-grid {
     grid-template-columns: minmax(0, 1fr);
@@ -5743,6 +5755,23 @@ dd,
   box-shadow: var(--shadow-soft);
 }
 
+:root[data-theme="dark"] .analytics-page .timeline-chart {
+  border: 1px solid rgba(231, 201, 142, 0.2);
+  background:
+    linear-gradient(to top, rgba(231, 201, 142, 0.16) 1px, transparent 1px) 0 0 / 100% 25%,
+    linear-gradient(180deg, rgba(31, 31, 35, 0.96), rgba(13, 13, 15, 0.9));
+  box-shadow: inset 0 1px 0 rgba(255, 250, 240, 0.06);
+}
+
+:root[data-theme="dark"] .analytics-page .timeline-bar span {
+  background: linear-gradient(180deg, #f1d79e, var(--brand-warm-gold));
+  box-shadow: 0 10px 24px rgba(214, 176, 111, 0.16);
+}
+
+:root[data-theme="dark"] .analytics-page .timeline-bar small {
+  color: #d8d0c3;
+}
+
 :root[data-theme="dark"] .integration-badge,
 :root[data-theme="dark"] .flash {
   border-color: rgba(231, 201, 142, 0.34);
@@ -5782,19 +5811,22 @@ dd,
   color: #d8d0c3;
 }
 
-:root[data-theme="dark"] .units-page .media-pdf-toggle {
+:root[data-theme="dark"] .units-page .media-pdf-toggle,
+:root[data-theme="dark"] .details-page .media-pdf-toggle {
   border-color: rgba(231, 201, 142, 0.36);
   background: rgba(255, 250, 240, 0.08);
   color: var(--on-dark);
   box-shadow: inset 0 1px 0 rgba(255, 250, 240, 0.08);
 }
 
-:root[data-theme="dark"] .units-page .media-pdf-toggle:hover {
+:root[data-theme="dark"] .units-page .media-pdf-toggle:hover,
+:root[data-theme="dark"] .details-page .media-pdf-toggle:hover {
   border-color: rgba(231, 201, 142, 0.52);
   background: rgba(231, 201, 142, 0.16);
 }
 
-:root[data-theme="dark"] .units-page .media-pdf-toggle .pdf-visibility-indicator {
+:root[data-theme="dark"] .units-page .media-pdf-toggle .pdf-visibility-indicator,
+:root[data-theme="dark"] .details-page .media-pdf-toggle .pdf-visibility-indicator {
   border-color: rgba(231, 201, 142, 0.34);
   background: rgba(13, 13, 15, 0.28);
 }
@@ -6003,6 +6035,36 @@ dd,
 :root[data-theme="dark"] .wizard-step.active span {
   background: var(--brand-gold-soft);
   color: var(--brand-black);
+}
+
+:root[data-theme="dark"] .create-page .wizard-actions {
+  border-color: rgba(231, 201, 142, 0.3);
+  background:
+    linear-gradient(135deg, rgba(31, 31, 35, 0.94), rgba(13, 13, 15, 0.9)),
+    rgba(23, 23, 26, 0.92);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 250, 240, 0.06),
+    0 18px 42px rgba(0, 0, 0, 0.34);
+}
+
+:root[data-theme="dark"] .create-page .wizard-actions .secondary-button {
+  border-color: rgba(231, 201, 142, 0.34);
+  background: rgba(255, 250, 240, 0.08);
+  color: var(--on-dark);
+}
+
+:root[data-theme="dark"] .create-page .wizard-actions .secondary-button:disabled {
+  border-color: rgba(255, 250, 240, 0.14);
+  background: rgba(255, 250, 240, 0.12);
+  color: #d8d0c3;
+  opacity: 1;
+}
+
+:root[data-theme="dark"] .create-page .wizard-actions .primary-button {
+  border-color: rgba(231, 201, 142, 0.72);
+  background: linear-gradient(135deg, var(--brand-gold-soft), var(--brand-warm-gold));
+  color: var(--brand-black);
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.32);
 }
 
 :root[data-theme="dark"] .primary-button {
