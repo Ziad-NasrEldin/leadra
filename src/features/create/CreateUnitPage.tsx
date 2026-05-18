@@ -42,6 +42,8 @@ export function CreateUnitPage({
   const [submitting, setSubmitting] = useState(false)
   const activeStepIndex = createUnitSteps.indexOf(activeStep)
   const mediaValidation = validateMediaUpload(selectedMedia)
+  const hasSelectedImage = selectedMedia.some((file) => file.type === 'image')
+  const isCreateBlocked = submitting || !hasSelectedImage || !mediaValidation.ok
   const totalMediaMb = selectedMedia.reduce((total, file) => total + file.sizeBytes, 0) / (1024 * 1024)
   const remainingPayment = Math.max(0, totalAmount - downPayment)
   const calculatedInstallment =
@@ -90,6 +92,14 @@ export function CreateUnitPage({
         onSubmit={async (event) => {
           if (submitting) {
             event.preventDefault()
+            return
+          }
+          if (!hasSelectedImage) {
+            event.preventDefault()
+            setMediaError({
+              message: t('error.imageRequired'),
+              messageKey: 'error.imageRequired',
+            })
             return
           }
           const validation = validateMediaUpload(selectedMedia)
@@ -331,7 +341,7 @@ export function CreateUnitPage({
             </div>
             {mediaError && <p className="form-error motion-feedback">{renderError(locale, { message: mediaError.message, messageKey: mediaError.messageKey, messageParams: mediaError.messageParams })}</p>}
             {!mediaValidation.ok && !mediaError && <p className="form-error motion-feedback">{renderError(locale, { message: mediaValidation.message ?? t('error.invalidMediaUpload'), messageKey: mediaValidation.messageKey ?? 'error.invalidMediaUpload', messageParams: mediaValidation.messageParams ?? null })}</p>}
-            {selectedMedia.length === 0 && <p className="media-empty-note motion-stage" style={motionStyle(1, 150)}>{t('create.noImages')}</p>}
+            {!hasSelectedImage && mediaValidation.ok && !mediaError && <p className="form-error motion-feedback">{t('error.imageRequired')}</p>}
             <div className="upload-preview-grid">
               {selectedMedia.map((file, index) => (
                 <div className="upload-preview-card motion-stage" key={file.id} style={motionStyle(index, 170)}>
@@ -383,7 +393,7 @@ export function CreateUnitPage({
               ))}
             </div>
           </div>
-          <button className="primary-button" type="submit" disabled={submitting}>
+          <button className="primary-button" type="submit" disabled={isCreateBlocked}>
             {submitting ? t('common.saving') : t('create.createAndNotify')}
           </button>
         </section>

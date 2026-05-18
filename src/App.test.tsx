@@ -527,6 +527,36 @@ describe('Leadra app shell', () => {
     expect(screen.queryByRole('spinbutton', { name: /transfer fees/i })).not.toBeInTheDocument()
   })
 
+  it('blocks create-unit submission until at least one image is uploaded', async () => {
+    const user = userEvent.setup()
+
+    render(
+      <LocaleProvider>
+        <CreateUnitPage
+          activeStep="Review"
+          lookupValues={lookupValues}
+          settings={initialAppState.settings}
+          onStepChange={vi.fn()}
+          onSubmit={vi.fn()}
+        />
+      </LocaleProvider>,
+    )
+
+    const createButton = screen.getByRole('button', { name: /create unit and notify team/i })
+    expect(screen.getByText(/upload at least one unit image before creating the unit/i)).toBeInTheDocument()
+    expect(createButton).toBeDisabled()
+
+    const image = new File(
+      [Uint8Array.from(atob('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAFgwJ/lZrD9wAAAABJRU5ErkJggg=='), (char) => char.charCodeAt(0))],
+      'living-room.png',
+      { type: 'image/png' },
+    )
+    await user.upload(screen.getByLabelText(/unit images/i), image)
+
+    expect(await screen.findByText(/living-room.png/i)).toBeInTheDocument()
+    expect(createButton).toBeEnabled()
+  })
+
   it('lets admins edit property, owner, and PRD pricing fields inline from unit details', async () => {
     renderApp()
     const user = userEvent.setup()
