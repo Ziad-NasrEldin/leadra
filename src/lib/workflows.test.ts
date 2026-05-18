@@ -399,6 +399,72 @@ describe('Leadra product workflows', () => {
     })
   })
 
+  it('allows the same owner name inside one project when owner phones differ', () => {
+    const result = createUnitWorkflow(state(), sales, {
+      developerId: 'dev-palm',
+      developerName: 'Palm Hills',
+      projectId: 'project-new-cairo',
+      projectName: 'New Cairo Estates',
+      destinationId: 'dest-new-cairo',
+      destinationName: 'New Cairo',
+      unitType: 'Apartment',
+      floor: '1st',
+      bua: 155,
+      viewId: 'view-garden',
+      viewName: 'Garden',
+      bedrooms: 3,
+      bathrooms: 2,
+      elevator: true,
+      finish: 'Fully Finished',
+      furnished: false,
+      paymentMethod: 'cash',
+      totalAmount: 6_000_000,
+      deliveryExpectancy: { mode: 'year', year: 2029 },
+      originalOwnerName: 'Hassan Nabil',
+      countryCode: '+20',
+      originalOwnerPhone: '010 3333 4444',
+      salesNotes: 'Repeated owner name with a new phone.',
+      media: [],
+    })
+
+    expect(result.ok).toBe(true)
+    expect(result.state.units[0].originalOwnerName).toBe('Hassan Nabil')
+    expect(result.state.units[0].normalizedOwnerPhone).toBe('+201033334444')
+  })
+
+  it('allows the same owner phone in a different project', () => {
+    const result = createUnitWorkflow(state(), sales, {
+      developerId: 'dev-palm',
+      developerName: 'Palm Hills',
+      projectId: 'project-zed',
+      projectName: 'ZED East',
+      destinationId: 'dest-new-cairo',
+      destinationName: 'New Cairo',
+      unitType: 'Apartment',
+      floor: '1st',
+      bua: 155,
+      viewId: 'view-garden',
+      viewName: 'Garden',
+      bedrooms: 3,
+      bathrooms: 2,
+      elevator: true,
+      finish: 'Fully Finished',
+      furnished: false,
+      paymentMethod: 'cash',
+      totalAmount: 6_000_000,
+      deliveryExpectancy: { mode: 'year', year: 2029 },
+      originalOwnerName: 'Different Project Owner',
+      countryCode: '+971',
+      originalOwnerPhone: '+971 50 123 4567',
+      salesNotes: 'Same phone in a different project.',
+      media: [],
+    })
+
+    expect(result.ok).toBe(true)
+    expect(result.state.units[0].projectId).toBe('project-zed')
+    expect(result.state.units[0].normalizedOwnerPhone).toBe('+971501234567')
+  })
+
   it('rejects owner phone values that do not match the selected country format', () => {
     const result = createUnitWorkflow(state(), sales, {
       developerId: 'dev-palm',

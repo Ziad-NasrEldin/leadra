@@ -462,10 +462,8 @@ export function toSafeUnitViewModel(row: SafeUnitRpcRow): LeadraUnit {
   }
 }
 
-export function toMediaInsertPayload(unitId: number, file: LeadraMediaFile) {
+export function toMediaInsertPayload(file: LeadraMediaFile) {
   return {
-    id: file.id,
-    unit_id: unitId,
     type: file.type === 'pdf' ? 'pdf' : 'image',
     storage_path: file.url,
     file_name: file.name,

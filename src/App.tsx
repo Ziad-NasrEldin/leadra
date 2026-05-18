@@ -62,6 +62,7 @@ import {
   type LocalizedFlashMessage,
 } from './lib/messageRendering'
 import { authPasswordCandidates, createManagedUserProfile, updateManagedUserPassword, updateManagedUserProfile } from './lib/adminAuth'
+import { createUnitRemoteErrorFlash, mediaPdfVisibilityErrorFlash } from './lib/createUnitErrors'
 import { LeadraRepository } from './lib/repository'
 import { canUseDemoMode, isPerformanceDemoMode, isProductionMissingSupabaseConfig, isSupabaseConfigured, supabase } from './lib/supabase'
 import { loadSupabaseAnalyticsDashboard, loadSupabaseAppState, loadSupabaseProfile, markSupabaseLogin, setSupabaseThemePreference } from './lib/supabaseState'
@@ -178,7 +179,6 @@ function errorMessage(error: unknown) {
   if (typeof error === 'object' && error && 'message' in error) return String(error.message)
   return 'Please try again.'
 }
-
 
 const createStepFromSlug: Record<CreateStepSlug, CreateUnitStep> = {
   property: 'Property',
@@ -575,9 +575,9 @@ function LeadraApp() {
   const routeDestinationId = route.view === 'units' ? route.destinationId : null
   const routeProjectId = route.view === 'units' ? route.projectId : null
   const routeUnitId = route.view === 'details' ? route.unitId : null
-  const activeSelectedDestinationId = routeDestinationId || unitFilters.destinationId || null
+  const activeSelectedDestinationId = routeDestinationId
   const projectSummaries = summarizeProjectsWithLookups(visibleUnits, activeLookupValues, locale, activeSelectedDestinationId)
-  const activeSelectedProjectId = routeProjectId || unitFilters.projectId || null
+  const activeSelectedProjectId = routeProjectId
   const unitsBrowserStage: UnitsBrowserStage = routeProjectId ? 'units' : routeDestinationId ? 'projects' : 'destinations'
   const activeCreateStep = createStepFromSlug[route.createStep]
   const activeAdminSection = adminSectionFromSlug[route.adminSection]
@@ -587,8 +587,8 @@ function LeadraApp() {
     : visibleUnits[0] ?? null
   const filteredUnits = searchUnits(user, appState.units, {
     ...unitFilters,
-    destinationId: unitFilters.destinationId || activeSelectedDestinationId || undefined,
-    projectId: activeSelectedProjectId ?? undefined,
+    destinationId: routeDestinationId ?? unitFilters.destinationId,
+    projectId: routeProjectId ?? unitFilters.projectId,
   })
   const displayedUnits = remoteSearchUnits ?? filteredUnits
   const selectedBatchUnits = displayedUnits.filter((unit) => selectedBatchUnitIds.includes(unit.id))
@@ -739,7 +739,7 @@ function LeadraApp() {
         newUnit = remoteUnit
       }
     } catch (error) {
-      setFlash({ text: `Unit could not be created: ${errorMessage(error)}`, messageKey: null, messageParams: null })
+      setFlash(createUnitRemoteErrorFlash(error))
       return
     }
 
@@ -1041,6 +1041,8 @@ function LeadraApp() {
   }
 
   async function setUnitMediaPdfVisibility(unitId: number, mediaId: string, includeInPdf: boolean) {
+    const previousState = appState
+    const previousRemoteSearchUnits = remoteSearchUnits
     const unit = appState.units.find((item) => item.id === unitId)
     const media = unit?.media.find((file) => file.id === mediaId)
     setAppState((state) => ({
@@ -1101,7 +1103,10 @@ function LeadraApp() {
       }
     } catch (error) {
       console.error('Media PDF visibility update failed', error)
-      setFlash({ text: 'PDF visibility could not be saved remotely. Please try again.', messageKey: null, messageParams: null })
+      setAppState(previousState)
+      setRemoteSearchUnits(previousRemoteSearchUnits)
+      invalidateGeneratedPdf(unitId)
+      setFlash(mediaPdfVisibilityErrorFlash(error))
     }
   }
 
@@ -1289,7 +1294,7 @@ function LeadraApp() {
     setSelectedBatchUnitIds([])
   }
 
-  async function loadRemoteUnitSearch(nextFilters: UnitFilters, destinationId = activeSelectedDestinationId, projectId = activeSelectedProjectId) {
+  async function loadRemoteUnitSearch(nextFilters: UnitFilters, destinationId = routeDestinationId, projectId = routeProjectId) {
     if (!supabase || !isSupabaseConfigured) {
       setRemoteSearchUnits(null)
       return
@@ -3356,4 +3361,3 @@ function toBranchDirectoryItem(row: Record<string, unknown>): BranchDirectoryIte
 function translateForLocale(locale: LocaleCode, key: string, params?: MessageParams) {
   return translate(locale, key, params)
 }
-

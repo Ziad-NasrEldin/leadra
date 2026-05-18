@@ -82,6 +82,43 @@ function safeUnitRpcRow(overrides: Partial<SafeUnitRpcRow> = {}): SafeUnitRpcRow
   }
 }
 
+function createUnitInput(overrides: Partial<CreateUnitInput> = {}): CreateUnitInput {
+  return {
+    developerId: 'dev-1',
+    developerName: 'Palm Hills',
+    projectId: 'project-1',
+    projectName: 'Mountain View',
+    destinationId: 'dest-1',
+    destinationName: 'New Cairo',
+    unitType: 'Apartment',
+    floor: '3rd',
+    bua: 188,
+    roofGardenArea: null,
+    gardenArea: null,
+    terraceArea: null,
+    viewId: 'view-1',
+    viewName: 'Garden',
+    bedrooms: 3,
+    bathrooms: 2,
+    elevator: true,
+    landArea: null,
+    furnished: false,
+    finish: 'Fully Finished',
+    paymentMethod: 'cash',
+    totalAmount: 5_500_000,
+    downPayment: null,
+    installmentType: null,
+    installmentYears: null,
+    deliveryExpectancy: { mode: 'year', year: 2029 },
+    originalOwnerName: 'Owner',
+    countryCode: '+20',
+    originalOwnerPhone: '01033334444',
+    salesNotes: 'Updated notes.',
+    media: [],
+    ...overrides,
+  }
+}
+
 describe('LeadraRepository', () => {
   it('keeps remote unit search scoped to the requested project and destination', async () => {
     const calls: Array<{ fn: string; args: unknown }> = []
@@ -136,8 +173,8 @@ describe('LeadraRepository', () => {
     expect(result.map((unit) => unit.unitCode)).toEqual(['ZE4BR'])
   })
 
-  it('creates units without sending a display code and uses the database-generated PRD code', async () => {
-    const inserts: unknown[] = []
+  it('creates units through the atomic create RPC and uses the database-generated PRD code', async () => {
+    const calls: Array<{ fn: string; args: unknown }> = []
     const input: CreateUnitInput = {
       developerId: 'dev-1',
       developerName: 'Palm Hills',
@@ -169,16 +206,38 @@ describe('LeadraRepository', () => {
       countryCode: '+20',
       originalOwnerPhone: '01033334444',
       salesNotes: 'Updated notes.',
-      media: [],
+      media: [
+        {
+          id: 'local-image',
+          type: 'image',
+          url: 'data:image/png;base64,abc',
+          name: 'living-room.png',
+          sizeBytes: 1024,
+          includeInPdf: false,
+        },
+        {
+          id: 'local-pdf',
+          type: 'pdf',
+          url: 'data:application/pdf;base64,abc',
+          name: 'floor-plan.pdf',
+          sizeBytes: 2048,
+          includeInPdf: true,
+        },
+      ],
     }
     const client = {
+      rpc(fn: string, args: unknown) {
+        calls.push({ fn, args })
+        return Promise.resolve({ error: null, data: 105 })
+      },
       from(table: string) {
         expect(table).toBe('units')
         return {
-          insert(payload: unknown) {
-            inserts.push(payload)
+          select() {
             return {
-              select() {
+              eq(column: string, value: number) {
+                expect(column).toBe('id')
+                expect(value).toBe(105)
                 return {
                   single() {
                     return Promise.resolve({
@@ -234,7 +293,7 @@ describe('LeadraRepository', () => {
                         unit_notes: [],
                       },
                     })
-                  },
+                  }
                 }
               },
             }
@@ -245,10 +304,90 @@ describe('LeadraRepository', () => {
 
     const result = await new LeadraRepository(client as never).createUnit(salesUser(), input)
 
-    expect(inserts[0]).not.toHaveProperty('unit_code')
+    expect(calls).toHaveLength(1)
+    expect(calls[0].fn).toBe('create_unit_with_media')
+    expect(calls[0].args).toMatchObject({
+      unit_payload: {
+        developer_id: 'dev-1',
+        project_id: 'project-1',
+        created_by: 'sales-replacement',
+      },
+      media_payload: [
+        {
+          type: 'image',
+          storage_path: 'data:image/png;base64,abc',
+          file_name: 'living-room.png',
+          size_bytes: 1024,
+          include_in_pdf: false,
+        },
+        {
+          type: 'pdf',
+          storage_path: 'data:application/pdf;base64,abc',
+          file_name: 'floor-plan.pdf',
+          size_bytes: 2048,
+          include_in_pdf: false,
+        },
+      ],
+    })
+    expect(calls[0].args).not.toMatchObject({ unit_payload: { unit_code: expect.anything() } })
     expect(result.unitCode).toBe('MV3BR')
     expect(result.unitCode).not.toContain('Ba')
     expect(result.unitCode).not.toContain(String(result.id))
+  })
+
+  it('does not reload a unit when atomic create RPC fails', async () => {
+    const createError = { code: 'PGRST204', message: "Could not find the 'include_in_pdf' column of 'unit_media' in the schema cache" }
+    const client = {
+      rpc() {
+        return Promise.resolve({ error: createError, data: null })
+      },
+      from() {
+        throw new Error('reload should not run after create failure')
+      },
+    }
+
+    await expect(new LeadraRepository(client as never).createUnit(salesUser(), createUnitInput())).rejects.toBe(createError)
+  })
+
+  it('rejects unsupported media before calling the atomic create RPC', async () => {
+    const client = {
+      rpc() {
+        throw new Error('rpc should not run with unsupported media')
+      },
+    }
+
+    await expect(new LeadraRepository(client as never).createUnit(salesUser(), createUnitInput({
+      media: [{ id: 'video-1', type: 'video', url: '/tour.mp4', name: 'tour.mp4', sizeBytes: 1024 }],
+    }))).rejects.toThrow('Only image files and PDF attachments are allowed')
+  })
+
+  it('surfaces reload failures separately after atomic create succeeds', async () => {
+    const reloadError = new Error('created unit could not be reloaded')
+    const client = {
+      rpc() {
+        return Promise.resolve({ error: null, data: 105 })
+      },
+      from(table: string) {
+        expect(table).toBe('units')
+        return {
+          select() {
+            return {
+              eq(column: string, value: number) {
+                expect(column).toBe('id')
+                expect(value).toBe(105)
+                return {
+                  single() {
+                    return Promise.resolve({ error: reloadError, data: null })
+                  },
+                }
+              },
+            }
+          },
+        }
+      },
+    }
+
+    await expect(new LeadraRepository(client as never).createUnit(salesUser(), createUnitInput())).rejects.toThrow('created unit could not be reloaded')
   })
 
   it('persists unit detail updates through the protected update payload', async () => {

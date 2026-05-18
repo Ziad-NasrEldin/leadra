@@ -22,8 +22,6 @@ dist-ssr
 *.njsproj
 *.sln
 *.sw?
-# Added by code-review-graph
-.code-review-graph/
 .gstack/
 supabase/.temp/
 
@@ -36,6 +34,7 @@ performance-reports/
 
 # Local agent/context caches
 .lean-ctx/
+.codex-tools/
 
 # Generated PRD gap and merge verification artifacts
 artifacts/leadra_prd_exact_*

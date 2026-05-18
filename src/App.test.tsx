@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import App from './App'
 import { CreateUnitPage } from './features/create/CreateUnitPage'
 import { initialAppState, lookupValues } from './data/seed'
+import { createUnitRemoteErrorFlash, mediaPdfVisibilityErrorFlash } from './lib/createUnitErrors'
 import { LocaleProvider } from './lib/i18n'
 import { ThemeProvider } from './lib/theme'
 
@@ -93,7 +94,28 @@ describe('Leadra app shell', () => {
     Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: originalRevokeObjectURL })
   })
 
-  it('lets a demo user enter the destination-first unit browser', async () => {
+  it('renders a friendly create-unit schema-cache error instead of raw Supabase text', () => {
+    expect(createUnitRemoteErrorFlash({
+      code: 'PGRST204',
+      message: "Could not find the 'include_in_pdf' column of 'unit_media' in the schema cache",
+    }).text).toMatch(/latest Supabase migrations/i)
+  })
+
+  it('renders targeted create-unit duplicate owner phone guidance', () => {
+    expect(createUnitRemoteErrorFlash({
+      code: '23505',
+      message: 'duplicate key value violates unique constraint "units_project_owner_phone_unique"',
+    }).text).toMatch(/owner phone already exists/i)
+  })
+
+  it('renders a friendly PDF visibility schema-cache error', () => {
+    expect(mediaPdfVisibilityErrorFlash({
+      code: 'PGRST204',
+      message: "Could not find the 'include_in_pdf' column of 'unit_media' in the schema cache",
+    }).text).toMatch(/PDF visibility could not be saved/i)
+  })
+
+  it('lets a demo user enter global unit search and keep browsing by destination', async () => {
     renderApp()
     const user = userEvent.setup()
 
@@ -108,7 +130,9 @@ describe('Leadra app shell', () => {
     expect(screen.getByRole('heading', { name: /projects by inventory/i })).toBeInTheDocument()
     await user.click(screen.getByRole('link', { name: /view all units/i }))
 
-    expect(await screen.findByRole('heading', { name: /choose a destination/i })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: /search all units/i })).toBeInTheDocument()
+    expect(await screen.findByText(/NC3BR/i)).toBeInTheDocument()
+    expect(await screen.findByText(/ZE4BR/i)).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: /^new cairo/i }))
     expect(window.location.pathname).toBe('/units/destinations/dest-new-cairo')
     expect(await screen.findByRole('button', { name: /new cairo estates/i })).toBeInTheDocument()
@@ -118,6 +142,30 @@ describe('Leadra app shell', () => {
     expect(window.location.pathname).toBe('/units/destinations/dest-new-cairo/projects/project-new-cairo')
     expect(await screen.findByText(/NC3BR/i)).toBeInTheDocument()
     expect(screen.queryByText(/ZE4BR/i)).not.toBeInTheDocument()
+  })
+
+  it('filters units globally without navigating into destination or project routes', async () => {
+    renderApp()
+    const user = userEvent.setup()
+
+    await openLoginPage(user)
+    await signInAs(user, /continue as admin/i)
+    await user.click(screen.getByRole('link', { name: /view all units/i }))
+
+    expect(await screen.findByRole('heading', { name: /search all units/i })).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: /show filters/i }))
+    await chooseFromSelect(user, /project/i, /new cairo estates/i)
+
+    expect(window.location.pathname).toBe('/units')
+    expect(await screen.findByText(/NC3BR/i)).toBeInTheDocument()
+    expect(screen.queryByText(/ZE4BR/i)).not.toBeInTheDocument()
+
+    await user.click(screen.getAllByRole('button', { name: /^reset$/i })[0])
+    await chooseFromSelect(user, /destination/i, /sheikh zayed/i)
+
+    expect(window.location.pathname).toBe('/units')
+    expect(await screen.findByText(/ZE4BR/i)).toBeInTheDocument()
+    expect(screen.queryByText(/NC3BR/i)).not.toBeInTheDocument()
   })
 
   it('selects units for batch pdf generation and preserves row navigation', async () => {
@@ -213,7 +261,7 @@ describe('Leadra app shell', () => {
     await openLoginPage(user)
     await signInAs(user, /continue as admin/i)
 
-    expect(await screen.findByRole('heading', { name: /choose a destination/i })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: /search all units/i })).toBeInTheDocument()
     expect(window.location.pathname).toBe('/units')
     expect(window.location.hash).toBe('')
     await user.click(screen.getByRole('link', { name: /^create$/i }))

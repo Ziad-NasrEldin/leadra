@@ -78,7 +78,7 @@ export async function generateUnitPdfFile(
   generatedAt = new Date(),
 ): Promise<GeneratedPdf> {
   const blob = await buildPermissionSafePdfBlob(user, unit, settings, locale)
-  return { blob, fileName: `leadra-${unit.unitCode}-${formatPdfTimestamp(generatedAt)}.pdf` }
+  return { blob, fileName: `${unit.unitCode}-${formatPdfMonthDay(generatedAt)}.pdf` }
 }
 
 function buildPdfUnitDetails(user: LeadraUser, unit: LeadraUnit, locale: LocaleCode) {
@@ -376,8 +376,10 @@ function formatOptionalArea(value: number | null | undefined) {
   return value == null ? '' : formatArea(value)
 }
 
-function formatPdfTimestamp(date: Date) {
-  return date.toISOString().replace(/\.\d{3}Z$/, 'Z').replace(/[:-]/g, '').replace('T', '-').replace('Z', '')
+const PDF_FILE_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'] as const
+
+function formatPdfMonthDay(date: Date) {
+  return `${PDF_FILE_MONTHS[date.getUTCMonth()]}${date.getUTCDate()}`
 }
 
 export function downloadGeneratedPdf(pdf: GeneratedPdf): void {

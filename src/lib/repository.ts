@@ -68,30 +68,25 @@ export class LeadraRepository {
   }
 
   async createUnit(actor: LeadraUser, input: CreateUnitInput): Promise<LeadraUnit> {
-    const { data, error } = await this.client
-      .from('units')
-      .insert(toUnitInsertPayload(input, actor))
-      .select(unitSelect)
-      .single()
+    const unsupportedMedia = input.media.find((file) => file.type !== 'image' && file.type !== 'pdf')
+    if (unsupportedMedia) {
+      throw new Error('Upload failed. Only image files and PDF attachments are allowed.')
+    }
+    const media = input.media.filter((file) => file.type === 'image' || file.type === 'pdf')
+    const { data: createdUnitId, error } = await this.client.rpc('create_unit_with_media', {
+      unit_payload: toUnitInsertPayload(input, actor),
+      media_payload: media.map(toMediaInsertPayload),
+    })
 
     if (error) throw error
-    const unit = toUnitViewModel(data as unknown as SupabaseUnitRow)
-    const media = input.media.filter((file) => file.type === 'image' || file.type === 'pdf')
-    if (media.length === 0) return unit
-
-    const { error: mediaError } = await this.client
-      .from('unit_media')
-      .insert(media.map((file) => toMediaInsertPayload(unit.id, file)))
-    if (mediaError) throw mediaError
-
-    const { data: mediaData, error: reloadError } = await this.client
+    const { data: unitData, error: reloadError } = await this.client
       .from('units')
       .select(unitSelect)
-      .eq('id', unit.id)
+      .eq('id', createdUnitId as number)
       .single()
 
     if (reloadError) throw reloadError
-    return toUnitViewModel(mediaData as unknown as SupabaseUnitRow)
+    return toUnitViewModel(unitData as unknown as SupabaseUnitRow)
   }
 
   async updateUnitDetails(

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { toUnitInsertPayload, toUnitUpdatePayload, toUnitViewModel, type SupabaseUnitRow } from './supabaseMapper'
+import { toMediaInsertPayload, toUnitInsertPayload, toUnitUpdatePayload, toUnitViewModel, type SupabaseUnitRow } from './supabaseMapper'
 import type { CreateUnitInput, LeadraUser, UnitEditInput } from './types'
 
 const actor: LeadraUser = {
@@ -198,6 +198,44 @@ describe('Supabase mappers', () => {
     })
 
     expect(payload).not.toHaveProperty('transfer_fees')
+  })
+
+  it('maps image PDF visibility into media inserts and leaves database ids server-generated', () => {
+    const payload = toMediaInsertPayload({
+      id: 'media-1',
+      type: 'image',
+      url: 'units/105/media-1.jpg',
+      name: 'media-1.jpg',
+      sizeBytes: 1024,
+      includeInPdf: true,
+    })
+
+    expect(payload).toMatchObject({
+      type: 'image',
+      storage_path: 'units/105/media-1.jpg',
+      file_name: 'media-1.jpg',
+      size_bytes: 1024,
+      include_in_pdf: true,
+    })
+    expect(payload).not.toHaveProperty('id')
+    expect(payload).not.toHaveProperty('unit_id')
+  })
+
+  it('keeps PDF attachments out of generated unit PDFs when persisting media', () => {
+    expect(toMediaInsertPayload({
+      id: 'media-pdf',
+      type: 'pdf',
+      url: 'units/105/floor-plan.pdf',
+      name: 'floor-plan.pdf',
+      sizeBytes: 2048,
+      includeInPdf: true,
+    })).toMatchObject({
+      type: 'pdf',
+      storage_path: 'units/105/floor-plan.pdf',
+      file_name: 'floor-plan.pdf',
+      size_bytes: 2048,
+      include_in_pdf: false,
+    })
   })
 
   it('maps joined Supabase rows back to the app unit model', () => {

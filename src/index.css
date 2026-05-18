@@ -3641,6 +3641,26 @@ dd,
   margin-bottom: var(--space-4);
 }
 
+:root[data-theme="dark"] .review-panel {
+  border-color: rgba(231, 201, 142, 0.38);
+  background:
+    radial-gradient(circle at 100% 0%, rgba(214, 176, 111, 0.18), transparent 11rem),
+    linear-gradient(180deg, rgba(35, 49, 67, 0.98), rgba(21, 31, 44, 0.98));
+  color: var(--brand-ivory);
+  box-shadow: inset 0 1px 0 rgba(255, 250, 240, 0.08), 0 18px 45px rgba(0, 0, 0, 0.24);
+}
+
+:root[data-theme="dark"] .review-panel h3,
+:root[data-theme="dark"] .review-panel legend,
+:root[data-theme="dark"] .review-panel label {
+  color: #fffaf0;
+}
+
+:root[data-theme="dark"] .review-panel p:not(.eyebrow),
+:root[data-theme="dark"] .review-panel .media-empty-note {
+  color: rgba(255, 250, 240, 0.78);
+}
+
 .media-upload-panel {
   display: grid;
   gap: var(--space-3);
@@ -3663,6 +3683,30 @@ dd,
 .media-empty-note {
   color: var(--muted);
   font-weight: 800;
+}
+
+:root[data-theme="dark"] .review-panel .media-upload-summary,
+:root[data-theme="dark"] .review-panel .upload-preview-card,
+:root[data-theme="dark"] .review-panel .pdf-visibility-toggle {
+  border-color: rgba(255, 250, 240, 0.18);
+  background: rgba(255, 250, 240, 0.1);
+  color: #fffaf0;
+  box-shadow: inset 0 1px 0 rgba(255, 250, 240, 0.08), 0 14px 30px rgba(0, 0, 0, 0.18);
+}
+
+:root[data-theme="dark"] .review-panel .media-upload-summary span,
+:root[data-theme="dark"] .review-panel .upload-preview-card small {
+  color: rgba(255, 250, 240, 0.72);
+}
+
+:root[data-theme="dark"] .review-panel input[type="file"] {
+  color: #fffaf0;
+}
+
+:root[data-theme="dark"] .review-panel input[type="file"]::file-selector-button {
+  border: 1px solid rgba(255, 250, 240, 0.2);
+  background: rgba(255, 250, 240, 0.12);
+  color: #fffaf0;
 }
 
 .form-error {
@@ -5355,6 +5399,16 @@ dd,
 }
 
 @media (max-width: 767px) {
+  .create-card {
+    padding-bottom: calc(6.5rem + env(safe-area-inset-bottom));
+  }
+
+  .create-card .wizard-actions {
+    position: static;
+    margin-top: var(--space-3);
+    border-radius: 1rem;
+  }
+
   .login-card {
     padding: 0.65rem;
     gap: 0.7rem;
