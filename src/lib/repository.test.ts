@@ -654,6 +654,41 @@ describe('LeadraRepository', () => {
     await expect(new LeadraRepository(client as never).updateUnitStatus(5, 'hold')).rejects.toThrow('permission denied')
   })
 
+  it('persists unit archive and verifies the updated row is visible', async () => {
+    const updates: unknown[] = []
+    const filters: Array<{ column: string; value: number }> = []
+    const client = {
+      from(table: string) {
+        expect(table).toBe('units')
+        return {
+          update(payload: unknown) {
+            updates.push(payload)
+            return {
+              eq(column: string, value: number) {
+                filters.push({ column, value })
+                return {
+                  select(columns: string) {
+                    expect(columns).toBe('id')
+                    return {
+                      single() {
+                        return Promise.resolve({ error: null, data: { id: value } })
+                      },
+                    }
+                  },
+                }
+              },
+            }
+          },
+        }
+      },
+    }
+
+    await new LeadraRepository(client as never).archiveUnit(105)
+
+    expect(updates).toEqual([{ archived: true }])
+    expect(filters).toEqual([{ column: 'id', value: 105 }])
+  })
+
   it('persists payment timetable paid/unpaid actions through the protected RPC', async () => {
     const calls: Array<{ fn: string; args: unknown }> = []
     const client = {

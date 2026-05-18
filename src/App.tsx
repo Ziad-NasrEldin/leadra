@@ -959,18 +959,34 @@ function LeadraApp() {
     }
   }
 
-  function archiveUnit(unit: LeadraUnit) {
+  async function archiveUnit(unit: LeadraUnit) {
     const result = archiveUnitWorkflow(appState, user, unit.id)
-    setAppState(result.state)
     if (!result.ok) {
+      setAppState(result.state)
       setFlash({ text: result.error, messageKey: result.errorKey ?? null, messageParams: result.errorParams ?? null })
       return
     }
-    setFlash(createFlashMessage('flash.unitArchived', 'Unit archived. It remains stored for history, audit, and backups.'))
-    runPageTransition(() => {
-      setView('units')
-      routerNavigate('/units')
-    })
+
+    const previousState = appState
+    const archivedUnit = result.state.units.find((item) => item.id === unit.id) ?? { ...unit, archived: true, updatedAt: new Date().toISOString() }
+    setAppState(result.state)
+    setRemoteSearchUnits((items) => items?.map((item) => item.id === unit.id ? archivedUnit : item) ?? null)
+
+    try {
+      if (supabase && isSupabaseConfigured) {
+        await new LeadraRepository(supabase).archiveUnit(unit.id)
+      }
+      invalidateGeneratedPdf(unit.id)
+      setFlash(createFlashMessage('flash.unitArchived', 'Unit archived. It remains stored for history, audit, and backups.'))
+      runPageTransition(() => {
+        setView('units')
+        routerNavigate('/units')
+      })
+    } catch (error) {
+      setAppState(previousState)
+      setRemoteSearchUnits((items) => items?.map((item) => item.id === unit.id ? unit : item) ?? null)
+      setFlash({ text: `Unit could not be archived: ${errorMessage(error)}`, messageKey: null, messageParams: null })
+    }
   }
 
   function saveSharedNote(unit: LeadraUnit, content: string) {
@@ -1493,7 +1509,7 @@ function LeadraApp() {
               user={user}
               unit={selectedUnit}
               lookupValues={activeLookupValues}
-              onArchive={() => archiveUnit(selectedUnit)}
+              onArchive={() => { void archiveUnit(selectedUnit) }}
               onUpdateUnit={(event) => handleUpdateUnit(selectedUnit, event)}
               onStatusChange={(status) => updateUnitStatus(selectedUnit, status)}
               onGeneratePdf={() => generatePdf(selectedUnit)}

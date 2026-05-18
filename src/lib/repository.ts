@@ -98,7 +98,13 @@ export class LeadraRepository {
 
     if (media.length > 0) {
       const mediaPayload = media.map((file) => {
-        const { include_in_pdf: _includeInPdf, ...payload } = toMediaInsertPayload(file)
+        const mediaInsert = toMediaInsertPayload(file)
+        const payload = {
+          type: mediaInsert.type,
+          storage_path: mediaInsert.storage_path,
+          file_name: mediaInsert.file_name,
+          size_bytes: mediaInsert.size_bytes,
+        }
         return { ...payload, unit_id: createdUnitId }
       })
       const { error: mediaError } = await this.client.from('unit_media').insert(mediaPayload)
@@ -138,7 +144,7 @@ export class LeadraRepository {
   }
 
   async archiveUnit(unitId: number): Promise<void> {
-    const { error } = await this.client.from('units').update({ archived: true }).eq('id', unitId)
+    const { error } = await this.client.from('units').update({ archived: true }).eq('id', unitId).select('id').single()
     if (error) throw error
   }
 
