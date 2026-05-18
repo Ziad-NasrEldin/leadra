@@ -15,6 +15,7 @@ import {
 import type { AnalyticsEventType, CreateUnitInput, LeadraUnit, LeadraUser, MessageParams, UnitEditInput, UnitFilters, UnitStatus, UserRole } from './types'
 
 type FunctionErrorBody = { error?: string; message?: string }
+type SupabaseErrorLike = { code?: string; message?: string; details?: string; hint?: string } | null | undefined
 
 const unitSelect = `
   *,
@@ -78,11 +79,40 @@ export class LeadraRepository {
       media_payload: media.map(toMediaInsertPayload),
     })
 
+    if (isMissingAtomicCreateRpc(error)) {
+      return this.createUnitWithoutAtomicRpc(actor, input, media)
+    }
     if (error) throw error
+    return this.loadUnit(createdUnitId as number)
+  }
+
+  private async createUnitWithoutAtomicRpc(actor: LeadraUser, input: CreateUnitInput, media: CreateUnitInput['media']): Promise<LeadraUnit> {
+    const { data: createdUnit, error: createError } = await this.client
+      .from('units')
+      .insert(toUnitInsertPayload(input, actor))
+      .select('id')
+      .single()
+
+    if (createError) throw createError
+    const createdUnitId = (createdUnit as { id: number }).id
+
+    if (media.length > 0) {
+      const mediaPayload = media.map((file) => {
+        const { include_in_pdf: _includeInPdf, ...payload } = toMediaInsertPayload(file)
+        return { ...payload, unit_id: createdUnitId }
+      })
+      const { error: mediaError } = await this.client.from('unit_media').insert(mediaPayload)
+      if (mediaError) throw mediaError
+    }
+
+    return this.loadUnit(createdUnitId)
+  }
+
+  private async loadUnit(unitId: number): Promise<LeadraUnit> {
     const { data: unitData, error: reloadError } = await this.client
       .from('units')
       .select(unitSelect)
-      .eq('id', createdUnitId as number)
+      .eq('id', unitId)
       .single()
 
     if (reloadError) throw reloadError
@@ -291,6 +321,12 @@ function compactUnitFilters(filters: UnitFilters): Record<string, unknown> {
   return Object.fromEntries(
     Object.entries(filters).filter(([, value]) => value !== undefined && value !== '' && value !== 'all'),
   )
+}
+
+function isMissingAtomicCreateRpc(error: SupabaseErrorLike): boolean {
+  if (!error) return false
+  const text = `${error.code ?? ''} ${error.message ?? ''} ${error.details ?? ''} ${error.hint ?? ''}`.toLowerCase()
+  return text.includes('pgrst202') || text.includes('create_unit_with_media') || text.includes('include_in_pdf')
 }
 
 function matchesUnitFilters(unit: LeadraUnit, filters: UnitFilters): boolean {

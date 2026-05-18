@@ -335,8 +335,8 @@ describe('LeadraRepository', () => {
     expect(result.unitCode).not.toContain(String(result.id))
   })
 
-  it('does not reload a unit when atomic create RPC fails', async () => {
-    const createError = { code: 'PGRST204', message: "Could not find the 'include_in_pdf' column of 'unit_media' in the schema cache" }
+  it('does not reload a unit when atomic create RPC fails with an unrelated error', async () => {
+    const createError = { code: '42501', message: 'permission denied for table units' }
     const client = {
       rpc() {
         return Promise.resolve({ error: createError, data: null })
@@ -347,6 +347,105 @@ describe('LeadraRepository', () => {
     }
 
     await expect(new LeadraRepository(client as never).createUnit(salesUser(), createUnitInput())).rejects.toBe(createError)
+  })
+
+  it('falls back to direct inserts when the atomic create RPC is missing from PostgREST cache', async () => {
+    const calls: Array<{ table: string; payload?: unknown }> = []
+    const input = createUnitInput()
+    const createdUnitRow = {
+      id: 105,
+      unit_code: 'MV3BR',
+      developer_id: 'dev-1',
+      developer: { label: 'Palm Hills' },
+      project_id: 'project-1',
+      project: { label: 'Mountain View' },
+      destination_id: 'dest-1',
+      destination: { label: 'New Cairo' },
+      unit_type: 'Apartment',
+      floor: '3rd',
+      bua: 188,
+      roof_garden_area: null,
+      garden_area: null,
+      terrace_area: null,
+      view_id: 'view-1',
+      view: { label: 'Garden' },
+      bedrooms: 3,
+      bathrooms: 2,
+      elevator: true,
+      land_area: null,
+      furnished: false,
+      finish: 'Fully Finished',
+      payment_method: 'cash',
+      total_amount: 5_500_000,
+      down_payment: null,
+      remaining_payment: null,
+      commission_percentage: 1.5,
+      commission_amount: 82_500,
+      installment_type: null,
+      installment_years: null,
+      installment_amount: null,
+      delivery_month: null,
+      delivery_year: 2029,
+      original_owner_name: 'Owner',
+      country_code: '+20',
+      original_owner_phone: '01033334444',
+      normalized_owner_phone: '+201033334444',
+      sales_notes: 'Updated notes.',
+      status: 'available',
+      archived: false,
+      created_by: 'sales-replacement',
+      creator: { full_name: 'Replacement Sales' },
+      team_id: 'team-b',
+      branch_id: 'branch-b',
+      created_at: '2026-05-04T00:00:00.000Z',
+      updated_at: '2026-05-04T01:00:00.000Z',
+      unit_media: [],
+      unit_notes: [],
+    }
+    const client = {
+      rpc() {
+        return Promise.resolve({
+          error: {
+            code: 'PGRST202',
+            message: 'Could not find the function public.create_unit_with_media(media_payload, unit_payload) in the schema cache',
+          },
+          data: null,
+        })
+      },
+      from(table: string) {
+        return {
+          insert(payload: unknown) {
+            calls.push({ table, payload })
+            return {
+              select() {
+                return {
+                  single() {
+                    return Promise.resolve({ error: null, data: { id: 105 } })
+                  },
+                }
+              },
+            }
+          },
+          select() {
+            return {
+              eq() {
+                return {
+                  single() {
+                    return Promise.resolve({ error: null, data: createdUnitRow })
+                  },
+                }
+              },
+            }
+          },
+        }
+      },
+    }
+
+    const result = await new LeadraRepository(client as never).createUnit(salesUser(), input)
+
+    expect(calls).toHaveLength(1)
+    expect(calls[0]).toMatchObject({ table: 'units' })
+    expect(result.id).toBe(105)
   })
 
   it('rejects unsupported media before calling the atomic create RPC', async () => {
