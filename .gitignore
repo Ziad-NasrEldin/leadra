@@ -52,3 +52,4 @@ src/assets/brand/leadra-guidelines-*
 src/assets/brand/leadra-wordmark-*
 
 .vercel
+.env*.local
