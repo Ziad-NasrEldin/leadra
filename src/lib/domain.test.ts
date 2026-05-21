@@ -1,12 +1,14 @@
 import { describe, expect, it } from 'vitest'
 import {
   calculatePaymentSummary,
+  calculateDisplayedPaymentTotals,
   canArchiveUnit,
   canEditAnyUnitDetails,
   canEditNonOwnerUnitDetails,
   canEditOwnerFields,
   canEditUnitCommission,
   canEditUnitPricing,
+  canManageUnitSpecialStatus,
   canSearchOwnerPhone,
   canViewSalesSensitiveData,
   canViewUnit,
@@ -122,6 +124,9 @@ const baseUnit: LeadraUnit = {
   salesNotes: 'Owner prefers quick closing.',
   status: 'available',
   archived: false,
+  isSpecial: false,
+  specialMarkedAt: null,
+  specialMarkedBy: null,
   createdBy: 'sales-a',
   createdByName: 'Sara Sales',
   teamId: 'team-a',
@@ -283,6 +288,17 @@ describe('Leadra domain rules', () => {
         paymentMethod: 'installment',
         totalAmount: 5_000_000,
         downPayment: 1_000_000,
+        installmentType: 'monthly',
+        installmentStartMonth: '2026-01-01',
+        installmentEndMonth: '2026-12-01',
+      }).installmentAmount,
+    ).toBe(333_333.33)
+
+    expect(
+      calculatePaymentSummary({
+        paymentMethod: 'installment',
+        totalAmount: 5_000_000,
+        downPayment: 1_000_000,
         installmentType: 'custom',
         installmentYears: 4,
       }).installmentAmount,
@@ -299,6 +315,11 @@ describe('Leadra domain rules', () => {
       '2026-06-01',
       '2026-09-01',
       '2026-12-01',
+    ])
+    expect(getInstallmentScheduledDueMonths('monthly', '2026-01-01', '2026-03-01')).toEqual([
+      '2026-01-01',
+      '2026-02-01',
+      '2026-03-01',
     ])
     expect(
       buildInstallmentSchedule({
@@ -349,6 +370,39 @@ describe('Leadra domain rules', () => {
     expect(unpaid?.history.action).toBe('unpaid')
   })
 
+  it('calculates displayed paid and remaining totals with maintenance allocation', () => {
+    const schedule = createInitialPaymentSchedule({
+      ...baseUnit,
+      installmentYears: null,
+      installmentStartMonth: '2026-03-01',
+      installmentEndMonth: '2026-12-01',
+      installmentAmount: 1_000_000,
+      remainingPayment: 4_000_000,
+    })
+    const unit = {
+      ...baseUnit,
+      downPayment: 1_000_000,
+      installmentYears: null,
+      installmentStartMonth: '2026-03-01',
+      installmentEndMonth: '2026-12-01',
+      installmentAmount: 1_000_000,
+      maintenanceCost: 250_000,
+      maintenancePaid: false,
+      paymentSchedule: [{ ...schedule[0], paid: true }, ...schedule.slice(1)],
+    }
+
+    expect(calculateDisplayedPaymentTotals(unit)).toMatchObject({
+      displayedPaidAmount: 2_000_000,
+      displayedRemainingAmount: 3_250_000,
+      unpaidMaintenanceAmount: 250_000,
+    })
+    expect(calculateDisplayedPaymentTotals({ ...unit, maintenancePaid: true })).toMatchObject({
+      displayedPaidAmount: 2_250_000,
+      displayedRemainingAmount: 3_000_000,
+      paidMaintenanceAmount: 250_000,
+    })
+  })
+
   it('summarizes destinations before projects and scopes projects by destination', () => {
     const secondDestinationUnit = {
       ...baseUnit,
@@ -394,6 +448,16 @@ describe('Leadra domain rules', () => {
     expect(searchUnits(salesA, [baseUnit, otherSalesUnit], { ownerPhone: '01099999999' })).toEqual([])
     expect(searchUnits(salesA, [baseUnit, otherSalesUnit], { ownerPhone: '501234567' })).toEqual([])
     expect(searchUnits(subAdmin, [baseUnit, otherSalesUnit], { ownerPhone: '501234567' })).toEqual([baseUnit])
+  })
+
+  it('keeps advanced search usable on a pre-filtered special unit set', () => {
+    const specialUnit = { ...baseUnit, isSpecial: true }
+    const otherSpecialUnit = { ...baseUnit, id: 106, unitCode: 'ZE4BR', isSpecial: true, bedrooms: 4 }
+    const regularUnit = { ...baseUnit, id: 107, unitCode: 'RG2BR', isSpecial: false, bedrooms: 2 }
+    const specialUnits = [specialUnit, otherSpecialUnit, regularUnit].filter((unit) => unit.isSpecial)
+
+    expect(searchUnits(admin, specialUnits, { bedrooms: 4 })).toEqual([otherSpecialUnit])
+    expect(searchUnits(admin, specialUnits, { unitCode: 'RG' })).toEqual([])
   })
 
   it('defines the fixed PRD unit types and conditional fields', () => {
@@ -484,6 +548,10 @@ describe('Leadra domain rules', () => {
     expect(canArchiveUnit(subAdmin, baseUnit)).toBe(true)
     expect(canArchiveUnit(manager, baseUnit)).toBe(false)
     expect(canArchiveUnit(salesA, baseUnit)).toBe(false)
+    expect(canManageUnitSpecialStatus(admin, baseUnit)).toBe(true)
+    expect(canManageUnitSpecialStatus(subAdmin, baseUnit)).toBe(true)
+    expect(canManageUnitSpecialStatus(manager, baseUnit)).toBe(false)
+    expect(canManageUnitSpecialStatus(salesA, baseUnit)).toBe(false)
 
     const sanitized = sanitizeUnitForPdf(salesB, baseUnit)
     expect(sanitized.originalOwnerName).toBeNull()

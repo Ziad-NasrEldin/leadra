@@ -2,7 +2,7 @@ export type UserRole = 'admin' | 'sub_admin' | 'manager' | 'sales'
 export type AccountStatus = 'active' | 'inactive'
 export type UnitStatus = 'available' | 'hold' | 'sold' | 'sold_by_us' | 'sold_by_others'
 export type PaymentMethod = 'cash' | 'installment'
-export type InstallmentType = 'quarterly' | 'semi_annual' | 'annual' | 'custom'
+export type InstallmentType = 'monthly' | 'quarterly' | 'semi_annual' | 'annual' | 'custom'
 export type MediaType = 'image' | 'pdf' | 'video' | 'unsupported'
 export type LookupKind = 'developer' | 'project' | 'destination' | 'view' | 'unit_type' | 'finish'
 export type PdfLayout = 'classic' | 'compact'
@@ -162,6 +162,9 @@ export interface LeadraUnit {
   salesNotes: string
   status: UnitStatus
   archived: boolean
+  isSpecial: boolean
+  specialMarkedAt: string | null
+  specialMarkedBy: string | null
   createdBy: string
   createdByName: string
   teamId: string

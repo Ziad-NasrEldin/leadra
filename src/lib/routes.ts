@@ -14,6 +14,7 @@ export const analyticsWindowSlugs = ['live', '30d', '90d', 'custom'] as const
 export type View =
   | 'dashboard'
   | 'units'
+  | 'special'
   | 'create'
   | 'details'
   | 'notifications'
@@ -54,7 +55,7 @@ export interface AppRoute {
   analyticsFilters: AnalyticsFilters
 }
 
-const views = ['dashboard', 'units', 'create', 'notifications', 'profile', 'analytics', 'admin', 'palette'] as const
+const views = ['dashboard', 'units', 'special', 'create', 'notifications', 'profile', 'analytics', 'admin', 'palette'] as const
 const analyticsFilterKeys: AnalyticsFilterKey[] = [
   'team',
   'user',

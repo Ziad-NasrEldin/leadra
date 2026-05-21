@@ -287,6 +287,9 @@ describe('Supabase mappers', () => {
       sales_notes: 'Serious lead.',
       status: 'available',
       archived: false,
+      is_special: true,
+      special_marked_at: '2026-05-05T00:00:00.000Z',
+      special_marked_by: 'admin-1',
       created_by: 'user-1',
       creator: { full_name: 'Sales User' },
       team_id: null,
@@ -308,6 +311,9 @@ describe('Supabase mappers', () => {
     expect(toUnitViewModel(row).maintenanceDueDate).toBe('2028-06-15')
     expect(toUnitViewModel(row).installmentStartMonth).toBeNull()
     expect(toUnitViewModel(row).customInstallmentText).toBeNull()
+    expect(toUnitViewModel(row).isSpecial).toBe(true)
+    expect(toUnitViewModel(row).specialMarkedAt).toBe('2026-05-05T00:00:00.000Z')
+    expect(toUnitViewModel(row).specialMarkedBy).toBe('admin-1')
     expect(toUnitViewModel(row).teamId).toBe('')
     expect(toUnitViewModel(row).branchId).toBe('')
     expect(toUnitViewModel(row).media).toEqual([

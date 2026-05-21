@@ -153,6 +153,15 @@ export class LeadraRepository {
     if (error) throw error
   }
 
+  async setUnitSpecial(unitId: number, special: boolean): Promise<LeadraUnit> {
+    const { error } = await this.client.rpc('set_unit_special', {
+      target_unit_id: unitId,
+      mark_special: special,
+    })
+    if (error) throw error
+    return this.loadUnit(unitId)
+  }
+
   async updatePaymentSchedule(unitId: number, scheduleId: string, paid: boolean): Promise<LeadraUnit> {
     const { error } = await this.client.rpc('set_unit_payment_paid', {
       target_unit_id: unitId,
@@ -167,6 +176,11 @@ export class LeadraRepository {
       .single()
     if (loadError) throw loadError
     return toUnitViewModel(data as unknown as SupabaseUnitRow)
+  }
+
+  async reconcileDueUnitPayments(): Promise<void> {
+    const { error } = await this.client.rpc('reconcile_due_unit_payments')
+    if (error) throw error
   }
 
   async deleteUnitMedia(mediaId: string): Promise<void> {

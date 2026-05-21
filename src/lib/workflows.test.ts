@@ -596,6 +596,8 @@ describe('Leadra product workflows', () => {
       paymentMethod: 'installment',
       totalAmount: 6_000_000,
       downPayment: 1_200_000,
+      maintenancePaid: false,
+      maintenanceCost: 300_000,
       installmentType: 'annual',
       installmentStartMonth: '2029-01-01',
       installmentEndMonth: '2032-01-01',
@@ -609,21 +611,23 @@ describe('Leadra product workflows', () => {
     expect(created.ok).toBe(true)
     const unit = created.state.units[0]
     expect(unit.paymentSchedule).toHaveLength(4)
+    expect(unit.remainingPayment).toBe(5_100_000)
+    expect(unit.maintenanceCost).toBe(300_000)
 
     const paid = updatePaymentScheduleWorkflow(created.state, admin, unit.id, unit.paymentSchedule![0].id, true)
     expect(paid.ok).toBe(true)
     const paidUnit = paid.state.units.find((item) => item.id === unit.id)!
-    expect(paidUnit.remainingPayment).toBe(3_600_000)
+    expect(paidUnit.remainingPayment).toBe(3_900_000)
     expect(paidUnit.paymentSchedule?.[0]).toMatchObject({ paid: true, paidByName: admin.fullName })
-    expect(paidUnit.paymentHistory?.[0]).toMatchObject({ action: 'paid', previousRemainingValue: 4_800_000, newRemainingValue: 3_600_000 })
+    expect(paidUnit.paymentHistory?.[0]).toMatchObject({ action: 'paid', previousRemainingValue: 5_100_000, newRemainingValue: 3_900_000 })
     expect(paid.state.auditLogs.at(0)?.actionType).toBe('Payment marked paid')
     expect(paid.state.analyticsEvents.at(0)?.eventType).toBe('installment_updated')
 
     const unpaid = updatePaymentScheduleWorkflow(paid.state, admin, unit.id, unit.paymentSchedule![0].id, false)
     expect(unpaid.ok).toBe(true)
     const unpaidUnit = unpaid.state.units.find((item) => item.id === unit.id)!
-    expect(unpaidUnit.remainingPayment).toBe(4_800_000)
-    expect(unpaidUnit.paymentHistory?.[0]).toMatchObject({ action: 'unpaid', previousRemainingValue: 3_600_000, newRemainingValue: 4_800_000 })
+    expect(unpaidUnit.remainingPayment).toBe(5_100_000)
+    expect(unpaidUnit.paymentHistory?.[0]).toMatchObject({ action: 'unpaid', previousRemainingValue: 3_900_000, newRemainingValue: 5_100_000 })
   })
 
   it('lets admins edit owner fields with validation and duplicate-phone protection', () => {

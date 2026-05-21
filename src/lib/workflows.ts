@@ -1,5 +1,6 @@
 import {
   calculatePaymentSummary,
+  calculateDisplayedRemainingPayment,
   applyPaymentScheduleAction,
   canAddAdminManagerNote,
   canArchiveUnit,
@@ -8,6 +9,7 @@ import {
   canEditOwnerFields,
   canEditUnitCommission,
   canEditUnitPricing,
+  canManageUnitSpecialStatus,
   canViewUnit,
   generateUnitCode,
   createInitialPaymentSchedule,
@@ -330,7 +332,7 @@ export function createUnitWorkflow(
     remainingPayment: payment.remainingPayment,
     transferFees: input.transferFees ?? null,
     maintenancePaid: input.maintenancePaid ?? false,
-    maintenanceCost: input.maintenancePaid ? input.maintenanceCost ?? null : null,
+    maintenanceCost: input.maintenanceCost ?? null,
     maintenanceDueDate: input.maintenancePaid ? input.maintenanceDueDate ?? null : null,
     commissionPercentage: state.settings.commissionPercentage,
     commissionAmount: payment.commissionAmount,
@@ -348,6 +350,9 @@ export function createUnitWorkflow(
     salesNotes: input.salesNotes,
     status: 'available',
     archived: false,
+    isSpecial: false,
+    specialMarkedAt: null,
+    specialMarkedBy: null,
     createdBy: actor.id,
     createdByName: actor.fullName,
     teamId: actor.teamId,
@@ -360,6 +365,7 @@ export function createUnitWorkflow(
     paymentHistory: [],
   }
   candidate.paymentSchedule = createInitialPaymentSchedule(candidate)
+  candidate.remainingPayment = calculateDisplayedRemainingPayment(candidate)
 
   if (unitHasSameProjectPhoneDuplicate(candidate, state.units)) {
     const nextState = withAnalyticsEvent(
@@ -467,6 +473,37 @@ export function archiveUnitWorkflow(state: AppDataState, actor: LeadraUser, unit
       { unit, metadata: { unitCode: unit.unitCode } },
     ),
   }
+}
+
+export function setUnitSpecialWorkflow(
+  state: AppDataState,
+  actor: LeadraUser,
+  unitId: number,
+  special: boolean,
+): WorkflowResult {
+  const unit = state.units.find((item) => item.id === unitId)
+  if (!unit) return { ok: false, state, ...createErrorMessage('error.unitNotFound', 'Unit not found.') }
+  if (!canManageUnitSpecialStatus(actor, unit)) {
+    return { ok: false, state, ...createErrorMessage('error.specialNotAllowed', 'Only admins can manage special units.') }
+  }
+
+  const now = new Date().toISOString()
+  const nextState = {
+    ...state,
+    units: state.units.map((item) =>
+      item.id === unitId
+        ? {
+            ...item,
+            isSpecial: special,
+            specialMarkedAt: special ? now : null,
+            specialMarkedBy: special ? actor.id : null,
+            updatedAt: now,
+          }
+        : item,
+    ),
+  }
+
+  return { ok: true, state: nextState }
 }
 
 export function updateUnitStatusWorkflow(
@@ -636,10 +673,14 @@ export function updateUnitWorkflow(
   if (canEditPricing && nextPaymentMethod === 'installment' && nextDownPayment != null && nextDownPayment > nextTotalAmount) {
     return { ok: false, state, error: 'Down payment cannot be greater than total amount.', errorKey: null, errorParams: null }
   }
-  let nextMaintenanceCost: number | null = null
+  let nextMaintenanceCost: number | null
   let nextMaintenanceDueDate: string | null = null
+  if (canEditPricing) {
+    nextMaintenanceCost = input.maintenanceCost ?? null
+  } else {
+    nextMaintenanceCost = unit.maintenanceCost ?? null
+  }
   if (nextMaintenancePaid) {
-    nextMaintenanceCost = canEditPricing ? input.maintenanceCost ?? null : unit.maintenanceCost ?? null
     nextMaintenanceDueDate = canEditPricing ? input.maintenanceDueDate ?? null : unit.maintenanceDueDate ?? null
   }
   const nextInstallmentFields = resolveUnitEditInstallmentFields(unit, input, canEditPricing)
@@ -718,6 +759,7 @@ export function updateUnitWorkflow(
     updatedUnit.paymentSchedule = createInitialPaymentSchedule(updatedUnit)
     updatedUnit.paymentHistory = unit.paymentHistory
   }
+  updatedUnit.remainingPayment = calculateDisplayedRemainingPayment(updatedUnit)
 
   if (unitHasSameProjectPhoneDuplicate(updatedUnit, state.units)) {
     const auditMessage = createAuditMessage('duplicate_phone_blocked')

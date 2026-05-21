@@ -65,6 +65,9 @@ export interface SupabaseUnitRow {
   sales_notes: string | null
   status: UnitStatus
   archived: boolean
+  is_special?: boolean | null
+  special_marked_at?: string | null
+  special_marked_by?: string | null
   created_by: string
   creator?: JoinedCreator
   team_id: string | null
@@ -125,6 +128,9 @@ export interface SafeUnitRpcRow {
   sales_notes: string | null
   status: UnitStatus
   archived: boolean
+  is_special?: boolean | null
+  special_marked_at?: string | null
+  special_marked_by?: string | null
   created_by: string
   creator_full_name: string | null
   team_id: string | null
@@ -214,7 +220,7 @@ export function toUnitInsertPayload(input: CreateUnitInput, actor: LeadraUser) {
     down_payment: input.paymentMethod === 'installment' ? input.downPayment ?? 0 : null,
     transfer_fees: input.transferFees ?? null,
     maintenance_paid: input.maintenancePaid ?? false,
-    maintenance_cost: input.maintenancePaid ? input.maintenanceCost ?? null : null,
+    maintenance_cost: input.maintenanceCost ?? null,
     maintenance_due_date: input.maintenancePaid ? input.maintenanceDueDate ?? null : null,
     installment_type: installmentType,
     installment_years: null,
@@ -285,7 +291,7 @@ export function toUnitUpdatePayload(
           ...(input.paymentMethod === 'cash' ? { down_payment: null } : {}),
           ...(input.transferFees !== undefined ? { transfer_fees: input.transferFees } : {}),
           maintenance_paid: input.maintenancePaid ?? false,
-          maintenance_cost: input.maintenancePaid ? input.maintenanceCost ?? null : null,
+          maintenance_cost: input.maintenanceCost ?? null,
           maintenance_due_date: input.maintenancePaid ? input.maintenanceDueDate ?? null : null,
           ...installmentPatch,
         }
@@ -377,6 +383,9 @@ export function toUnitViewModel(row: SupabaseUnitRow): LeadraUnit {
     salesNotes: row.sales_notes ?? '',
     status: row.status,
     archived: row.archived,
+    isSpecial: row.is_special ?? false,
+    specialMarkedAt: row.special_marked_at ?? null,
+    specialMarkedBy: row.special_marked_by ?? null,
     createdBy: row.created_by,
     createdByName: row.creator?.full_name ?? 'Leadra user',
     teamId: row.team_id ?? '',
@@ -449,6 +458,9 @@ export function toSafeUnitViewModel(row: SafeUnitRpcRow): LeadraUnit {
     salesNotes: row.sales_notes ?? '',
     status: row.status,
     archived: row.archived,
+    isSpecial: row.is_special ?? false,
+    specialMarkedAt: row.special_marked_at ?? null,
+    specialMarkedBy: row.special_marked_by ?? null,
     createdBy: row.created_by,
     createdByName: row.creator_full_name ?? 'Leadra user',
     teamId: row.team_id ?? '',

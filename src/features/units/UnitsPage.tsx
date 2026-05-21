@@ -1,4 +1,4 @@
-import { Download, FileText, Image as ImageIcon, Share2, SlidersHorizontal, X } from 'lucide-react'
+import { Download, FileText, Image as ImageIcon, Share2, SlidersHorizontal, Star, X } from 'lucide-react'
 import { memo, useState, type CSSProperties } from 'react'
 import { canViewOwnerData, getThumbnailMedia, summarizeDestinations, summarizeProjects } from '../../lib/domain'
 import { compareText, formatCount, getStatusLabel, useLocale } from '../../lib/i18n'
@@ -12,6 +12,7 @@ import { useLookupThumbnailSources } from '../shared/media'
 type UnitsBrowserStage = 'destinations' | 'projects' | 'units'
 
 export function UnitsPage({
+  mode = 'inventory',
   user,
   lookupValues,
   destinations,
@@ -39,6 +40,7 @@ export function UnitsPage({
   onShareSelectedPdfs,
   onOpenUnit,
 }: {
+  mode?: 'inventory' | 'special'
   user: LeadraUser
   lookupValues: LookupValue[]
   destinations: ReturnType<typeof summarizeDestinations>
@@ -86,7 +88,8 @@ export function UnitsPage({
   const selectedVisibleCount = visibleUnits.filter((unit) => selectedUnitIds.includes(unit.id)).length
   const batchBusy = batchAction !== null
   const shouldShowUnitResults = stage === 'destinations' || (stage === 'units' && Boolean(currentDestination && currentProject))
-  const unitResults = shouldShowUnitResults ? (
+  const isSpecialMode = mode === 'special'
+  const unitResults = (isSpecialMode || shouldShowUnitResults) ? (
     <>
       <section className={`units-filter-shell motion-stage ${filtersOpen ? 'is-open' : ''}`} style={motionStyle(3, 60)}>
         <div className="units-filter-summary">
@@ -210,6 +213,7 @@ export function UnitsPage({
                   label={t('details.installmentType')}
                   options={[
                     { value: 'all', label: t('common.all') },
+                    { value: 'monthly', label: t('create.monthly') },
                     { value: 'quarterly', label: t('create.quarterly') },
                     { value: 'semi_annual', label: t('create.semiAnnual') },
                     { value: 'annual', label: t('create.annual') },
@@ -296,15 +300,17 @@ export function UnitsPage({
   ) : null
 
   return (
-    <section className="page-stack page-entrance units-page">
+    <section className={`page-stack page-entrance units-page ${isSpecialMode ? 'special-units-page' : ''}`}>
       <div className="section-heading motion-stage" style={motionStyle(0)}>
         <div>
-          <p className="eyebrow">{t('units.eyebrow')}</p>
-          <h2>{t('units.heading')}</h2>
+          <p className="eyebrow">{isSpecialMode ? t('special.eyebrow') : t('units.eyebrow')}</p>
+          <h2>{isSpecialMode ? t('special.heading') : t('units.heading')}</h2>
         </div>
       </div>
 
-      {stage === 'destinations' && (
+      {isSpecialMode && unitResults}
+
+      {!isSpecialMode && stage === 'destinations' && (
         <div className="project-grid motion-stage" style={motionStyle(1, 30)}>
           {destinations.map((destination, index) => (
             <InventoryScopeCard
@@ -326,16 +332,16 @@ export function UnitsPage({
         </div>
       )}
 
-      {stage === 'destinations' && unitResults}
+      {!isSpecialMode && stage === 'destinations' && unitResults}
 
-      {invalidDestination && (
+      {!isSpecialMode && invalidDestination && (
         <section className="content-card motion-stage" style={motionStyle(1, 30)}>
           <EmptyState title={t('units.destinationUnavailableTitle')} body={t('units.destinationUnavailableBody')} />
           <button className="secondary-button" type="button" onClick={onBackToDestinations}>{t('units.backToDestinations')}</button>
         </section>
       )}
 
-      {stage === 'projects' && currentDestination && (
+      {!isSpecialMode && stage === 'projects' && currentDestination && (
         <>
           <div className="action-row motion-stage" style={motionStyle(1, 30)}>
             <button className="secondary-button" type="button" onClick={onBackToDestinations}>{t('units.backToDestinations')}</button>
@@ -364,14 +370,14 @@ export function UnitsPage({
         </>
       )}
 
-      {invalidProject && (
+      {!isSpecialMode && invalidProject && (
         <section className="content-card motion-stage" style={motionStyle(1, 30)}>
           <EmptyState title={t('units.projectUnavailableTitle')} body={t('units.projectUnavailableBody')} />
           <button className="secondary-button" type="button" onClick={currentDestination ? onBackToProjects : onBackToDestinations}>{t('units.backToProjects')}</button>
         </section>
       )}
 
-      {stage === 'units' && currentDestination && currentProject && (
+      {!isSpecialMode && stage === 'units' && currentDestination && currentProject && (
         <>
           <div className="action-row motion-stage" style={motionStyle(1, 30)}>
             <button className="secondary-button" type="button" onClick={onBackToProjects}>{t('units.backToProjects')}</button>
@@ -520,6 +526,7 @@ export const UnitListRow = memo(function UnitListRow({
         <span className="thumb">{thumbnail ? <img src={thumbnail.url} alt="" loading="lazy" decoding="async" /> : <ImageIcon />}</span>
         <span className="unit-row-copy">
           <strong>{unit.unitCode}</strong>
+          {unit.isSpecial && <span className="special-unit-badge"><Star size={13} fill="currentColor" /> {t('special.badge')}</span>}
           <p dir="auto">{unit.projectName} / {unit.unitType} / {t('units.areaBua', { bua: formatCount(locale, unit.bua) })}</p>
           <small dir="auto">{unit.createdByName}</small>
           {canViewOwnerData(user, unit) && <small dir="auto">{unit.originalOwnerPhone}</small>}

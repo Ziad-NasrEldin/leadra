@@ -35,6 +35,7 @@ export function CreateUnitPage({
   const [installmentStartMonth, setInstallmentStartMonth] = useState('2026-03')
   const [installmentEndMonth, setInstallmentEndMonth] = useState('2030-03')
   const [maintenancePaid, setMaintenancePaid] = useState(false)
+  const [maintenanceCost, setMaintenanceCost] = useState(0)
   const [ownerCountryCode, setOwnerCountryCode] = useState('+20')
   const [ownerPhone, setOwnerPhone] = useState('01012345678')
   const [selectedUnitType, setSelectedUnitType] = useState('Apartment')
@@ -46,6 +47,8 @@ export function CreateUnitPage({
   const isCreateBlocked = submitting || !hasSelectedImage || !mediaValidation.ok
   const totalMediaMb = selectedMedia.reduce((total, file) => total + file.sizeBytes, 0) / (1024 * 1024)
   const remainingPayment = Math.max(0, totalAmount - downPayment)
+  const displayedPaidAmount = paymentMethod === 'installment' ? downPayment + (maintenancePaid ? maintenanceCost : 0) : totalAmount + (maintenancePaid ? maintenanceCost : 0)
+  const displayedRemainingPayment = paymentMethod === 'installment' ? remainingPayment + (maintenancePaid ? 0 : maintenanceCost) : maintenancePaid ? 0 : maintenanceCost
   const calculatedInstallment =
     paymentMethod === 'installment' && isAutomaticInstallmentType(installmentType)
       ? calculateInstallmentAmountForPeriod(remainingPayment, installmentType, installmentStartMonth, installmentEndMonth)
@@ -225,12 +228,12 @@ export function CreateUnitPage({
             />{' '}
             {t('create.maintenancePaid')}
           </label>
+          <label>
+            <RequiredLabel label={t('create.maintenanceCost')} required />
+            <input name="maintenanceCost" type="number" min={0} step="0.01" required value={maintenanceCost} onChange={(event) => setMaintenanceCost(Number(event.target.value))} />
+          </label>
           {maintenancePaid && (
             <>
-              <label>
-                <RequiredLabel label={t('create.maintenanceCost')} required />
-                <input name="maintenanceCost" type="number" min={0} step="0.01" required />
-              </label>
               <label>
                 <RequiredLabel label={t('create.maintenanceDueDate')} required />
                 <input name="maintenanceDueDate" type="date" required />
@@ -245,12 +248,17 @@ export function CreateUnitPage({
               </label>
               <label>
                 {t('details.remainingPayment')}
-                <input readOnly value={formatCurrency(remainingPayment, locale)} />
+                <input readOnly value={formatCurrency(displayedRemainingPayment, locale)} />
+              </label>
+              <label>
+                {t('details.paidAmount')}
+                <input readOnly value={formatCurrency(displayedPaidAmount, locale)} />
               </label>
               <input name="installmentType" type="hidden" value={installmentType} />
               <ControlledSelectField
                 label={t('details.installmentType')}
                 options={[
+                  { value: 'monthly', label: t('create.monthly') },
                   { value: 'quarterly', label: t('create.quarterly') },
                   { value: 'semi_annual', label: t('create.semiAnnual') },
                   { value: 'annual', label: t('create.annual') },

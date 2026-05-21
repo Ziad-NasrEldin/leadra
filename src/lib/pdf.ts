@@ -1,5 +1,5 @@
 import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFImage, type PDFPage } from 'pdf-lib'
-import { buildPaymentTimetable, canViewSalesSensitiveData, formatCurrency, formatDeliveryExpectancy, getApplicableUnitAreaFields, sanitizeUnitForPdf } from './domain'
+import { buildPaymentTimetable, calculateDisplayedPaymentTotals, canViewSalesSensitiveData, formatCurrency, formatDeliveryExpectancy, getApplicableUnitAreaFields, sanitizeUnitForPdf } from './domain'
 import { translate, type LocaleCode } from './i18n'
 import type { AppSettings, LeadraUnit, LeadraUser } from './types'
 
@@ -111,14 +111,21 @@ function buildPdfUnitDetails(user: LeadraUser, unit: LeadraUnit, locale: LocaleC
   rows.push({ label: 'Finishing Status *', value: unit.finish })
 
   if (unit.paymentMethod === 'cash') {
-    rows.push({ label: 'Cash Price', value: formatCurrency(unit.totalAmount, locale), kind: 'money' })
+    const paymentTotals = calculateDisplayedPaymentTotals(unit)
+    rows.push(
+      { label: 'Cash Price', value: formatCurrency(unit.totalAmount, locale), kind: 'money' },
+      { label: translate(locale, 'details.paidAmount'), value: formatCurrency(paymentTotals.displayedPaidAmount, locale), kind: 'money' },
+      { label: 'Remaining Value', value: formatCurrency(paymentTotals.displayedRemainingAmount, locale), kind: 'money' },
+    )
   }
   if (unit.paymentMethod === 'installment') {
     const installments = buildPaymentTimetable(unit, locale)
+    const paymentTotals = calculateDisplayedPaymentTotals(unit)
     rows.push(
       { label: 'Total Amount', value: formatCurrency(unit.totalAmount, locale), kind: 'money' },
-      { label: translate(locale, 'create.downPayment'), value: formatNullableCurrency(unit.downPayment, locale), kind: 'money' },
-      { label: 'Remaining Value', value: formatNullableCurrency(unit.remainingPayment, locale), kind: 'money' },
+      { label: translate(locale, 'create.downPayment'), value: formatCurrency(paymentTotals.originalDownPayment, locale), kind: 'money' },
+      { label: translate(locale, 'details.paidAmount'), value: formatCurrency(paymentTotals.displayedPaidAmount, locale), kind: 'money' },
+      { label: 'Remaining Value', value: formatCurrency(paymentTotals.displayedRemainingAmount, locale), kind: 'money' },
       { label: 'Installments', value: installmentSummary(unit, installments, locale) },
     )
 
@@ -149,8 +156,8 @@ type PdfPalette = {
   charcoal: ReturnType<typeof rgb>
   slate: ReturnType<typeof rgb>
   muted: ReturnType<typeof rgb>
-  gold: ReturnType<typeof rgb>
-  goldSoft: ReturnType<typeof rgb>
+  copper: ReturnType<typeof rgb>
+  copperSoft: ReturnType<typeof rgb>
   white: ReturnType<typeof rgb>
 }
 
@@ -170,10 +177,10 @@ const palette: PdfPalette = {
   paper: rgb(0.965, 0.945, 0.918),
   linen: rgb(0.937, 0.906, 0.867),
   charcoal: rgb(0.165, 0.149, 0.137),
-  slate: rgb(0.059, 0.106, 0.176),
+  slate: rgb(0.122, 0.122, 0.137),
   muted: rgb(0.49, 0.455, 0.408),
-  gold: rgb(0.839, 0.69, 0.435),
-  goldSoft: rgb(0.906, 0.788, 0.557),
+  copper: rgb(0.655, 0.435, 0.302),
+  copperSoft: rgb(0.847, 0.753, 0.678),
   white: rgb(1, 0.98, 0.941),
 }
 
@@ -194,8 +201,8 @@ function drawCoverPage(
 
   page.drawRectangle({ x: 0, y: 0, width, height, color: palette.paper })
   page.drawRectangle({ x: 0, y: height - 196, width, height: 196, color: palette.slate })
-  page.drawRectangle({ x: 34, y: height - 196, width: 7, height: 196, color: palette.gold })
-  page.drawRectangle({ x: 42, y: height - 784, width: 1.2, height: 572, color: palette.goldSoft })
+  page.drawRectangle({ x: 34, y: height - 196, width: 7, height: 196, color: palette.copper })
+  page.drawRectangle({ x: 42, y: height - 784, width: 1.2, height: 572, color: palette.copperSoft })
 
   if (logo) {
     const scaled = logo.scaleToFit(128, 56)
@@ -207,7 +214,7 @@ function drawCoverPage(
   drawPdfText(page, unit.unitCode, { x: 48, y: height - 145, size: 30, font: bold, color: palette.white, maxWidth: 275 })
   drawPdfText(page, `${unit.destinationName} / ${unit.projectName}`, { x: 50, y: height - 166, size: 10, font, color: palette.linen, maxWidth: 285 })
 
-  drawPdfText(page, 'CONFIDENTIAL', { x: 438, y: height - 52, size: 8, font: bold, color: palette.goldSoft })
+  drawPdfText(page, 'CONFIDENTIAL', { x: 438, y: height - 52, size: 8, font: bold, color: palette.copperSoft })
   drawPdfText(page, 'Generated for permission-safe sharing', { x: 348, y: height - 72, size: 8, font, color: palette.linen, maxWidth: 190 })
 
   const thumbnailBox = { x: 348, y: height - 172, width: 198, height: 112 }
@@ -302,9 +309,9 @@ async function drawImagePage(
   const { width, height } = page.getSize()
   page.drawRectangle({ x: 0, y: 0, width, height, color: palette.paper })
   page.drawRectangle({ x: 0, y: height - 86, width, height: 86, color: palette.slate })
-  page.drawRectangle({ x: 42, y: height - 86, width: 6, height: 86, color: palette.gold })
+  page.drawRectangle({ x: 42, y: height - 86, width: 6, height: 86, color: palette.copper })
   drawPdfText(page, `Unit images / ${unitCode}`, { x: 62, y: height - 54, size: 18, font: bold, color: palette.white })
-  drawPdfText(page, `Page ${options.pageNumber}`, { x: 488, y: height - 54, size: 8, font: bold, color: palette.goldSoft })
+  drawPdfText(page, `Page ${options.pageNumber}`, { x: 488, y: height - 54, size: 8, font: bold, color: palette.copperSoft })
 
   const boxes = [
     { x: 42, y: 458, width: 248, height: 270 },
@@ -336,7 +343,7 @@ function drawImageFrame(
   image: PDFImage | null,
   fallback: { font: PDFFont; bold: PDFFont; emptyTitle: string; emptyBody: string },
 ) {
-  page.drawRectangle({ x, y, width, height, color: palette.linen, borderColor: palette.gold, borderWidth: 0.8 })
+  page.drawRectangle({ x, y, width, height, color: palette.linen, borderColor: palette.copper, borderWidth: 0.8 })
   page.drawRectangle({ x: x + 5, y: y + 5, width: width - 10, height: height - 10, borderColor: rgb(1, 0.98, 0.94), borderWidth: 0.7 })
   if (image) {
     const scaled = image.scaleToFit(width - 18, height - 18)
@@ -362,10 +369,6 @@ function installmentSummary(unit: LeadraUnit, installments: ReturnType<typeof bu
   }
   if (unit.installmentAmount != null) return formatCurrency(unit.installmentAmount, locale)
   return 'No scheduled installments'
-}
-
-function formatNullableCurrency(value: number | null | undefined, locale: LocaleCode) {
-  return value == null ? '' : formatCurrency(value, locale)
 }
 
 function formatArea(value: number) {

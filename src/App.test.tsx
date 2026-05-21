@@ -168,6 +168,39 @@ describe('Leadra app shell', () => {
     expect(screen.queryByText(/NC3BR/i)).not.toBeInTheDocument()
   })
 
+  it('lets admins mark units special and browse the shared special page', async () => {
+    renderApp()
+    const user = userEvent.setup()
+
+    await openSeedUnitDetails(user)
+    await user.click(screen.getByRole('button', { name: /mark special/i }))
+    expect(await screen.findByRole('button', { name: /remove special/i })).toBeInTheDocument()
+
+    await user.click(screen.getAllByRole('link', { name: /^special$/i })[0])
+    expect(window.location.pathname).toBe('/special')
+    expect((await screen.findAllByRole('heading', { name: /special units/i })).length).toBeGreaterThan(0)
+    expect(await screen.findByText(/NC3BR/i)).toBeInTheDocument()
+    expect(screen.queryByText(/ZE4BR/i)).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: /open NC3BR/i }))
+    await user.click(await screen.findByRole('button', { name: /remove special/i }))
+    await user.click(screen.getAllByRole('link', { name: /^special$/i })[0])
+    expect((await screen.findAllByRole('heading', { name: /special units/i })).length).toBeGreaterThan(0)
+    expect(screen.queryByText(/NC3BR/i)).not.toBeInTheDocument()
+  })
+
+  it('hides the shared special page from sales users', async () => {
+    renderApp()
+    const user = userEvent.setup()
+
+    await openLoginPage(user)
+    await signInAs(user, /continue as sara/i)
+
+    expect(screen.queryByRole('link', { name: /^special$/i })).not.toBeInTheDocument()
+    navigateTestPath('/special')
+    await waitFor(() => expect(window.location.pathname).toBe('/dashboard'))
+  })
+
   it('selects units for batch pdf generation and preserves row navigation', async () => {
     renderApp()
     const user = userEvent.setup()

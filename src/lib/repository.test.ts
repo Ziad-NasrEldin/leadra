@@ -68,6 +68,9 @@ function safeUnitRpcRow(overrides: Partial<SafeUnitRpcRow> = {}): SafeUnitRpcRow
     sales_notes: null,
     status: 'available',
     archived: false,
+    is_special: false,
+    special_marked_at: null,
+    special_marked_by: null,
     created_by: 'sales-1',
     creator_full_name: 'Sales User',
     team_id: 'team-1',
@@ -283,6 +286,9 @@ describe('LeadraRepository', () => {
                         sales_notes: 'Updated notes.',
                         status: 'available',
                         archived: false,
+                        is_special: false,
+                        special_marked_at: null,
+                        special_marked_by: null,
                         created_by: 'sales-replacement',
                         creator: { full_name: 'Replacement Sales' },
                         team_id: 'team-b',
@@ -393,6 +399,9 @@ describe('LeadraRepository', () => {
       sales_notes: 'Updated notes.',
       status: 'available',
       archived: false,
+      is_special: false,
+      special_marked_at: null,
+      special_marked_by: null,
       created_by: 'sales-replacement',
       creator: { full_name: 'Replacement Sales' },
       team_id: 'team-b',
@@ -577,6 +586,9 @@ describe('LeadraRepository', () => {
                             sales_notes: 'Updated notes.',
                             status: 'available',
                             archived: false,
+                            is_special: false,
+                            special_marked_at: null,
+                            special_marked_by: null,
                             created_by: 'sales-1',
                             creator: { full_name: 'Sales User' },
                             team_id: 'team-1',
@@ -689,6 +701,53 @@ describe('LeadraRepository', () => {
     expect(filters).toEqual([{ column: 'id', value: 105 }])
   })
 
+  it('persists shared special unit state through the protected RPC and reloads the unit', async () => {
+    const calls: Array<{ fn: string; args: unknown }> = []
+    const client = {
+      rpc(fn: string, args: unknown) {
+        calls.push({ fn, args })
+        return Promise.resolve({ error: null })
+      },
+      from(table: string) {
+        expect(table).toBe('units')
+        return {
+          select() {
+            return {
+              eq(column: string, value: number) {
+                expect(column).toBe('id')
+                return {
+                  single() {
+                    return Promise.resolve({
+                      error: null,
+                      data: {
+                        ...safeUnitRpcRow({
+                          id: value,
+                          is_special: true,
+                          special_marked_at: '2026-05-05T00:00:00.000Z',
+                          special_marked_by: 'admin-1',
+                        }),
+                        developer: { label: 'Ora' },
+                        project: { label: 'Zed East' },
+                        destination: { label: 'Sheikh Zayed' },
+                        view: { label: 'Garden' },
+                        creator: { full_name: 'Sales User' },
+                      },
+                    })
+                  },
+                }
+              },
+            }
+          },
+        }
+      },
+    }
+
+    const result = await new LeadraRepository(client as never).setUnitSpecial(105, true)
+
+    expect(calls).toEqual([{ fn: 'set_unit_special', args: { target_unit_id: 105, mark_special: true } }])
+    expect(result).toMatchObject({ id: 105, isSpecial: true, specialMarkedBy: 'admin-1' })
+  })
+
   it('persists payment timetable paid/unpaid actions through the protected RPC', async () => {
     const calls: Array<{ fn: string; args: unknown }> = []
     const client = {
@@ -752,6 +811,9 @@ describe('LeadraRepository', () => {
                         sales_notes: 'Updated notes.',
                         status: 'available',
                         archived: false,
+                        is_special: false,
+                        special_marked_at: null,
+                        special_marked_by: null,
                         created_by: 'sales-1',
                         creator: { full_name: 'Sales User' },
                         team_id: 'team-1',
@@ -794,6 +856,20 @@ describe('LeadraRepository', () => {
       },
     ])
     expect(result.paymentSchedule?.[0]).toMatchObject({ id: 'schedule-1', paid: true, paidByName: 'Admin User' })
+  })
+
+  it('delegates due payment reconciliation to the Supabase RPC', async () => {
+    const calls: Array<{ fn: string; args?: unknown }> = []
+    const client = {
+      rpc(fn: string, args?: unknown) {
+        calls.push({ fn, args })
+        return Promise.resolve({ data: 2, error: null })
+      },
+    }
+
+    await new LeadraRepository(client as never).reconcileDueUnitPayments()
+
+    expect(calls).toEqual([{ fn: 'reconcile_due_unit_payments', args: undefined }])
   })
 
   it('delegates sales representative deactivation and reassignment to the durable history RPC', async () => {

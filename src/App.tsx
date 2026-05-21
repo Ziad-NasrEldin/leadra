@@ -12,6 +12,7 @@ import {
   Plus,
   Settings,
   SlidersHorizontal,
+  Star,
   Sun,
   Users,
 } from 'lucide-react'
@@ -32,6 +33,7 @@ import {
   canEditOwnerFields,
   canEditUnitCommission,
   canEditUnitPricing,
+  canManageUnitSpecialStatus,
   filterUnitsForUser,
   formatCurrency,
   isSoldStatus,
@@ -77,6 +79,7 @@ import {
   deleteUnitAdminNoteWorkflow,
   removeUnitMediaWorkflow,
   saveUnitAdminNoteWorkflow,
+  setUnitSpecialWorkflow,
   updatePaymentScheduleWorkflow,
   updateSettingsWorkflow,
   updateUnitStatusWorkflow,
@@ -315,6 +318,7 @@ function LeadraApp() {
   const [batchPdfAction, setBatchPdfAction] = useState<'generate' | 'download' | 'share' | null>(null)
   const [selectedBatchUnitIds, setSelectedBatchUnitIds] = useState<number[]>([])
   const [updatingStatusUnitId, setUpdatingStatusUnitId] = useState<number | null>(null)
+  const [updatingSpecialUnitId, setUpdatingSpecialUnitId] = useState<number | null>(null)
   const [updatingPaymentScheduleId, setUpdatingPaymentScheduleId] = useState<string | null>(null)
   const [statusActionFeedback, setStatusActionFeedback] = useState<{
     unitId: number
@@ -460,6 +464,10 @@ function LeadraApp() {
         routerNavigate(legacyPath, { replace: true })
         return
       }
+      if (currentUser && !isViewAllowedForUser(requestedRoute.view, currentUser)) {
+        routerNavigate('/dashboard', { replace: true })
+        return
+      }
       runPageTransition(() => {
         setView(requestedRoute.view)
         setFlash(null)
@@ -469,7 +477,7 @@ function LeadraApp() {
     syncRouteFromLocation()
     window.addEventListener('hashchange', syncRouteFromLocation)
     return () => window.removeEventListener('hashchange', syncRouteFromLocation)
-  }, [location.pathname, location.hash, routerNavigate])
+  }, [currentUser, location.pathname, location.hash, routerNavigate])
 
   useEffect(() => {
     if (!isSupabaseConfigured || !supabase) return undefined
@@ -591,7 +599,10 @@ function LeadraApp() {
     projectId: routeProjectId ?? unitFilters.projectId,
   })
   const displayedUnits = remoteSearchUnits ?? filteredUnits
-  const selectedBatchUnits = displayedUnits.filter((unit) => selectedBatchUnitIds.includes(unit.id))
+  const specialFilteredUnits = searchUnits(user, appState.units.filter((unit) => unit.isSpecial && !unit.archived), unitFilters)
+  const displayedSpecialUnits = (remoteSearchUnits ?? specialFilteredUnits).filter((unit) => unit.isSpecial && !unit.archived)
+  const activeBatchUnits = activeView === 'special' ? displayedSpecialUnits : displayedUnits
+  const selectedBatchUnits = activeBatchUnits.filter((unit) => selectedBatchUnitIds.includes(unit.id))
   const unreadCount = appState.notifications.filter(
     (notification) =>
       !notification.read &&
@@ -698,7 +709,7 @@ function LeadraApp() {
       totalAmount: Number(formData.get('totalAmount')),
       downPayment: paymentMethod === 'installment' ? Number(formData.get('downPayment')) : null,
       maintenancePaid,
-      maintenanceCost: maintenancePaid ? parseOptionalFormNumber(formData, 'maintenanceCost') : null,
+      maintenanceCost: parseOptionalFormNumber(formData, 'maintenanceCost'),
       maintenanceDueDate: maintenancePaid ? parseOptionalFormDate(formData, 'maintenanceDueDate') : null,
       installmentType,
       installmentStartMonth,
@@ -770,7 +781,8 @@ function LeadraApp() {
       ? submittedPaymentMethodValue
       : unit.paymentMethod
     const submittedInstallmentTypeValue = formData.get('installmentType')
-    const submittedInstallmentType = submittedInstallmentTypeValue === 'quarterly' ||
+    const submittedInstallmentType = submittedInstallmentTypeValue === 'monthly' ||
+      submittedInstallmentTypeValue === 'quarterly' ||
       submittedInstallmentTypeValue === 'semi_annual' ||
       submittedInstallmentTypeValue === 'annual' ||
       submittedInstallmentTypeValue === 'custom'
@@ -828,7 +840,7 @@ function LeadraApp() {
       salesNotes: String(formData.get('salesNotes') ?? unit.salesNotes),
       totalAmount: Number(formData.get('totalAmount')),
       maintenancePaid,
-      maintenanceCost: maintenancePaid ? parseOptionalFormNumber(formData, 'maintenanceCost') : null,
+      maintenanceCost: parseOptionalFormNumber(formData, 'maintenanceCost'),
       maintenanceDueDate: maintenancePaid ? parseOptionalFormDate(formData, 'maintenanceDueDate') : null,
       ...(submittedPaymentMethod === 'installment' && submittedInstallmentType === 'custom'
         ? {
@@ -956,6 +968,40 @@ function LeadraApp() {
       setFlash({ text: `Payment timetable could not be saved: ${errorMessage(error)}`, messageKey: null, messageParams: null })
     } finally {
       setUpdatingPaymentScheduleId(null)
+    }
+  }
+
+  async function setUnitSpecial(unit: LeadraUnit, special: boolean) {
+    if (updatingSpecialUnitId || !canManageUnitSpecialStatus(user, unit)) return
+    const result = setUnitSpecialWorkflow(appState, user, unit.id, special)
+    if (!result.ok) {
+      setFlash({ text: result.error, messageKey: result.errorKey ?? null, messageParams: result.errorParams ?? null })
+      return
+    }
+
+    const previousState = appState
+    const previousRemoteSearchUnits = remoteSearchUnits
+    const optimisticUnit = result.state.units.find((item) => item.id === unit.id) ?? unit
+    setUpdatingSpecialUnitId(unit.id)
+    setAppState(result.state)
+    setRemoteSearchUnits((items) => items?.map((item) => item.id === unit.id ? optimisticUnit : item) ?? null)
+
+    try {
+      if (supabase && isSupabaseConfigured) {
+        const remoteUnit = await new LeadraRepository(supabase).setUnitSpecial(unit.id, special)
+        setAppState((state) => ({
+          ...state,
+          units: state.units.map((item) => item.id === unit.id ? remoteUnit : item),
+        }))
+        setRemoteSearchUnits((items) => items?.map((item) => item.id === unit.id ? remoteUnit : item) ?? null)
+      }
+      setFlash(createFlashMessage(special ? 'flash.unitSpecialMarked' : 'flash.unitSpecialRemoved', special ? 'Unit marked special.' : 'Unit removed from Special.'))
+    } catch (error) {
+      setAppState(previousState)
+      setRemoteSearchUnits(previousRemoteSearchUnits)
+      setFlash({ text: `Special status could not be saved: ${errorMessage(error)}`, messageKey: null, messageParams: null })
+    } finally {
+      setUpdatingSpecialUnitId(null)
     }
   }
 
@@ -1373,13 +1419,16 @@ function LeadraApp() {
         </Link>
         <NavButton active={activeView === 'dashboard'} label={t('nav.dashboard')} to={pathForView('dashboard')} onClick={closeNavigation} icon={<Home />} className="motion-stage" style={motionStyle(0)} />
         <NavButton active={activeView === 'units'} label={t('nav.units')} to={pathForView('units')} onClick={closeNavigation} icon={<Building2 />} className="motion-stage" style={motionStyle(1)} />
-        <NavButton active={activeView === 'create'} label={t('nav.create')} to={pathForView('create')} onClick={closeNavigation} icon={<Plus />} className="motion-stage" style={motionStyle(2)} />
-        <NavButton active={activeView === 'notifications'} label={t('nav.alerts', { count: unreadCount })} to={pathForView('notifications')} onClick={closeNavigation} icon={<Bell />} className="motion-stage" style={motionStyle(3)} />
+        {canUseAdmin && (
+          <NavButton active={activeView === 'special'} label={t('nav.special')} to={pathForView('special')} onClick={closeNavigation} icon={<Star />} className="motion-stage" style={motionStyle(2)} />
+        )}
+        <NavButton active={activeView === 'create'} label={t('nav.create')} to={pathForView('create')} onClick={closeNavigation} icon={<Plus />} className="motion-stage" style={motionStyle(3)} />
+        <NavButton active={activeView === 'notifications'} label={t('nav.alerts', { count: unreadCount })} to={pathForView('notifications')} onClick={closeNavigation} icon={<Bell />} className="motion-stage" style={motionStyle(4)} />
         {canUseAnalytics && (
-          <NavButton active={activeView === 'analytics'} label={t('nav.analytics')} to={pathForView('analytics')} onClick={closeNavigation} icon={<BarChart3 />} className="motion-stage" style={motionStyle(4)} />
+          <NavButton active={activeView === 'analytics'} label={t('nav.analytics')} to={pathForView('analytics')} onClick={closeNavigation} icon={<BarChart3 />} className="motion-stage" style={motionStyle(5)} />
         )}
         {canUseAdmin && (
-          <NavButton active={activeView === 'admin'} label={t('nav.admin')} to={pathForView('admin')} onClick={closeNavigation} icon={<Settings />} className="motion-stage" style={motionStyle(5)} />
+          <NavButton active={activeView === 'admin'} label={t('nav.admin')} to={pathForView('admin')} onClick={closeNavigation} icon={<Settings />} className="motion-stage" style={motionStyle(6)} />
         )}
       </aside>
 
@@ -1491,6 +1540,45 @@ function LeadraApp() {
             />
           </div>
         )}
+        {activeView === 'special' && canUseAdmin && (
+          <div className="page-transition-frame" key={activeView}>
+            <UnitsPage
+              mode="special"
+              user={user}
+              lookupValues={activeLookupValues}
+              destinations={[]}
+              projects={[]}
+              selectedDestinationId={null}
+              selectedProjectId={null}
+              stage="destinations"
+              currentDestination={null}
+              currentProject={null}
+              units={displayedSpecialUnits}
+              filters={unitFilters}
+              selectedUnitIds={selectedBatchUnitIds}
+              batchAction={batchPdfAction}
+              onDestinationSelect={() => undefined}
+              onProjectSelect={() => undefined}
+              onBackToDestinations={() => undefined}
+              onBackToProjects={() => undefined}
+              onFilterChange={updateUnitFilter}
+              onResetFilters={resetUnitFilters}
+              onToggleUnitSelection={toggleBatchUnitSelection}
+              onSelectVisibleUnits={selectVisibleBatchUnits}
+              onClearSelection={clearBatchUnitSelection}
+              onGenerateSelectedPdfs={() => void generateSelectedPdfs()}
+              onDownloadSelectedPdfs={() => void downloadSelectedPdfs()}
+              onShareSelectedPdfs={() => void shareSelectedPdfs()}
+              onOpenUnit={(id) => {
+                runPageTransition(() => {
+                  setSelectedBatchUnitIds([])
+                  setView('details')
+                  routerNavigate(unitDetailsPath(id))
+                })
+              }}
+            />
+          </div>
+        )}
         {activeView === 'create' && (
           <div className="page-transition-frame" key={activeView}>
             <CreateUnitPage
@@ -1510,6 +1598,7 @@ function LeadraApp() {
               unit={selectedUnit}
               lookupValues={activeLookupValues}
               onArchive={() => { void archiveUnit(selectedUnit) }}
+              onSpecialChange={(special) => { void setUnitSpecial(selectedUnit, special) }}
               onUpdateUnit={(event) => handleUpdateUnit(selectedUnit, event)}
               onStatusChange={(status) => updateUnitStatus(selectedUnit, status)}
               onGeneratePdf={() => generatePdf(selectedUnit)}
@@ -1520,6 +1609,7 @@ function LeadraApp() {
               pdfSharing={sharingPdfUnitId === selectedUnit.id}
               pdfReady={Boolean(generatedPdfs[selectedUnit.id])}
               statusUpdating={updatingStatusUnitId === selectedUnit.id}
+              specialUpdating={updatingSpecialUnitId === selectedUnit.id}
               statusActionFeedback={statusActionFeedback?.unitId === selectedUnit.id ? statusActionFeedback : null}
               onSaveNote={(content) => saveSharedNote(selectedUnit, content)}
               onDeleteNote={() => deleteSharedNote(selectedUnit)}
@@ -1969,9 +2059,12 @@ function LeadraApp() {
           {canUseAnalytics && (
             <NavButton active={activeView === 'analytics'} label={t('nav.analytics')} to={pathForView('analytics')} onClick={closeNavigation} icon={<BarChart3 />} className="motion-stage" style={motionStyle(1)} />
           )}
-          <NavButton active={activeView === 'profile'} label={t('nav.profile')} to={pathForView('profile')} onClick={closeNavigation} icon={<SlidersHorizontal />} className="motion-stage" style={motionStyle(2)} />
           {canUseAdmin && (
-            <NavButton active={activeView === 'admin'} label={t('nav.admin')} to={pathForView('admin')} onClick={closeNavigation} icon={<Settings />} className="motion-stage" style={motionStyle(3)} />
+            <NavButton active={activeView === 'special'} label={t('nav.special')} to={pathForView('special')} onClick={closeNavigation} icon={<Star />} className="motion-stage" style={motionStyle(2)} />
+          )}
+          <NavButton active={activeView === 'profile'} label={t('nav.profile')} to={pathForView('profile')} onClick={closeNavigation} icon={<SlidersHorizontal />} className="motion-stage" style={motionStyle(3)} />
+          {canUseAdmin && (
+            <NavButton active={activeView === 'admin'} label={t('nav.admin')} to={pathForView('admin')} onClick={closeNavigation} icon={<Settings />} className="motion-stage" style={motionStyle(4)} />
           )}
         </div>
       )}
@@ -1981,7 +2074,7 @@ function LeadraApp() {
         <NavButton active={activeView === 'units'} label={t('nav.units')} to={pathForView('units')} onClick={closeNavigation} icon={<Building2 />} className="motion-stage" style={motionStyle(1)} />
         <NavButton active={activeView === 'create'} label={t('nav.add')} to={pathForView('create')} onClick={closeNavigation} icon={<Plus />} className="motion-stage" style={motionStyle(2)} />
         <NavButton
-          active={mobileMenuOpen || activeView === 'notifications' || activeView === 'analytics' || activeView === 'profile' || activeView === 'admin'}
+          active={mobileMenuOpen || activeView === 'notifications' || activeView === 'analytics' || activeView === 'special' || activeView === 'profile' || activeView === 'admin'}
           label={t('nav.more')}
           onClick={() => setMobileMenuOpen((open) => !open)}
           icon={<MoreHorizontal />}
@@ -2174,14 +2267,14 @@ function PaletteSamplePage() {
   const { themePreference } = useTheme()
   const brandAssets = leadraBrandAssets[themePreference]
   const sampleStats = [
-    ['Active listings', '248', 'Champagne metrics on rich black'],
+    ['Active listings', '248', 'Ivory metrics on rich black'],
     ['Qualified buyers', '1,420', 'Ivory text on dark slate'],
-    ['Booked tours', '36', 'Gold accent states'],
+    ['Booked tours', '36', 'Copper accent states'],
   ]
   const sampleUnits = [
-    ['Seaview Villa', 'Charcoal card / Ivory copy', 'Gold accent'],
-    ['Ras El Hekma Chalet', 'Dark slate section / Champagne border', 'Navy CTA'],
-    ['North Coast Residence', 'Rich black surface / Champagne status', 'Deep navy'],
+    ['Seaview Villa', 'Charcoal card / Ivory copy', 'Copper accent'],
+    ['Ras El Hekma Chalet', 'Dark slate section / linen border', 'Graphite CTA'],
+    ['North Coast Residence', 'Rich black surface / linen status', 'Deep graphite'],
   ]
 
   return (
@@ -2190,7 +2283,7 @@ function PaletteSamplePage() {
         <div>
           <p className="eyebrow">Leadra color sample</p>
           <h2>Dark luxury workspace</h2>
-          <p>Sample page only. This version uses the primary dark identity from the reference: Onyx, Graphite, Charcoal, and Champagne Gold.</p>
+          <p>Sample page only. This version uses the primary dark identity from the reference: Onyx, Graphite, Charcoal, and Muted Copper.</p>
         </div>
         <img className="palette-sample-logo" src={brandAssets.mark} alt="" aria-hidden="true" />
       </div>
@@ -2198,11 +2291,11 @@ function PaletteSamplePage() {
       <div className="palette-swatch-grid motion-stage" style={motionStyle(1, 40)}>
         {[
           ['Rich Black', '#0D0D0F'],
-          ['Champagne Gold', '#D6B06F'],
+          ['Muted Copper', '#a76f4d'],
           ['Charcoal', '#17171A'],
           ['Dark Slate', '#1F1F23'],
           ['Warm Ivory', '#F6F1EA'],
-          ['Deep Navy', '#0F1B2D'],
+          ['Graphite', '#1f1f23'],
           ['Soft Linen', '#EFE7DD'],
           ['Taupe Grey', '#7D7468'],
         ].map(([name, value], index) => (
@@ -3336,6 +3429,7 @@ function dashboardDescription(role: LeadraUser['role'], locale: LocaleCode) {
 function getViewTitle(view: View, user: LeadraUser, locale: LocaleCode): string {
   if (view === 'dashboard') return user.role === 'admin' ? translateForLocale(locale, 'viewTitle.adminCommand') : translateForLocale(locale, 'viewTitle.userCommand', { firstName: user.fullName.split(/\s+/)[0] })
   if (view === 'units' || view === 'details') return translateForLocale(locale, 'viewTitle.unitDesk')
+  if (view === 'special') return translateForLocale(locale, 'viewTitle.special')
   if (view === 'create') return translateForLocale(locale, 'viewTitle.newResale')
   if (view === 'notifications') return translateForLocale(locale, 'viewTitle.alerts')
   if (view === 'profile') return translateForLocale(locale, 'viewTitle.profile')
@@ -3350,6 +3444,7 @@ function canAccessAdmin(user: LeadraUser): boolean {
 
 function isViewAllowedForUser(view: View, user: LeadraUser): boolean {
   if (view === 'admin') return canAccessAdmin(user)
+  if (view === 'special') return canAccessAdmin(user)
   if (view === 'analytics') return canAccessAnalytics(user)
   return true
 }
