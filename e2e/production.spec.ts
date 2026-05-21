@@ -14,6 +14,7 @@ const routes = [
   'create/owner',
   'create/review',
   'notifications',
+  'special',
   'profile',
   'analytics',
   'analytics/live',
@@ -38,6 +39,7 @@ const routes = [
 const createSteps = ['Property', 'Specs', 'Payment', 'Owner', 'Review'] as const
 const adminSections = ['Users', 'Master Data', 'Settings', 'Metrics', 'Audit'] as const
 const masterDataDirectories = ['Developers', 'Destinations', 'Projects', 'Views', 'Finishes', 'Branch Management', 'Team Management'] as const
+const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
 async function completeSignIn(page: Page, role: (typeof roles)[number]) {
   const intro = page.getByRole('button', { name: /continue to sign in/i })
@@ -264,6 +266,39 @@ test.describe('production preview route and role sweep', () => {
     await page.getByRole('combobox', { name: /status/i }).click()
     await expect(page.getByRole('option', { name: /available/i })).toBeVisible()
     await assertPageHealth(page)
+  })
+
+  test('special units stay visible after the remote save settles', async ({ page }) => {
+    await signIn(page, 'admin')
+    await navigateRoute(page, 'units')
+
+    const firstOpenButton = page.getByRole('button', { name: /^open /i }).nth(1)
+    const openLabel = await firstOpenButton.getAttribute('aria-label')
+    const unitCode = openLabel?.replace(/^open\s+/i, '').trim()
+    expect(unitCode, 'unit code should be present in the row open label').toBeTruthy()
+    const openUnit = page.getByRole('button', { name: new RegExp(`^open ${escapeRegExp(unitCode!)}$`, 'i') })
+
+    await firstOpenButton.click()
+    await expect(page.getByText(/unit details/i).first()).toBeVisible()
+    const removeSpecial = page.getByRole('button', { name: /remove special/i })
+    if (await removeSpecial.isVisible({ timeout: 1_000 }).catch(() => false)) await removeSpecial.click()
+
+    await page.getByRole('button', { name: /mark special/i }).click()
+    await expect(page.getByRole('button', { name: /remove special/i })).toBeVisible()
+    await page.waitForTimeout(1_500)
+    await expect(page.getByRole('button', { name: /remove special/i })).toBeVisible()
+
+    await page.evaluate(() => {
+      window.history.pushState(null, '', '/special')
+      window.dispatchEvent(new PopStateEvent('popstate'))
+    })
+    await expect(page).toHaveURL(/\/special$/)
+    await expect(page.getByRole('heading', { name: /special units/i }).first()).toBeVisible()
+    await expect(openUnit).toBeVisible()
+
+    await openUnit.click()
+    await page.getByRole('button', { name: /remove special/i }).click()
+    await expect(page.getByRole('button', { name: /mark special/i })).toBeVisible()
   })
 
   test('sub admin can deactivate a non-sales user in demo mode', async ({ page }) => {

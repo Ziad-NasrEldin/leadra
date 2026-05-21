@@ -344,7 +344,7 @@ export function canArchiveUnit(user: LeadraUser, unit: LeadraUnit): boolean {
 }
 
 export function canManageUnitSpecialStatus(user: LeadraUser, unit: LeadraUnit): boolean {
-  void unit
+  if (unit.archived) return false
   return user.role === 'admin' || user.role === 'sub_admin'
 }
 

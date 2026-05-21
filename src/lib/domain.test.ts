@@ -552,6 +552,7 @@ describe('Leadra domain rules', () => {
     expect(canManageUnitSpecialStatus(subAdmin, baseUnit)).toBe(true)
     expect(canManageUnitSpecialStatus(manager, baseUnit)).toBe(false)
     expect(canManageUnitSpecialStatus(salesA, baseUnit)).toBe(false)
+    expect(canManageUnitSpecialStatus(admin, { ...baseUnit, archived: true })).toBe(false)
 
     const sanitized = sanitizeUnitForPdf(salesB, baseUnit)
     expect(sanitized.originalOwnerName).toBeNull()

@@ -309,6 +309,7 @@ function LeadraApp() {
   const [activeLookupValues, setActiveLookupValues] = useState<LookupValue[]>(initialWorkspace.lookupValues)
   const [unitFilters, setUnitFilters] = useState<UnitFilters>({ status: 'all' })
   const [remoteSearchUnits, setRemoteSearchUnits] = useState<LeadraUnit[] | null>(null)
+  const [remoteSearchView, setRemoteSearchView] = useState<'inventory' | 'special' | null>(null)
   const [flash, setFlash] = useState<LocalizedFlashMessage | null>(null)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [authLoading, setAuthLoading] = useState(isSupabaseConfigured)
@@ -598,9 +599,9 @@ function LeadraApp() {
     destinationId: routeDestinationId ?? unitFilters.destinationId,
     projectId: routeProjectId ?? unitFilters.projectId,
   })
-  const displayedUnits = remoteSearchUnits ?? filteredUnits
+  const displayedUnits = remoteSearchView === 'inventory' && remoteSearchUnits ? remoteSearchUnits : filteredUnits
   const specialFilteredUnits = searchUnits(user, appState.units.filter((unit) => unit.isSpecial && !unit.archived), unitFilters)
-  const displayedSpecialUnits = (remoteSearchUnits ?? specialFilteredUnits).filter((unit) => unit.isSpecial && !unit.archived)
+  const displayedSpecialUnits = (remoteSearchView === 'special' && remoteSearchUnits ? remoteSearchUnits : specialFilteredUnits).filter((unit) => unit.isSpecial && !unit.archived)
   const activeBatchUnits = activeView === 'special' ? displayedSpecialUnits : displayedUnits
   const selectedBatchUnits = activeBatchUnits.filter((unit) => selectedBatchUnitIds.includes(unit.id))
   const unreadCount = appState.notifications.filter(
@@ -1353,12 +1354,14 @@ function LeadraApp() {
   function resetUnitFilters() {
     setUnitFilters({ status: 'all' })
     setRemoteSearchUnits(null)
+    setRemoteSearchView(null)
     setSelectedBatchUnitIds([])
   }
 
   async function loadRemoteUnitSearch(nextFilters: UnitFilters, destinationId = routeDestinationId, projectId = routeProjectId) {
     if (!supabase || !isSupabaseConfigured) {
       setRemoteSearchUnits(null)
+      setRemoteSearchView(null)
       return
     }
     try {
@@ -1369,8 +1372,10 @@ function LeadraApp() {
         projectId: nextFilters.projectId || projectId || undefined,
       })
       setRemoteSearchUnits(units)
+      setRemoteSearchView(activeView === 'special' ? 'special' : 'inventory')
     } catch {
       setRemoteSearchUnits(null)
+      setRemoteSearchView(null)
     }
   }
 
@@ -1504,6 +1509,7 @@ function LeadraApp() {
                 setUnitFilters(nextFilters)
                 setSelectedBatchUnitIds([])
                 setRemoteSearchUnits(null)
+                setRemoteSearchView(null)
                 navigateToPath(destinationPath(id))
               }}
               onProjectSelect={(id) => {
@@ -1520,6 +1526,7 @@ function LeadraApp() {
               onBackToProjects={() => {
                 const destinationId = activeSelectedDestinationId
                 setRemoteSearchUnits(null)
+                setRemoteSearchView(null)
                 if (destinationId) navigateToPath(destinationPath(destinationId))
               }}
               onFilterChange={updateUnitFilter}
