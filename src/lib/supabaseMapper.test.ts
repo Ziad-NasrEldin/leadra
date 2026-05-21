@@ -129,6 +129,19 @@ describe('Supabase mappers', () => {
     })
   })
 
+  it('keeps unpaid maintenance cost and omits its due date on insert', () => {
+    expect(toUnitInsertPayload({
+      ...input,
+      maintenancePaid: false,
+      maintenanceCost: 45_000,
+      maintenanceDueDate: null,
+    }, actor)).toMatchObject({
+      maintenance_paid: false,
+      maintenance_cost: 45_000,
+      maintenance_due_date: null,
+    })
+  })
+
   it('creates a snake_case unit update payload without protected fields', () => {
     const payload = toUnitUpdatePayload(editInput, {
       canEditOwner: true,

@@ -466,7 +466,67 @@ describe('LeadraRepository', () => {
 
     await expect(new LeadraRepository(client as never).createUnit(salesUser(), createUnitInput({
       media: [{ id: 'video-1', type: 'video', url: '/tour.mp4', name: 'tour.mp4', sizeBytes: 1024 }],
-    }))).rejects.toThrow('Only image files and PDF attachments are allowed')
+    }))).rejects.toThrow('Videos are not allowed')
+  })
+
+  it('rejects PDF-only media before calling the atomic create RPC', async () => {
+    const client = {
+      rpc() {
+        throw new Error('rpc should not run with invalid media')
+      },
+    }
+
+    await expect(new LeadraRepository(client as never).createUnit(salesUser(), createUnitInput({
+      media: [{ id: 'pdf-1', type: 'pdf', url: '/plan.pdf', name: 'plan.pdf', sizeBytes: 1024 }],
+    }))).rejects.toThrow('A PDF attachment requires at least one related photo')
+  })
+
+  it('rolls back the direct unit insert when fallback media insert fails', async () => {
+    const calls: string[] = []
+    const mediaError = { code: '23514', message: 'violates check constraint on unit_media' }
+    const client = {
+      rpc() {
+        return Promise.resolve({
+          error: {
+            code: 'PGRST202',
+            message: 'Could not find the function public.create_unit_with_media(media_payload, unit_payload) in the schema cache',
+          },
+          data: null,
+        })
+      },
+      from(table: string) {
+        return {
+          insert() {
+            calls.push(`insert:${table}`)
+            if (table === 'unit_media') return Promise.resolve({ error: mediaError })
+            return {
+              select() {
+                return {
+                  single() {
+                    return Promise.resolve({ error: null, data: { id: 105 } })
+                  },
+                }
+              },
+            }
+          },
+          delete() {
+            calls.push(`delete:${table}`)
+            return {
+              eq(column: string, value: number) {
+                expect(column).toBe('id')
+                expect(value).toBe(105)
+                return Promise.resolve({ error: null })
+              },
+            }
+          },
+        }
+      },
+    }
+
+    await expect(new LeadraRepository(client as never).createUnit(salesUser(), createUnitInput({
+      media: [{ id: 'image-1', type: 'image', url: '/living.png', name: 'living.png', sizeBytes: 1024 }],
+    }))).rejects.toThrow('Unit media attachments could not be saved')
+    expect(calls).toEqual(['insert:units', 'insert:unit_media', 'delete:units'])
   })
 
   it('surfaces reload failures separately after atomic create succeeds', async () => {
@@ -495,7 +555,7 @@ describe('LeadraRepository', () => {
       },
     }
 
-    await expect(new LeadraRepository(client as never).createUnit(salesUser(), createUnitInput())).rejects.toThrow('created unit could not be reloaded')
+    await expect(new LeadraRepository(client as never).createUnit(salesUser(), createUnitInput())).rejects.toThrow('Unit was created but could not be loaded')
   })
 
   it('persists unit detail updates through the protected update payload', async () => {

@@ -145,6 +145,11 @@ async function navigateRoute(page: Page, route: string, role: (typeof roles)[num
   await page.waitForLoadState('networkidle')
 }
 
+async function chooseFromSelect(page: Page, label: RegExp, option: RegExp) {
+  await page.getByRole('combobox', { name: label }).click()
+  await page.getByRole('option', { name: option }).click()
+}
+
 test.describe('production preview route and role sweep', () => {
   test('login screen adapts before authentication', async ({ page }) => {
     await page.goto('/dashboard')
@@ -258,6 +263,26 @@ test.describe('production preview route and role sweep', () => {
     await expect(page).toHaveURL(/filters=open/)
     await page.getByRole('combobox', { name: /status/i }).click()
     await expect(page.getByRole('option', { name: /available/i })).toBeVisible()
+    await assertPageHealth(page)
+  })
+
+  test('sub admin can deactivate a non-sales user in demo mode', async ({ page }) => {
+    await page.goto('/dashboard')
+    const intro = page.getByRole('button', { name: /continue to sign in/i })
+    if (await intro.first().isVisible({ timeout: 1_000 }).catch(() => false)) await intro.first().click()
+    const demoSubAdmin = page.getByRole('button', { name: /continue as laila mansour/i })
+    test.skip(!await demoSubAdmin.first().isVisible({ timeout: 1_000 }).catch(() => false), 'demo sign-in is disabled for this deployment')
+    await demoSubAdmin.click()
+    await expect(page.locator('.app-shell')).toBeVisible()
+
+    await navigateRoute(page, 'admin/users', 'sub_admin')
+    await chooseFromSelect(page, /^role$/i, /manager/i)
+    await page.getByLabel(/managed users/i).getByRole('button', { name: /deactivate mona hafez/i }).click()
+    await expect(page.getByLabel(/replacement sales representative/i)).toHaveCount(0)
+    await page.getByRole('button', { name: /^deactivate user$/i }).click()
+
+    await expect(page.getByText(/user deactivated and audit history updated/i)).toBeVisible()
+    await expect(page.getByText(/mona hafez/i)).toHaveCount(0)
     await assertPageHealth(page)
   })
 })

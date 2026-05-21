@@ -361,6 +361,39 @@ describe('Leadra product workflows', () => {
     expect(result.errorKey).toBe('error.invalidVideoUpload')
   })
 
+  it('rejects malformed unit creation numbers before creating a unit', () => {
+    const result = createUnitWorkflow(state(), sales, {
+      developerId: 'dev-palm',
+      developerName: 'Palm Hills',
+      projectId: 'project-zed',
+      projectName: 'ZED East',
+      destinationId: 'dest-new-cairo',
+      destinationName: 'New Cairo',
+      unitType: 'Apartment',
+      floor: '1st',
+      bua: Number.NaN,
+      viewId: 'view-garden',
+      viewName: 'Garden',
+      bedrooms: 3,
+      bathrooms: 2,
+      elevator: true,
+      finish: 'Fully Finished',
+      furnished: false,
+      paymentMethod: 'cash',
+      totalAmount: 6_000_000,
+      deliveryExpectancy: { mode: 'year', year: 2029 },
+      originalOwnerName: 'Malformed Owner',
+      countryCode: '+20',
+      originalOwnerPhone: '010 3333 8899',
+      salesNotes: 'Malformed attempt.',
+      media: [],
+    })
+
+    expect(result.ok).toBe(false)
+    expect(result.error).toBe('BUA must be greater than zero.')
+    expect(result.state.units).toHaveLength(state().units.length)
+  })
+
   it('rejects same-project duplicate owner phone and records the attempt', () => {
     const result = createUnitWorkflow(state(), sales, {
       developerId: 'dev-palm',

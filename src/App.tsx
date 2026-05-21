@@ -2006,7 +2006,18 @@ function LeadraApp() {
                 setAppState(result.state)
                 try {
                   if (supabase && isSupabaseConfigured) {
-                    await new LeadraRepository(supabase).deleteManagedUser(managedUserId)
+                    const managedUser = appState.users.find((item) => item.id === managedUserId)
+                    if (!managedUser) throw new Error('User was not found.')
+                    await updateManagedUserProfile(supabase, managedUserId, {
+                      fullName: managedUser.fullName,
+                      email: managedUser.email,
+                      role: managedUser.role,
+                      jobTitle: managedUser.jobTitle,
+                      phoneNumber: managedUser.phoneNumber,
+                      teamId: managedUser.teamId,
+                      branchId: managedUser.branchId,
+                      status: 'inactive',
+                    })
                   }
                   setFlash(createFlashMessage('flash.userDeleted', 'User deactivated and audit history updated.'))
                 } catch (error) {

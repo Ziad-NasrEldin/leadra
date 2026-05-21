@@ -90,18 +90,6 @@ export async function updateManagedUserProfile(
   userId: string,
   updates: ManagedUserProfilePayload,
 ): Promise<LeadraUser> {
-  const { data: currentProfile, error: currentError } = await client
-    .from('profiles')
-    .select('email')
-    .eq('id', userId)
-    .single<{ email: string }>()
-
-  if (currentError) throw new Error(`User update failed: ${currentError.message}`)
-
-  if (currentProfile.email === updates.email) {
-    return updateManagedProfileRow(client, userId, updates)
-  }
-
   const { data, error } = await client.functions.invoke<ManagedUserProfileResponse>('admin-update-user-profile', {
     body: { userId, ...updates },
   })
@@ -110,31 +98,6 @@ export async function updateManagedUserProfile(
   if (!data?.ok || !data.profile) throw new Error(data?.error ?? 'User update failed.')
 
   return toLeadraUser(data.profile)
-}
-
-async function updateManagedProfileRow(
-  client: SupabaseClient,
-  userId: string,
-  updates: ManagedUserProfilePayload,
-): Promise<LeadraUser> {
-  const { data, error } = await client
-    .from('profiles')
-    .update({
-      full_name: updates.fullName,
-      email: updates.email,
-      role: updates.role,
-      job_title: updates.jobTitle,
-      phone_number: updates.phoneNumber,
-      team_id: updates.teamId || null,
-      branch_id: updates.branchId || null,
-      status: updates.status,
-    })
-    .eq('id', userId)
-    .select('id, full_name, email, role, job_title, phone_number, team_id, branch_id, status, theme_preference, created_at, last_login_at')
-    .single<NonNullable<ManagedUserProfileResponse['profile']>>()
-
-  if (error || !data) throw new Error(error?.message ?? 'User update failed.')
-  return toLeadraUser(data)
 }
 
 function toLeadraUser(profile: NonNullable<ManagedUserProfileResponse['profile']>): LeadraUser {

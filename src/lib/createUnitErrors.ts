@@ -6,13 +6,20 @@ function errorMessage(error: unknown) {
   return 'Please try again.'
 }
 
+function errorField(error: unknown, field: 'details' | 'hint') {
+  if (typeof error === 'object' && error && field in error) {
+    return String((error as Record<'details' | 'hint', unknown>)[field])
+  }
+  return ''
+}
+
 function errorCode(error: unknown) {
   if (typeof error === 'object' && error && 'code' in error) return String(error.code)
   return ''
 }
 
 function errorText(error: unknown) {
-  return `${errorCode(error)} ${errorMessage(error)}`.toLowerCase()
+  return `${errorCode(error)} ${errorMessage(error)} ${errorField(error, 'details')} ${errorField(error, 'hint')}`.toLowerCase()
 }
 
 function isSchemaCacheError(error: unknown) {
@@ -23,6 +30,30 @@ function isSchemaCacheError(error: unknown) {
 function isDuplicateOwnerPhoneError(error: unknown) {
   const text = errorText(error)
   return text.includes('23505') || text.includes('units_project_owner_phone_unique')
+}
+
+function isForeignKeyError(error: unknown) {
+  return errorText(error).includes('23503')
+}
+
+function isRequiredFieldError(error: unknown) {
+  const text = errorText(error)
+  return text.includes('23502') || text.includes('not-null')
+}
+
+function isInvalidValueError(error: unknown) {
+  const text = errorText(error)
+  return text.includes('22p02') || text.includes('22023') || text.includes('invalid input syntax') || text.includes('invalid_text_representation')
+}
+
+function isCheckConstraintError(error: unknown) {
+  const text = errorText(error)
+  return text.includes('23514') || text.includes('violates check constraint')
+}
+
+function isMediaAttachError(error: unknown) {
+  const text = errorText(error)
+  return text.includes('media attachments could not be saved') || text.includes('unit_media') || text.includes('unit media')
 }
 
 function isPermissionError(error: unknown) {
@@ -60,6 +91,43 @@ export function createUnitRemoteErrorFlash(error: unknown): LocalizedFlashMessag
   if (isNetworkError(error)) {
     return {
       text: 'Unit could not be created because the network connection failed. Check your connection and try again.',
+      messageKey: null,
+      messageParams: null,
+    }
+  }
+  if (isForeignKeyError(error)) {
+    return {
+      text: 'Unit could not be created because one selected Master Data value is no longer available. Refresh the page and choose the developer, project, destination, view, and finish again.',
+      messageKey: null,
+      messageParams: null,
+    }
+  }
+  if (isRequiredFieldError(error)) {
+    return {
+      text: 'Unit could not be created because a required field is missing. Review the form and try again.',
+      messageKey: null,
+      messageParams: null,
+    }
+  }
+  if (isInvalidValueError(error)) {
+    return {
+      text: isMediaAttachError(error)
+        ? 'Unit could not be created because one media attachment is invalid. Remove it and upload a supported image or PDF.'
+        : 'Unit could not be created because the form contains an invalid value. Review the highlighted selections and try again.',
+      messageKey: null,
+      messageParams: null,
+    }
+  }
+  if (isCheckConstraintError(error)) {
+    return {
+      text: 'Unit could not be created because the payment or maintenance details are invalid. Review the amounts and required dates, then try again.',
+      messageKey: null,
+      messageParams: null,
+    }
+  }
+  if (isMediaAttachError(error)) {
+    return {
+      text: 'Unit could not be created because media attachments could not be saved. Remove the attachments and try again.',
       messageKey: null,
       messageParams: null,
     }

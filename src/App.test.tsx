@@ -108,6 +108,28 @@ describe('Leadra app shell', () => {
     }).text).toMatch(/owner phone already exists/i)
   })
 
+  it('renders targeted create-unit stale Master Data guidance', () => {
+    expect(createUnitRemoteErrorFlash({
+      code: '23503',
+      message: 'insert or update on table "units" violates foreign key constraint "units_project_id_fkey"',
+    }).text).toMatch(/Master Data/i)
+  })
+
+  it('renders targeted create-unit payment constraint guidance', () => {
+    expect(createUnitRemoteErrorFlash({
+      code: '23514',
+      message: 'new row for relation "units" violates check constraint "units_maintenance_paid_requires_details"',
+    }).text).toMatch(/payment or maintenance/i)
+  })
+
+  it('renders targeted create-unit media attachment guidance', () => {
+    expect(createUnitRemoteErrorFlash({
+      code: '22023',
+      message: 'Unit media attachments could not be saved.',
+      details: 'Only image and PDF media can be attached to unit_media',
+    }).text).toMatch(/media attachment is invalid/i)
+  })
+
   it('renders a friendly PDF visibility schema-cache error', () => {
     expect(mediaPdfVisibilityErrorFlash({
       code: 'PGRST204',
@@ -884,6 +906,24 @@ describe('Leadra app shell', () => {
 
     await openLoginPage(user)
     await signInAs(user, /continue as admin/i)
+    await user.click((await screen.findAllByRole('link', { name: /^admin$/i }))[0])
+
+    await chooseFromSelect(user, /^role$/i, /manager/i)
+    const managedUsers = screen.getByLabelText(/managed users/i)
+    await user.click(within(managedUsers).getByRole('button', { name: /deactivate mona hafez/i }))
+    expect(screen.queryByLabelText(/replacement sales representative/i)).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: /^deactivate user$/i }))
+
+    expect(await screen.findByText(/user deactivated and audit history updated/i)).toBeInTheDocument()
+    expect(screen.queryByText(/mona hafez/i)).not.toBeInTheDocument()
+  })
+
+  it('lets a sub admin deactivate a non-sales user', async () => {
+    renderApp()
+    const user = userEvent.setup()
+
+    await openLoginPage(user)
+    await signInAs(user, /continue as laila mansour/i)
     await user.click((await screen.findAllByRole('link', { name: /^admin$/i }))[0])
 
     await chooseFromSelect(user, /^role$/i, /manager/i)

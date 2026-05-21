@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { validateMediaUpload } from './domain'
 import {
   toPaymentHistoryViewModel,
   toPaymentScheduleViewModel,
@@ -16,6 +17,25 @@ import type { AnalyticsEventType, CreateUnitInput, LeadraUnit, LeadraUser, Messa
 
 type FunctionErrorBody = { error?: string; message?: string }
 type SupabaseErrorLike = { code?: string; message?: string; details?: string; hint?: string } | null | undefined
+type CreateUnitPhase = 'unit' | 'media' | 'reload'
+
+function createUnitRemoteError(phase: CreateUnitPhase, error: unknown, rollbackError: unknown = null) {
+  const message = phase === 'media'
+    ? 'Unit media attachments could not be saved.'
+    : phase === 'reload'
+      ? 'Unit was created but could not be loaded.'
+      : 'Unit could not be created.'
+  const wrapped = new Error(message)
+  Object.assign(wrapped, {
+    code: typeof error === 'object' && error && 'code' in error ? error.code : undefined,
+    details: typeof error === 'object' && error && 'details' in error ? error.details : undefined,
+    hint: typeof error === 'object' && error && 'hint' in error ? error.hint : undefined,
+    phase,
+    cause: error,
+    rollbackError,
+  })
+  return wrapped
+}
 
 const unitSelect = `
   *,
@@ -69,9 +89,9 @@ export class LeadraRepository {
   }
 
   async createUnit(actor: LeadraUser, input: CreateUnitInput): Promise<LeadraUnit> {
-    const unsupportedMedia = input.media.find((file) => file.type !== 'image' && file.type !== 'pdf')
-    if (unsupportedMedia) {
-      throw new Error('Upload failed. Only image files and PDF attachments are allowed.')
+    const mediaValidation = validateMediaUpload(input.media)
+    if (!mediaValidation.ok) {
+      throw new Error(mediaValidation.message ?? 'Upload failed. Invalid media upload.')
     }
     const media = input.media.filter((file) => file.type === 'image' || file.type === 'pdf')
     const { data: createdUnitId, error } = await this.client.rpc('create_unit_with_media', {
@@ -83,7 +103,11 @@ export class LeadraRepository {
       return this.createUnitWithoutAtomicRpc(actor, input, media)
     }
     if (error) throw error
-    return this.loadUnit(createdUnitId as number)
+    try {
+      return await this.loadUnit(createdUnitId as number)
+    } catch (loadError) {
+      throw createUnitRemoteError('reload', loadError)
+    }
   }
 
   private async createUnitWithoutAtomicRpc(actor: LeadraUser, input: CreateUnitInput, media: CreateUnitInput['media']): Promise<LeadraUnit> {
@@ -108,10 +132,26 @@ export class LeadraRepository {
         return { ...payload, unit_id: createdUnitId }
       })
       const { error: mediaError } = await this.client.from('unit_media').insert(mediaPayload)
-      if (mediaError) throw mediaError
+      if (mediaError) {
+        const rollbackError = await this.deleteCreatedUnitAfterMediaFailure(createdUnitId)
+        throw createUnitRemoteError('media', mediaError, rollbackError)
+      }
     }
 
-    return this.loadUnit(createdUnitId)
+    try {
+      return await this.loadUnit(createdUnitId)
+    } catch (error) {
+      throw createUnitRemoteError('reload', error)
+    }
+  }
+
+  private async deleteCreatedUnitAfterMediaFailure(unitId: number): Promise<unknown> {
+    try {
+      const { error } = await this.client.from('units').delete().eq('id', unitId)
+      return error ?? null
+    } catch (error) {
+      return error
+    }
   }
 
   private async loadUnit(unitId: number): Promise<LeadraUnit> {
