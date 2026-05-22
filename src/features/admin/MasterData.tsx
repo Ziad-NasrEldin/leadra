@@ -8,6 +8,44 @@ import { getLookupKindLabel } from '../shared/labels'
 import { useLookupThumbnailSources } from '../shared/media'
 import { motionStyle } from '../shared/motion'
 
+type MasterDataPanelProps = {
+  lookupValues: LookupValue[]
+  branches: BranchDirectoryItem[]
+  teams: TeamDirectoryItem[]
+  activeDirectory: MasterDataDirectory
+  onDirectoryChange: (directory: MasterDataDirectory) => void
+  userCounts: Record<string, number>
+  onCreateLookupValue: (kind: LookupKind, label: string, thumbnailFile?: File | null) => Promise<void>
+  onUpdateLookupValue: (lookupId: string, label: string, thumbnailChange?: LookupThumbnailChange) => Promise<void>
+  onArchiveLookupValue: (lookupId: string) => Promise<void>
+  onCreateBranch: (name: string) => Promise<void>
+  onUpdateBranch: (branchId: string, name: string) => Promise<void>
+  onArchiveBranch: (branchId: string) => Promise<void>
+  onCreateTeam: (name: string) => Promise<void>
+  onUpdateTeam: (teamId: string, name: string) => Promise<void>
+  onArchiveTeam: (teamId: string) => Promise<void>
+}
+
+type DirectoryItem = {
+  id: string
+  name: string
+  meta: string
+  locked: boolean
+  thumbnailPath?: string | null
+  thumbnailSrc?: string | null
+  supportsThumbnail?: boolean
+}
+
+type DirectoryCreateFormProps = {
+  label: string
+  name: string
+  placeholder: string
+  buttonLabel: string
+  extraControl?: ReactNode
+  supportsThumbnail?: boolean
+  onCreate: (value: string, thumbnailFile?: File | null) => Promise<void>
+}
+
 export function MasterDataPanel({
   lookupValues,
   branches,
@@ -24,23 +62,7 @@ export function MasterDataPanel({
   onCreateTeam,
   onUpdateTeam,
   onArchiveTeam,
-}: {
-  lookupValues: LookupValue[]
-  branches: BranchDirectoryItem[]
-  teams: TeamDirectoryItem[]
-  activeDirectory: MasterDataDirectory
-  onDirectoryChange: (directory: MasterDataDirectory) => void
-  userCounts: Record<string, number>
-  onCreateLookupValue: (kind: LookupKind, label: string, thumbnailFile?: File | null) => Promise<void>
-  onUpdateLookupValue: (lookupId: string, label: string, thumbnailChange?: LookupThumbnailChange) => Promise<void>
-  onArchiveLookupValue: (lookupId: string) => Promise<void>
-  onCreateBranch: (name: string) => Promise<void>
-  onUpdateBranch: (branchId: string, name: string) => Promise<void>
-  onArchiveBranch: (branchId: string) => Promise<void>
-  onCreateTeam: (name: string) => Promise<void>
-  onUpdateTeam: (teamId: string, name: string) => Promise<void>
-  onArchiveTeam: (teamId: string) => Promise<void>
-}) {
+}: MasterDataPanelProps) {
   const { locale, t } = useLocale()
   const [directoryQuery, setDirectoryQuery] = useState('')
   const thumbnailSources = useLookupThumbnailSources(lookupValues)
@@ -190,15 +212,7 @@ function DirectoryCreateForm({
   extraControl,
   supportsThumbnail = false,
   onCreate,
-}: {
-  label: string
-  name: string
-  placeholder: string
-  buttonLabel: string
-  extraControl?: ReactNode
-  supportsThumbnail?: boolean
-  onCreate: (value: string, thumbnailFile?: File | null) => Promise<void>
-}) {
+}: DirectoryCreateFormProps) {
   const { t } = useLocale()
   const [error, setError] = useState('')
   const [pending, setPending] = useState(false)
@@ -344,7 +358,7 @@ function DirectoryList({
   title: string
   emptyTitle: string
   emptyBody: string
-  items: Array<{ id: string; name: string; meta: string; locked: boolean; thumbnailPath?: string | null; thumbnailSrc?: string | null; supportsThumbnail?: boolean }>
+  items: DirectoryItem[]
   onUpdate: (id: string, name: string, thumbnailChange?: LookupThumbnailChange) => Promise<void>
   onArchive: (id: string) => Promise<void>
 }) {
@@ -384,7 +398,7 @@ function DirectoryCard({
   onSave,
   onArchive,
 }: {
-  item: { id: string; name: string; meta: string; locked: boolean; thumbnailPath?: string | null; thumbnailSrc?: string | null; supportsThumbnail?: boolean }
+  item: DirectoryItem
   index: number
   isEditing: boolean
   onEdit: () => void

@@ -2,17 +2,62 @@ import { getIntlLocale, type LocaleCode } from '../../lib/i18n'
 import { normalizeReactiveUnitFilters } from '../../lib/domain'
 import type { InstallmentType, LeadraUnit, UnitFilters } from '../../lib/types'
 
+const automaticInstallmentFrequencyMonths: Record<Exclude<InstallmentType, 'custom'>, number> = {
+  monthly: 1,
+  quarterly: 3,
+  semi_annual: 6,
+  annual: 12,
+}
+
+const installmentTypeLabelKeys: Record<InstallmentType, string> = {
+  monthly: 'create.monthly',
+  quarterly: 'create.quarterly',
+  semi_annual: 'create.semiAnnual',
+  annual: 'create.annual',
+  custom: 'create.customInstallments',
+}
+
 export function parseOptionalNumber(value: string): number | undefined {
   if (value.trim() === '') return undefined
   const parsed = Number(value)
   return Number.isFinite(parsed) ? parsed : undefined
 }
 
+export function readFormString(formData: FormData, name: string, fallback = ''): string {
+  const value = formData.get(name)
+  return typeof value === 'string' ? value : fallback
+}
+
+export function readTrimmedFormString(formData: FormData, name: string, fallback = ''): string {
+  const value = readFormString(formData, name, fallback).trim()
+  return value || fallback
+}
+
+export function readFormNumber(formData: FormData, name: string, fallback = 0): number {
+  const value = formData.get(name)
+  if (typeof value !== 'string') return fallback
+  const parsed = parseOptionalNumber(value)
+  return parsed ?? fallback
+}
+
+export function readFormBoolean(formData: FormData, name: string): boolean {
+  return formData.get(name) === 'on'
+}
+
+export function readFormEnum<const T extends readonly string[]>(
+  formData: FormData,
+  name: string,
+  allowed: T,
+  fallback: T[number],
+): T[number] {
+  const value = formData.get(name)
+  return typeof value === 'string' && allowed.includes(value) ? value : fallback
+}
+
 export function parseOptionalFormNumber(formData: FormData, name: string): number | null {
   const value = formData.get(name)
-  if (typeof value !== 'string' || value.trim() === '') return null
-  const parsed = Number(value)
-  return Number.isFinite(parsed) ? parsed : null
+  if (typeof value !== 'string') return null
+  return parseOptionalNumber(value) ?? null
 }
 
 export function parseOptionalFormDate(formData: FormData, name: string): string | null {
@@ -57,15 +102,11 @@ export function getUnitCustomInstallmentText(unit: LeadraUnit): string | null {
 }
 
 export function isAutomaticInstallmentType(type: InstallmentType | null | undefined): type is Exclude<InstallmentType, 'custom'> {
-  return type === 'monthly' || type === 'quarterly' || type === 'semi_annual' || type === 'annual'
+  return type != null && type !== 'custom'
 }
 
 export function installmentFrequencyMonths(type: InstallmentType | null | undefined): number | null {
-  if (type === 'monthly') return 1
-  if (type === 'quarterly') return 3
-  if (type === 'semi_annual') return 6
-  if (type === 'annual') return 12
-  return null
+  return isAutomaticInstallmentType(type) ? automaticInstallmentFrequencyMonths[type] : null
 }
 
 export function parseMonthValue(value?: string | null): { year: number; monthIndex: number } | null {
@@ -101,12 +142,7 @@ export function formatMonthYear(locale: LocaleCode, value?: string | null): stri
 }
 
 export function getInstallmentTypeLabel(type: InstallmentType | null | undefined, t: (key: string) => string): string {
-  if (type === 'monthly') return t('create.monthly')
-  if (type === 'quarterly') return t('create.quarterly')
-  if (type === 'semi_annual') return t('create.semiAnnual')
-  if (type === 'annual') return t('create.annual')
-  if (type === 'custom') return t('create.customInstallments')
-  return t('common.notSet')
+  return type ? t(installmentTypeLabelKeys[type]) : t('common.notSet')
 }
 
 export function countActiveUnitFilters(filters: UnitFilters): number {

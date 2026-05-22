@@ -7,6 +7,37 @@ import { EmptyState, InfoPanel, NativeLookupSelect, NamedSelectField, NumberFiel
 import { formatMonthYear, getInstallmentTypeLabel, getUnitCustomInstallmentText, getUnitInstallmentEndMonth, getUnitInstallmentStartMonth, toMonthInputValue } from '../shared/formUtils'
 import { motionStyle } from '../shared/motion'
 
+type UnitDetailsPageProps = {
+  user: LeadraUser
+  unit: LeadraUnit
+  lookupValues: LookupValue[]
+  onArchive: () => void
+  onSpecialChange: (special: boolean) => void
+  onUpdateUnit: (event: FormEvent<HTMLFormElement>) => Promise<boolean>
+  onStatusChange: (status: UnitStatus) => void
+  onGeneratePdf: () => void
+  onDownloadPdf: () => void
+  onSharePdf: () => void
+  onCopyShareLink: () => void
+  pdfGenerating: boolean
+  pdfSharing: boolean
+  pdfReady: boolean
+  statusUpdating: boolean
+  specialUpdating: boolean
+  statusActionFeedback: { status: UnitStatus; state: 'saving' | 'saved' } | null
+  onSaveNote: (content: string) => void
+  onDeleteNote: () => void
+  onRemoveMedia: (mediaId: string) => void
+  onPaymentScheduleChange: (scheduleId: string, paid: boolean) => void
+  onPaymentScheduleAmountChange: (scheduleId: string, amount: number) => void
+  onMediaPdfVisibilityChange: (mediaId: string, includeInPdf: boolean) => void
+  onMediaDownload: (file: LeadraMediaFile) => void
+  removingMediaId: string | null
+  downloadingMediaId: string | null
+  updatingPaymentScheduleId: string | null
+  updatingPaymentScheduleAmountId: string | null
+}
+
 export function UnitDetailsPage({
   user,
   unit,
@@ -36,36 +67,7 @@ export function UnitDetailsPage({
   downloadingMediaId,
   updatingPaymentScheduleId,
   updatingPaymentScheduleAmountId,
-}: {
-  user: LeadraUser
-  unit: LeadraUnit
-  lookupValues: LookupValue[]
-  onArchive: () => void
-  onSpecialChange: (special: boolean) => void
-  onUpdateUnit: (event: FormEvent<HTMLFormElement>) => Promise<boolean>
-  onStatusChange: (status: UnitStatus) => void
-  onGeneratePdf: () => void
-  onDownloadPdf: () => void
-  onSharePdf: () => void
-  onCopyShareLink: () => void
-  pdfGenerating: boolean
-  pdfSharing: boolean
-  pdfReady: boolean
-  statusUpdating: boolean
-  specialUpdating: boolean
-  statusActionFeedback: { status: UnitStatus; state: 'saving' | 'saved' } | null
-  onSaveNote: (content: string) => void
-  onDeleteNote: () => void
-  onRemoveMedia: (mediaId: string) => void
-  onPaymentScheduleChange: (scheduleId: string, paid: boolean) => void
-  onPaymentScheduleAmountChange: (scheduleId: string, amount: number) => void
-  onMediaPdfVisibilityChange: (mediaId: string, includeInPdf: boolean) => void
-  onMediaDownload: (file: LeadraMediaFile) => void
-  removingMediaId: string | null
-  downloadingMediaId: string | null
-  updatingPaymentScheduleId: string | null
-  updatingPaymentScheduleAmountId: string | null
-}) {
+}: UnitDetailsPageProps) {
   const { locale, t } = useLocale()
   const ownerAllowed = canViewOwnerData(user, unit)
   const canEditUnit = canEditAnyUnitDetails(user, unit)
@@ -76,16 +78,6 @@ export function UnitDetailsPage({
   const [editMode, setEditMode] = useState(false)
   const [editSaving, setEditSaving] = useState(false)
   const [showDetailDepth, setShowDetailDepth] = useState(false)
-  const statusFeedbackText = statusActionFeedback
-    ? t(statusActionFeedback.state === 'saving' ? 'details.statusSaving' : 'details.statusSaved', {
-        status: getStatusLabel(locale, statusActionFeedback.status),
-      })
-    : null
-  const heroFacts: [string, string][] = [
-    [t('create.bua'), `${formatCount(locale, unit.bua)} m²`],
-    [t('details.totalAmount'), formatCurrency(unit.totalAmount, locale)],
-    [t('details.expectedDelivery'), formatDeliveryExpectancy(unit, locale)],
-  ]
 
   useEffect(() => {
     const timeout = window.setTimeout(() => setShowDetailDepth(true), 1800)
@@ -101,72 +93,28 @@ export function UnitDetailsPage({
 
   return (
     <section className="page-stack page-entrance details-page">
-      <div className="details-hero motion-stage motion-hero" style={motionStyle(0)}>
-        <div>
-          <p className="eyebrow">{t('details.eyebrow')}</p>
-          <h2>{unit.unitCode}</h2>
-          <p dir="auto">{unit.projectName} / {unit.destinationName} / {unit.unitType}</p>
-        </div>
-        <div className="details-hero-summary">
-          <span className={`status-pill motion-status-pill ${unit.status} ${statusActionFeedback ? 'status-pill-live' : ''}`}>
-            {getStatusLabel(locale, unit.status)}
-          </span>
-          <dl className="details-hero-facts">
-            {heroFacts.map(([label, value]) => (
-              <div key={label}>
-                <dt>{label}</dt>
-                <dd>{value}</dd>
-              </div>
-            ))}
-          </dl>
-        </div>
-      </div>
-      <div className="details-actions motion-stage" style={motionStyle(1, 40)}>
-        <div className="details-action-group">
-          <span>{t('details.status')}</span>
-          <div className="action-row wrap">
-          <button className={`secondary-button status-action-button hold ${statusActionFeedback?.status === 'hold' ? 'is-active' : ''}`} type="button" disabled={statusUpdating || unit.status === 'hold'} onClick={() => onStatusChange('hold')}>{statusActionFeedback?.status === 'hold' && statusActionFeedback.state === 'saving' ? t('details.statusMarking', { status: getStatusLabel(locale, 'hold') }) : t('details.markHold')}</button>
-          <button className={`secondary-button status-action-button sold ${statusActionFeedback?.status === 'sold_by_us' ? 'is-active' : ''}`} type="button" disabled={statusUpdating || unit.status === 'sold_by_us'} onClick={() => onStatusChange('sold_by_us')}>{statusActionFeedback?.status === 'sold_by_us' && statusActionFeedback.state === 'saving' ? t('details.statusMarking', { status: getStatusLabel(locale, 'sold_by_us') }) : t('details.markSoldByUs')}</button>
-          <button className={`secondary-button status-action-button sold ${statusActionFeedback?.status === 'sold_by_others' ? 'is-active' : ''}`} type="button" disabled={statusUpdating || unit.status === 'sold_by_others'} onClick={() => onStatusChange('sold_by_others')}>{statusActionFeedback?.status === 'sold_by_others' && statusActionFeedback.state === 'saving' ? t('details.statusMarking', { status: getStatusLabel(locale, 'sold_by_others') }) : t('details.markSoldByOthers')}</button>
-          {unit.status !== 'available' && <button className={`secondary-button status-action-button available ${statusActionFeedback?.status === 'available' ? 'is-active' : ''}`} type="button" disabled={statusUpdating} onClick={() => onStatusChange('available')}>{statusActionFeedback?.status === 'available' && statusActionFeedback.state === 'saving' ? t('details.statusMarking', { status: getStatusLabel(locale, 'available') }) : t('details.clearStatus')}</button>}
-          </div>
-          {statusFeedbackText && <p className={`status-action-feedback ${statusActionFeedback?.state === 'saving' ? 'is-saving' : 'is-saved'}`} role="status" aria-live="polite">{statusFeedbackText}</p>}
-        </div>
-        <div className="details-action-group">
-          <span>{t('details.generateBrief')}</span>
-          <div className="action-row wrap">
-          <button className="primary-button" type="button" onClick={onGeneratePdf} disabled={pdfGenerating || pdfSharing}>
-            <FileText size={18} /> {pdfGenerating ? t('details.preparingPdf') : pdfReady ? t('details.regeneratePdf') : t('details.generateBrief')}
-          </button>
-          <button className="secondary-button" type="button" onClick={onDownloadPdf} disabled={!pdfReady || pdfGenerating || pdfSharing}>
-            <Download size={18} /> {t('details.downloadPdf')}
-          </button>
-          <button className="secondary-button" type="button" onClick={onSharePdf} disabled={!pdfReady || pdfGenerating || pdfSharing}>
-            <Share2 size={18} /> {pdfSharing ? t('details.preparingShare') : t('details.sharePdf')}
-          </button>
-          <button className="secondary-button" type="button" onClick={onCopyShareLink}>
-            <Share2 size={18} /> {t('details.shareLink')}
-          </button>
-          {canEditUnit && (
-            <button className="secondary-button" type="button" onClick={() => setEditMode((value) => !value)}>
-              {editMode ? t('details.cancelEdit') : t('details.editUnit')}
-            </button>
-          )}
-          {canManageSpecial && (
-            <button
-              className={`secondary-button special-action-button ${unit.isSpecial ? 'is-active' : ''}`}
-              type="button"
-              onClick={() => onSpecialChange(!unit.isSpecial)}
-              disabled={specialUpdating}
-            >
-              <Star size={18} fill={unit.isSpecial ? 'currentColor' : 'none'} />
-              {specialUpdating ? t('details.specialSaving') : unit.isSpecial ? t('details.removeSpecial') : t('details.markSpecial')}
-            </button>
-          )}
-          {canArchiveUnit(user, unit) && <button className="danger-button" type="button" onClick={onArchive}><Archive size={18} /> {t('details.archive')}</button>}
-          </div>
-        </div>
-      </div>
+      <UnitDetailsHero unit={unit} statusActionFeedback={statusActionFeedback} />
+      <UnitDetailsActions
+        canEditUnit={canEditUnit}
+        canManageSpecial={canManageSpecial}
+        editMode={editMode}
+        pdfGenerating={pdfGenerating}
+        pdfReady={pdfReady}
+        pdfSharing={pdfSharing}
+        specialUpdating={specialUpdating}
+        statusActionFeedback={statusActionFeedback}
+        statusUpdating={statusUpdating}
+        unit={unit}
+        user={user}
+        onArchive={onArchive}
+        onCopyShareLink={onCopyShareLink}
+        onDownloadPdf={onDownloadPdf}
+        onEditToggle={() => setEditMode((value) => !value)}
+        onGeneratePdf={onGeneratePdf}
+        onSharePdf={onSharePdf}
+        onSpecialChange={onSpecialChange}
+        onStatusChange={onStatusChange}
+      />
       {editMode && (
         <UnitDetailsEditForm
           lookupValues={lookupValues}
@@ -206,6 +154,142 @@ export function UnitDetailsPage({
         </section>
       )}
     </section>
+  )
+}
+
+function UnitDetailsHero({
+  unit,
+  statusActionFeedback,
+}: {
+  unit: LeadraUnit
+  statusActionFeedback: { status: UnitStatus; state: 'saving' | 'saved' } | null
+}) {
+  const { locale, t } = useLocale()
+  const heroFacts: [string, string][] = [
+    [t('create.bua'), `${formatCount(locale, unit.bua)} m²`],
+    [t('details.totalAmount'), formatCurrency(unit.totalAmount, locale)],
+    [t('details.expectedDelivery'), formatDeliveryExpectancy(unit, locale)],
+  ]
+
+  return (
+    <div className="details-hero motion-stage motion-hero" style={motionStyle(0)}>
+      <div>
+        <p className="eyebrow">{t('details.eyebrow')}</p>
+        <h2>{unit.unitCode}</h2>
+        <p dir="auto">{unit.projectName} / {unit.destinationName} / {unit.unitType}</p>
+      </div>
+      <div className="details-hero-summary">
+        <span className={`status-pill motion-status-pill ${unit.status} ${statusActionFeedback ? 'status-pill-live' : ''}`}>
+          {getStatusLabel(locale, unit.status)}
+        </span>
+        <dl className="details-hero-facts">
+          {heroFacts.map(([label, value]) => (
+            <div key={label}>
+              <dt>{label}</dt>
+              <dd>{value}</dd>
+            </div>
+          ))}
+        </dl>
+      </div>
+    </div>
+  )
+}
+
+function UnitDetailsActions({
+  canEditUnit,
+  canManageSpecial,
+  editMode,
+  pdfGenerating,
+  pdfReady,
+  pdfSharing,
+  specialUpdating,
+  statusActionFeedback,
+  statusUpdating,
+  unit,
+  user,
+  onArchive,
+  onCopyShareLink,
+  onDownloadPdf,
+  onEditToggle,
+  onGeneratePdf,
+  onSharePdf,
+  onSpecialChange,
+  onStatusChange,
+}: {
+  canEditUnit: boolean
+  canManageSpecial: boolean
+  editMode: boolean
+  pdfGenerating: boolean
+  pdfReady: boolean
+  pdfSharing: boolean
+  specialUpdating: boolean
+  statusActionFeedback: { status: UnitStatus; state: 'saving' | 'saved' } | null
+  statusUpdating: boolean
+  unit: LeadraUnit
+  user: LeadraUser
+  onArchive: () => void
+  onCopyShareLink: () => void
+  onDownloadPdf: () => void
+  onEditToggle: () => void
+  onGeneratePdf: () => void
+  onSharePdf: () => void
+  onSpecialChange: (special: boolean) => void
+  onStatusChange: (status: UnitStatus) => void
+}) {
+  const { locale, t } = useLocale()
+  const statusFeedbackText = statusActionFeedback
+    ? t(statusActionFeedback.state === 'saving' ? 'details.statusSaving' : 'details.statusSaved', {
+        status: getStatusLabel(locale, statusActionFeedback.status),
+      })
+    : null
+
+  return (
+    <div className="details-actions motion-stage" style={motionStyle(1, 40)}>
+      <div className="details-action-group">
+        <span>{t('details.status')}</span>
+        <div className="action-row wrap">
+          <button className={`secondary-button status-action-button hold ${statusActionFeedback?.status === 'hold' ? 'is-active' : ''}`} type="button" disabled={statusUpdating || unit.status === 'hold'} onClick={() => onStatusChange('hold')}>{statusActionFeedback?.status === 'hold' && statusActionFeedback.state === 'saving' ? t('details.statusMarking', { status: getStatusLabel(locale, 'hold') }) : t('details.markHold')}</button>
+          <button className={`secondary-button status-action-button sold ${statusActionFeedback?.status === 'sold_by_us' ? 'is-active' : ''}`} type="button" disabled={statusUpdating || unit.status === 'sold_by_us'} onClick={() => onStatusChange('sold_by_us')}>{statusActionFeedback?.status === 'sold_by_us' && statusActionFeedback.state === 'saving' ? t('details.statusMarking', { status: getStatusLabel(locale, 'sold_by_us') }) : t('details.markSoldByUs')}</button>
+          <button className={`secondary-button status-action-button sold ${statusActionFeedback?.status === 'sold_by_others' ? 'is-active' : ''}`} type="button" disabled={statusUpdating || unit.status === 'sold_by_others'} onClick={() => onStatusChange('sold_by_others')}>{statusActionFeedback?.status === 'sold_by_others' && statusActionFeedback.state === 'saving' ? t('details.statusMarking', { status: getStatusLabel(locale, 'sold_by_others') }) : t('details.markSoldByOthers')}</button>
+          {unit.status !== 'available' && <button className={`secondary-button status-action-button available ${statusActionFeedback?.status === 'available' ? 'is-active' : ''}`} type="button" disabled={statusUpdating} onClick={() => onStatusChange('available')}>{statusActionFeedback?.status === 'available' && statusActionFeedback.state === 'saving' ? t('details.statusMarking', { status: getStatusLabel(locale, 'available') }) : t('details.clearStatus')}</button>}
+        </div>
+        {statusFeedbackText && <p className={`status-action-feedback ${statusActionFeedback?.state === 'saving' ? 'is-saving' : 'is-saved'}`} role="status" aria-live="polite">{statusFeedbackText}</p>}
+      </div>
+      <div className="details-action-group">
+        <span>{t('details.generateBrief')}</span>
+        <div className="action-row wrap">
+          <button className="primary-button" type="button" onClick={onGeneratePdf} disabled={pdfGenerating || pdfSharing}>
+            <FileText size={18} /> {pdfGenerating ? t('details.preparingPdf') : pdfReady ? t('details.regeneratePdf') : t('details.generateBrief')}
+          </button>
+          <button className="secondary-button" type="button" onClick={onDownloadPdf} disabled={!pdfReady || pdfGenerating || pdfSharing}>
+            <Download size={18} /> {t('details.downloadPdf')}
+          </button>
+          <button className="secondary-button" type="button" onClick={onSharePdf} disabled={!pdfReady || pdfGenerating || pdfSharing}>
+            <Share2 size={18} /> {pdfSharing ? t('details.preparingShare') : t('details.sharePdf')}
+          </button>
+          <button className="secondary-button" type="button" onClick={onCopyShareLink}>
+            <Share2 size={18} /> {t('details.shareLink')}
+          </button>
+          {canEditUnit && (
+            <button className="secondary-button" type="button" onClick={onEditToggle}>
+              {editMode ? t('details.cancelEdit') : t('details.editUnit')}
+            </button>
+          )}
+          {canManageSpecial && (
+            <button
+              className={`secondary-button special-action-button ${unit.isSpecial ? 'is-active' : ''}`}
+              type="button"
+              onClick={() => onSpecialChange(!unit.isSpecial)}
+              disabled={specialUpdating}
+            >
+              <Star size={18} fill={unit.isSpecial ? 'currentColor' : 'none'} />
+              {specialUpdating ? t('details.specialSaving') : unit.isSpecial ? t('details.removeSpecial') : t('details.markSpecial')}
+            </button>
+          )}
+          {canArchiveUnit(user, unit) && <button className="danger-button" type="button" onClick={onArchive}><Archive size={18} /> {t('details.archive')}</button>}
+        </div>
+      </div>
+    </div>
   )
 }
 

@@ -1,4 +1,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { throwFunctionError } from './functionErrors'
+import { authPasswordForAdminUpdate } from './legacyAuth'
+export { authPasswordCandidates, authPasswordForAdminUpdate } from './legacyAuth'
 import type { CreateUserInput, LeadraUser } from './types'
 
 interface PasswordUpdateResponse {
@@ -36,24 +39,6 @@ interface ManagedUserProfileResponse extends PasswordUpdateResponse {
 
 interface ManagedUserCreateResponse extends PasswordUpdateResponse {
   profile?: ManagedUserProfileResponse['profile']
-}
-
-interface FunctionErrorBody {
-  error?: string
-  message?: string
-}
-
-const legacyPasswordMinLength = 10
-const legacyPasswordPadding = '00'
-
-export function authPasswordForAdminUpdate(password: string): string {
-  if (password.length >= legacyPasswordMinLength) return password
-  return `${password}${legacyPasswordPadding.slice(0, legacyPasswordMinLength - password.length)}`
-}
-
-export function authPasswordCandidates(password: string): string[] {
-  const compatiblePassword = authPasswordForAdminUpdate(password)
-  return compatiblePassword === password ? [password] : [password, compatiblePassword]
 }
 
 export async function updateManagedUserPassword(
@@ -115,33 +100,4 @@ function toLeadraUser(profile: NonNullable<ManagedUserProfileResponse['profile']
     createdAt: profile.created_at,
     lastLoginAt: profile.last_login_at ?? null,
   }
-}
-
-async function throwFunctionError(error: unknown, fallback: string): Promise<never> {
-  const baseMessage = error instanceof Error ? error.message : fallback
-  const context = typeof error === 'object' && error && 'context' in error
-    ? (error as { context?: unknown }).context
-    : null
-
-  if (context instanceof Response) {
-    const response = context.clone()
-    const contentType = response.headers.get('content-type') ?? ''
-
-    if (contentType.includes('application/json')) {
-      try {
-        const body = await response.json() as FunctionErrorBody
-        const message = body.error ?? body.message
-        if (message) throw new Error(message)
-      } catch (parseError) {
-        if (parseError instanceof Error && parseError.name === 'Error') throw parseError
-      }
-    } else {
-      const text = await response.text().catch(() => '')
-      if (text.trim()) {
-        throw new Error(text.trim())
-      }
-    }
-  }
-
-  throw new Error(baseMessage)
 }

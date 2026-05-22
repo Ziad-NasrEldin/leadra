@@ -2,7 +2,23 @@ import { useState } from 'react'
 import { formatDate, getAccountStatusLabel, getRoleLabel, getUserInitials, useLocale } from '../../lib/i18n'
 import type { LeadraUser } from '../../lib/types'
 import { ControlledSelectField, NamedSelectField, PasswordField, type BrandedSelectOption } from '../../components/LeadraUi'
+import { readFormEnum, readFormString } from '../shared/formUtils'
 import { motionStyle } from '../shared/motion'
+
+type UserManagementCardProps = {
+  user: LeadraUser
+  index?: number
+  isEditing: boolean
+  onEdit: () => void
+  onCancel: () => void
+  onSave: (updates: Partial<LeadraUser>) => Promise<void>
+  onPasswordUpdate: (password: string) => Promise<void>
+  teamOptions: BrandedSelectOption[]
+  branchOptions: BrandedSelectOption[]
+  salesReplacementOptions: LeadraUser[]
+  onDeleteSalesRepresentative: (replacementSalesUserId: string) => Promise<void>
+  onDeleteManagedUser: () => Promise<void>
+}
 
 export function UserManagementCard({
   user,
@@ -17,20 +33,7 @@ export function UserManagementCard({
   salesReplacementOptions,
   onDeleteSalesRepresentative,
   onDeleteManagedUser,
-}: {
-  user: LeadraUser
-  index?: number
-  isEditing: boolean
-  onEdit: () => void
-  onCancel: () => void
-  onSave: (updates: Partial<LeadraUser>) => Promise<void>
-  onPasswordUpdate: (password: string) => Promise<void>
-  teamOptions: BrandedSelectOption[]
-  branchOptions: BrandedSelectOption[]
-  salesReplacementOptions: LeadraUser[]
-  onDeleteSalesRepresentative: (replacementSalesUserId: string) => Promise<void>
-  onDeleteManagedUser: () => Promise<void>
-}) {
+}: UserManagementCardProps) {
   const { locale, t } = useLocale()
   const [passwordEditorOpen, setPasswordEditorOpen] = useState(false)
   const [passwordError, setPasswordError] = useState('')
@@ -114,16 +117,7 @@ export function UserManagementCard({
             const formData = new FormData(event.currentTarget)
             setSavePending(true)
             try {
-              await onSave({
-                fullName: String(formData.get('fullName')),
-                email: String(formData.get('email')),
-                role: String(formData.get('role')) as LeadraUser['role'],
-                jobTitle: String(formData.get('jobTitle')),
-                phoneNumber: String(formData.get('phoneNumber')),
-                teamId: String(formData.get('teamId')),
-                branchId: String(formData.get('branchId') ?? ''),
-                status: String(formData.get('status')) as LeadraUser['status'],
-              })
+              await onSave(readUserProfileUpdates(formData, user))
             } catch (error) {
               setSaveError(error instanceof Error ? error.message : t('admin.userUpdateFailed'))
             } finally {
@@ -296,4 +290,17 @@ export function UserManagementCard({
       )}
     </article>
   )
+}
+
+function readUserProfileUpdates(formData: FormData, user: LeadraUser): Partial<LeadraUser> {
+  return {
+    fullName: readFormString(formData, 'fullName'),
+    email: readFormString(formData, 'email'),
+    role: readFormEnum(formData, 'role', ['admin', 'sub_admin', 'manager', 'sales'] as const, user.role),
+    jobTitle: readFormString(formData, 'jobTitle'),
+    phoneNumber: readFormString(formData, 'phoneNumber'),
+    teamId: readFormString(formData, 'teamId'),
+    branchId: readFormString(formData, 'branchId'),
+    status: readFormEnum(formData, 'status', ['active', 'inactive'] as const, user.status),
+  }
 }

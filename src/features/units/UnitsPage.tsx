@@ -11,6 +11,38 @@ import { useLookupThumbnailSources } from '../shared/media'
 
 type UnitsBrowserStage = 'destinations' | 'projects' | 'units'
 
+type UnitFilterChange = <K extends keyof UnitFilters>(key: K, value: UnitFilters[K]) => void
+
+type UnitsPageProps = {
+  mode?: 'inventory' | 'special'
+  user: LeadraUser
+  lookupValues: LookupValue[]
+  destinations: ReturnType<typeof summarizeDestinations>
+  projects: ReturnType<typeof summarizeProjects>
+  selectedDestinationId: string | null
+  selectedProjectId: string | null
+  stage: UnitsBrowserStage
+  currentDestination: ReturnType<typeof summarizeDestinations>[number] | null
+  currentProject: ReturnType<typeof summarizeProjects>[number] | null
+  units: LeadraUnit[]
+  filters: UnitFilters
+  selectedUnitIds: number[]
+  batchAction: 'generate' | 'download' | 'share' | null
+  onDestinationSelect: (id: string) => void
+  onProjectSelect: (id: string) => void
+  onBackToDestinations: () => void
+  onBackToProjects: () => void
+  onFilterChange: UnitFilterChange
+  onResetFilters: () => void
+  onToggleUnitSelection: (id: number) => void
+  onSelectVisibleUnits: (ids: number[]) => void
+  onClearSelection: () => void
+  onGenerateSelectedPdfs: () => void
+  onDownloadSelectedPdfs: () => void
+  onShareSelectedPdfs: () => void
+  onOpenUnit: (id: number) => void
+}
+
 export function UnitsPage({
   mode = 'inventory',
   user,
@@ -39,26 +71,141 @@ export function UnitsPage({
   onDownloadSelectedPdfs,
   onShareSelectedPdfs,
   onOpenUnit,
-}: {
-  mode?: 'inventory' | 'special'
+}: UnitsPageProps) {
+  const { locale, t } = useLocale()
+  const destinationOptions = lookupValues.filter((item) => item.kind === 'destination')
+  const projectOptions = lookupValues.filter((item) => item.kind === 'project')
+  const thumbnailSources = useLookupThumbnailSources(lookupValues)
+  const destinationLookupById = new Map(destinationOptions.map((destination) => [destination.id, destination]))
+  const projectLookupById = new Map(projectOptions.map((project) => [project.id, project]))
+  const invalidDestination = stage !== 'destinations' && !currentDestination
+  const invalidProject = stage === 'units' && (!currentDestination || !currentProject)
+  const shouldShowUnitResults = stage === 'destinations' || (stage === 'units' && Boolean(currentDestination && currentProject))
+  const isSpecialMode = mode === 'special'
+  const unitResults = (isSpecialMode || shouldShowUnitResults) ? (
+    <UnitResultsSection
+      user={user}
+      lookupValues={lookupValues}
+      units={units}
+      filters={filters}
+      selectedUnitIds={selectedUnitIds}
+      batchAction={batchAction}
+      selectedDestinationId={selectedDestinationId}
+      selectedProjectId={selectedProjectId}
+      onFilterChange={onFilterChange}
+      onResetFilters={onResetFilters}
+      onToggleUnitSelection={onToggleUnitSelection}
+      onSelectVisibleUnits={onSelectVisibleUnits}
+      onClearSelection={onClearSelection}
+      onGenerateSelectedPdfs={onGenerateSelectedPdfs}
+      onDownloadSelectedPdfs={onDownloadSelectedPdfs}
+      onShareSelectedPdfs={onShareSelectedPdfs}
+      onOpenUnit={onOpenUnit}
+    />
+  ) : null
+
+  return (
+    <section className={`page-stack page-entrance units-page ${isSpecialMode ? 'special-units-page' : ''}`}>
+      <div className="section-heading motion-stage" style={motionStyle(0)}>
+        <div>
+          <p className="eyebrow">{isSpecialMode ? t('special.eyebrow') : t('units.eyebrow')}</p>
+          <h2>{isSpecialMode ? t('special.heading') : t('units.heading')}</h2>
+        </div>
+      </div>
+
+      {isSpecialMode && unitResults}
+
+      {!isSpecialMode && stage === 'destinations' && (
+        <div className="project-grid motion-stage" style={motionStyle(1, 30)}>
+          {destinations.map((destination, index) => (
+            <InventoryScopeCard
+              key={destination.destinationId}
+              title={destination.destinationName}
+              subtitle={t('units.totalUnits', { count: formatCount(locale, destination.totalUnits) })}
+              summary={t('units.summary', { available: formatCount(locale, destination.availableUnits), hold: formatCount(locale, destination.holdUnits), sold: formatCount(locale, destination.soldUnits) })}
+              totalUnits={destination.totalUnits}
+              availableUnits={destination.availableUnits}
+              holdUnits={destination.holdUnits}
+              soldUnits={destination.soldUnits}
+              thumbnailSrc={thumbnailSources[destinationLookupById.get(destination.destinationId)?.id ?? ''] ?? null}
+              index={index}
+              delayBase={110}
+              onClick={() => onDestinationSelect(destination.destinationId)}
+            />
+          ))}
+          {destinations.length === 0 && <EmptyState title={t('units.noMatchesTitle')} body={t('units.noMatchesBody')} />}
+        </div>
+      )}
+
+      {!isSpecialMode && stage === 'destinations' && unitResults}
+
+      {!isSpecialMode && invalidDestination && (
+        <section className="content-card motion-stage" style={motionStyle(1, 30)}>
+          <EmptyState title={t('units.destinationUnavailableTitle')} body={t('units.destinationUnavailableBody')} />
+          <button className="secondary-button" type="button" onClick={onBackToDestinations}>{t('units.backToDestinations')}</button>
+        </section>
+      )}
+
+      {!isSpecialMode && stage === 'projects' && currentDestination && (
+        <>
+          <div className="action-row motion-stage" style={motionStyle(1, 30)}>
+            <button className="secondary-button" type="button" onClick={onBackToDestinations}>{t('units.backToDestinations')}</button>
+            <span className="integration-badge" dir="auto">{currentDestination.destinationName}</span>
+          </div>
+          <div className="project-grid compact motion-stage" style={motionStyle(2, 45)}>
+            {projects.map((project, index) => (
+              <InventoryScopeCard
+                key={project.projectId}
+                title={project.projectName}
+                subtitle={t('units.totalUnits', { count: formatCount(locale, project.totalUnits) })}
+                summary={t('units.summary', { available: formatCount(locale, project.availableUnits), hold: formatCount(locale, project.holdUnits), sold: formatCount(locale, project.soldUnits) })}
+                totalUnits={project.totalUnits}
+                availableUnits={project.availableUnits}
+                holdUnits={project.holdUnits}
+                soldUnits={project.soldUnits}
+                thumbnailSrc={thumbnailSources[projectLookupById.get(project.projectId)?.id ?? ''] ?? null}
+                index={index}
+                delayBase={130}
+                active={selectedProjectId === project.projectId}
+                onClick={() => onProjectSelect(project.projectId)}
+              />
+            ))}
+            {projects.length === 0 && <EmptyState title={t('units.noMatchesTitle')} body={t('units.noMatchesBody')} />}
+          </div>
+        </>
+      )}
+
+      {!isSpecialMode && invalidProject && (
+        <section className="content-card motion-stage" style={motionStyle(1, 30)}>
+          <EmptyState title={t('units.projectUnavailableTitle')} body={t('units.projectUnavailableBody')} />
+          <button className="secondary-button" type="button" onClick={currentDestination ? onBackToProjects : onBackToDestinations}>{t('units.backToProjects')}</button>
+        </section>
+      )}
+
+      {!isSpecialMode && stage === 'units' && currentDestination && currentProject && (
+        <>
+          <div className="action-row motion-stage" style={motionStyle(1, 30)}>
+            <button className="secondary-button" type="button" onClick={onBackToProjects}>{t('units.backToProjects')}</button>
+            <span className="integration-badge" dir="auto">{currentDestination.destinationName} / {currentProject.projectName}</span>
+          </div>
+
+          {unitResults}
+        </>
+      )}
+    </section>
+  )
+}
+
+type UnitResultsSectionProps = {
   user: LeadraUser
   lookupValues: LookupValue[]
-  destinations: ReturnType<typeof summarizeDestinations>
-  projects: ReturnType<typeof summarizeProjects>
-  selectedDestinationId: string | null
-  selectedProjectId: string | null
-  stage: UnitsBrowserStage
-  currentDestination: ReturnType<typeof summarizeDestinations>[number] | null
-  currentProject: ReturnType<typeof summarizeProjects>[number] | null
   units: LeadraUnit[]
   filters: UnitFilters
   selectedUnitIds: number[]
   batchAction: 'generate' | 'download' | 'share' | null
-  onDestinationSelect: (id: string) => void
-  onProjectSelect: (id: string) => void
-  onBackToDestinations: () => void
-  onBackToProjects: () => void
-  onFilterChange: <K extends keyof UnitFilters>(key: K, value: UnitFilters[K]) => void
+  selectedDestinationId: string | null
+  selectedProjectId: string | null
+  onFilterChange: UnitFilterChange
   onResetFilters: () => void
   onToggleUnitSelection: (id: number) => void
   onSelectVisibleUnits: (ids: number[]) => void
@@ -67,7 +214,27 @@ export function UnitsPage({
   onDownloadSelectedPdfs: () => void
   onShareSelectedPdfs: () => void
   onOpenUnit: (id: number) => void
-}) {
+}
+
+function UnitResultsSection({
+  user,
+  lookupValues,
+  units,
+  filters,
+  selectedUnitIds,
+  batchAction,
+  selectedDestinationId,
+  selectedProjectId,
+  onFilterChange,
+  onResetFilters,
+  onToggleUnitSelection,
+  onSelectVisibleUnits,
+  onClearSelection,
+  onGenerateSelectedPdfs,
+  onDownloadSelectedPdfs,
+  onShareSelectedPdfs,
+  onOpenUnit,
+}: UnitResultsSectionProps) {
   const { locale, t } = useLocale()
   const visibleScopeKey = JSON.stringify([selectedDestinationId, selectedProjectId, filters])
   const [visibleState, setVisibleState] = useState({ scopeKey: visibleScopeKey, count: unitListPageSize })
@@ -77,9 +244,6 @@ export function UnitsPage({
   const developerOptions = lookupValues.filter((item) => item.kind === 'developer')
   const destinationOptions = lookupValues.filter((item) => item.kind === 'destination')
   const projectOptions = lookupValues.filter((item) => item.kind === 'project')
-  const thumbnailSources = useLookupThumbnailSources(lookupValues)
-  const destinationLookupById = new Map(destinationOptions.map((destination) => [destination.id, destination]))
-  const projectLookupById = new Map(projectOptions.map((project) => [project.id, project]))
   const unitTypeOptions = Array.from(
     new Set([
       ...lookupValues.filter((item) => item.kind === 'unit_type').map((item) => item.label),
@@ -91,13 +255,10 @@ export function UnitsPage({
   const showInstallmentFilters = filters.paymentMethod === 'installment'
   const canUseOwnerPhoneSearch = user.role === 'admin' || user.role === 'sub_admin'
   const activeFilterCount = countActiveUnitFilters(filters)
-  const invalidDestination = stage !== 'destinations' && !currentDestination
-  const invalidProject = stage === 'units' && (!currentDestination || !currentProject)
   const selectedVisibleCount = visibleUnits.filter((unit) => selectedUnitIds.includes(unit.id)).length
   const batchBusy = batchAction !== null
-  const shouldShowUnitResults = stage === 'destinations' || (stage === 'units' && Boolean(currentDestination && currentProject))
-  const isSpecialMode = mode === 'special'
-  const unitResults = (isSpecialMode || shouldShowUnitResults) ? (
+
+  return (
     <>
       <section className={`units-filter-shell motion-stage ${filtersOpen ? 'is-open' : ''}`} style={motionStyle(3, 60)}>
         <div className="units-filter-summary">
@@ -318,97 +479,6 @@ export function UnitsPage({
         )}
       </section>
     </>
-  ) : null
-
-  return (
-    <section className={`page-stack page-entrance units-page ${isSpecialMode ? 'special-units-page' : ''}`}>
-      <div className="section-heading motion-stage" style={motionStyle(0)}>
-        <div>
-          <p className="eyebrow">{isSpecialMode ? t('special.eyebrow') : t('units.eyebrow')}</p>
-          <h2>{isSpecialMode ? t('special.heading') : t('units.heading')}</h2>
-        </div>
-      </div>
-
-      {isSpecialMode && unitResults}
-
-      {!isSpecialMode && stage === 'destinations' && (
-        <div className="project-grid motion-stage" style={motionStyle(1, 30)}>
-          {destinations.map((destination, index) => (
-            <InventoryScopeCard
-              key={destination.destinationId}
-              title={destination.destinationName}
-              subtitle={t('units.totalUnits', { count: formatCount(locale, destination.totalUnits) })}
-              summary={t('units.summary', { available: formatCount(locale, destination.availableUnits), hold: formatCount(locale, destination.holdUnits), sold: formatCount(locale, destination.soldUnits) })}
-              totalUnits={destination.totalUnits}
-              availableUnits={destination.availableUnits}
-              holdUnits={destination.holdUnits}
-              soldUnits={destination.soldUnits}
-              thumbnailSrc={thumbnailSources[destinationLookupById.get(destination.destinationId)?.id ?? ''] ?? null}
-              index={index}
-              delayBase={110}
-              onClick={() => onDestinationSelect(destination.destinationId)}
-            />
-          ))}
-          {destinations.length === 0 && <EmptyState title={t('units.noMatchesTitle')} body={t('units.noMatchesBody')} />}
-        </div>
-      )}
-
-      {!isSpecialMode && stage === 'destinations' && unitResults}
-
-      {!isSpecialMode && invalidDestination && (
-        <section className="content-card motion-stage" style={motionStyle(1, 30)}>
-          <EmptyState title={t('units.destinationUnavailableTitle')} body={t('units.destinationUnavailableBody')} />
-          <button className="secondary-button" type="button" onClick={onBackToDestinations}>{t('units.backToDestinations')}</button>
-        </section>
-      )}
-
-      {!isSpecialMode && stage === 'projects' && currentDestination && (
-        <>
-          <div className="action-row motion-stage" style={motionStyle(1, 30)}>
-            <button className="secondary-button" type="button" onClick={onBackToDestinations}>{t('units.backToDestinations')}</button>
-            <span className="integration-badge" dir="auto">{currentDestination.destinationName}</span>
-          </div>
-          <div className="project-grid compact motion-stage" style={motionStyle(2, 45)}>
-            {projects.map((project, index) => (
-              <InventoryScopeCard
-                key={project.projectId}
-                title={project.projectName}
-                subtitle={t('units.totalUnits', { count: formatCount(locale, project.totalUnits) })}
-                summary={t('units.summary', { available: formatCount(locale, project.availableUnits), hold: formatCount(locale, project.holdUnits), sold: formatCount(locale, project.soldUnits) })}
-                totalUnits={project.totalUnits}
-                availableUnits={project.availableUnits}
-                holdUnits={project.holdUnits}
-                soldUnits={project.soldUnits}
-                thumbnailSrc={thumbnailSources[projectLookupById.get(project.projectId)?.id ?? ''] ?? null}
-                index={index}
-                delayBase={130}
-                active={selectedProjectId === project.projectId}
-                onClick={() => onProjectSelect(project.projectId)}
-              />
-            ))}
-            {projects.length === 0 && <EmptyState title={t('units.noMatchesTitle')} body={t('units.noMatchesBody')} />}
-          </div>
-        </>
-      )}
-
-      {!isSpecialMode && invalidProject && (
-        <section className="content-card motion-stage" style={motionStyle(1, 30)}>
-          <EmptyState title={t('units.projectUnavailableTitle')} body={t('units.projectUnavailableBody')} />
-          <button className="secondary-button" type="button" onClick={currentDestination ? onBackToProjects : onBackToDestinations}>{t('units.backToProjects')}</button>
-        </section>
-      )}
-
-      {!isSpecialMode && stage === 'units' && currentDestination && currentProject && (
-        <>
-          <div className="action-row motion-stage" style={motionStyle(1, 30)}>
-            <button className="secondary-button" type="button" onClick={onBackToProjects}>{t('units.backToProjects')}</button>
-            <span className="integration-badge" dir="auto">{currentDestination.destinationName} / {currentProject.projectName}</span>
-          </div>
-
-          {unitResults}
-        </>
-      )}
-    </section>
   )
 }
 

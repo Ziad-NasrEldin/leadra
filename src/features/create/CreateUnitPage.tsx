@@ -12,19 +12,21 @@ import { translateCreateStep } from '../shared/labels'
 
 type UiMessage = { message: string; messageKey?: string | null; messageParams?: MessageParams | null }
 
+type CreateUnitPageProps = {
+  lookupValues: LookupValue[]
+  activeStep: CreateUnitStep
+  onStepChange: (step: CreateUnitStep) => void
+  onSubmit: (event: FormEvent<HTMLFormElement>, uploadedMedia: LeadraMediaFile[]) => void | Promise<void>
+  settings: AppSettings
+}
+
 export function CreateUnitPage({
   lookupValues,
   activeStep,
   onStepChange,
   onSubmit,
   settings,
-}: {
-  lookupValues: LookupValue[]
-  activeStep: CreateUnitStep
-  onStepChange: (step: CreateUnitStep) => void
-  onSubmit: (event: FormEvent<HTMLFormElement>, uploadedMedia: LeadraMediaFile[]) => void | Promise<void>
-  settings: AppSettings
-}) {
+}: CreateUnitPageProps) {
   const { locale, t } = useLocale()
   const [selectedMedia, setSelectedMedia] = useState<LeadraMediaFile[]>([])
   const [mediaError, setMediaError] = useState<UiMessage | null>(null)
@@ -47,7 +49,6 @@ export function CreateUnitPage({
   const isCreateBlocked = submitting || !hasSelectedImage || !mediaValidation.ok
   const totalMediaMb = selectedMedia.reduce((total, file) => total + file.sizeBytes, 0) / (1024 * 1024)
   const remainingPayment = Math.max(0, totalAmount - downPayment)
-  const displayedPaidAmount = paymentMethod === 'installment' ? downPayment : totalAmount
   const displayedRemainingPayment = paymentMethod === 'installment' ? remainingPayment + (maintenancePaid ? 0 : maintenanceCost) : maintenancePaid ? 0 : maintenanceCost
   const calculatedInstallment =
     paymentMethod === 'installment' && isAutomaticInstallmentType(installmentType)
@@ -125,21 +126,7 @@ export function CreateUnitPage({
           }
         }}
       >
-        <div className="wizard-steps motion-stage" aria-label={t('create.steps')} style={motionStyle(1, 90)}>
-          {createUnitSteps.map((step, index) => (
-            <button
-              key={step}
-              className={`wizard-step ${step === activeStep ? 'active' : ''}`}
-              type="button"
-              aria-current={step === activeStep ? 'step' : undefined}
-              disabled={submitting}
-              onClick={() => onStepChange(step)}
-            >
-              <span>{formatCount(locale, index + 1)}</span>
-              {translateCreateStep(step, locale)}
-            </button>
-          ))}
-        </div>
+        <CreateWizardSteps activeStep={activeStep} disabled={submitting} onStepChange={onStepChange} />
 
         <fieldset className="unit-form wizard-panel" data-active={activeStep === 'Property'} aria-hidden={activeStep !== 'Property'}>
           <legend>{t('create.legend.property')}</legend>
@@ -249,10 +236,6 @@ export function CreateUnitPage({
               <label>
                 {t('details.remainingPayment')}
                 <input readOnly value={formatCurrency(displayedRemainingPayment, locale)} />
-              </label>
-              <label>
-                {t('details.paidAmount')}
-                <input readOnly value={formatCurrency(displayedPaidAmount, locale)} />
               </label>
               <input name="installmentType" type="hidden" value={installmentType} />
               <ControlledSelectField
@@ -406,17 +389,65 @@ export function CreateUnitPage({
           </button>
         </section>
 
-        <div className="wizard-actions motion-stage" style={motionStyle(3, 140)}>
-          <button className="secondary-button" type="button" disabled={submitting || activeStepIndex === 0} onClick={() => goToRelativeStep(-1)}>
-            {t('common.back')}
-          </button>
-          {activeStep !== 'Review' && (
-            <button className="primary-button" type="button" disabled={submitting} onClick={() => goToRelativeStep(1)}>
-              {t('common.next')}
-            </button>
-          )}
-        </div>
+        <CreateWizardActions activeStep={activeStep} activeStepIndex={activeStepIndex} submitting={submitting} onStepOffset={goToRelativeStep} />
       </form>
     </section>
+  )
+}
+
+function CreateWizardSteps({
+  activeStep,
+  disabled,
+  onStepChange,
+}: {
+  activeStep: CreateUnitStep
+  disabled: boolean
+  onStepChange: (step: CreateUnitStep) => void
+}) {
+  const { locale, t } = useLocale()
+
+  return (
+    <div className="wizard-steps motion-stage" aria-label={t('create.steps')} style={motionStyle(1, 90)}>
+      {createUnitSteps.map((step, index) => (
+        <button
+          key={step}
+          className={`wizard-step ${step === activeStep ? 'active' : ''}`}
+          type="button"
+          aria-current={step === activeStep ? 'step' : undefined}
+          disabled={disabled}
+          onClick={() => onStepChange(step)}
+        >
+          <span>{formatCount(locale, index + 1)}</span>
+          {translateCreateStep(step, locale)}
+        </button>
+      ))}
+    </div>
+  )
+}
+
+function CreateWizardActions({
+  activeStep,
+  activeStepIndex,
+  submitting,
+  onStepOffset,
+}: {
+  activeStep: CreateUnitStep
+  activeStepIndex: number
+  submitting: boolean
+  onStepOffset: (offset: number) => void
+}) {
+  const { t } = useLocale()
+
+  return (
+    <div className="wizard-actions motion-stage" style={motionStyle(3, 140)}>
+      <button className="secondary-button" type="button" disabled={submitting || activeStepIndex === 0} onClick={() => onStepOffset(-1)}>
+        {t('common.back')}
+      </button>
+      {activeStep !== 'Review' && (
+        <button className="primary-button" type="button" disabled={submitting} onClick={() => onStepOffset(1)}>
+          {t('common.next')}
+        </button>
+      )}
+    </div>
   )
 }

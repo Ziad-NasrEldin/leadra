@@ -44,6 +44,7 @@ import {
   createNotificationMessage,
   type LocalizedMessageRef,
 } from './systemMessages'
+import { diffUnitEditFields, emptyUser, isAdminActor, pickUnitEditAuditValue } from './workflowHelpers'
 
 export function signInWorkflow(state: AppDataState, email: string): WorkflowResult<LeadraUser> {
   const user = state.users.find((item) => item.email.toLowerCase() === email.toLowerCase())
@@ -1385,66 +1386,4 @@ function withAnalyticsEvent(
   }
 
   return { ...state, analyticsEvents: [item, ...state.analyticsEvents] }
-}
-
-const editableAuditFields = [
-  'developerId',
-  'projectId',
-  'destinationId',
-  'unitType',
-  'floor',
-  'bua',
-  'roofGardenArea',
-  'gardenArea',
-  'terraceArea',
-  'viewId',
-  'bedrooms',
-  'bathrooms',
-  'elevator',
-  'landArea',
-  'furnished',
-  'finish',
-  'deliveryExpectancy',
-  'salesNotes',
-  'totalAmount',
-  'transferFees',
-  'maintenancePaid',
-  'maintenanceCost',
-  'maintenanceDueDate',
-  'installmentType',
-  'installmentStartMonth',
-  'installmentEndMonth',
-  'customInstallmentText',
-  'commissionPercentage',
-  'originalOwnerName',
-  'countryCode',
-  'originalOwnerPhone',
-] as const
-
-function diffUnitEditFields(before: LeadraUnit, after: LeadraUnit): string[] {
-  return editableAuditFields.filter((field) => JSON.stringify(before[field]) !== JSON.stringify(after[field]))
-}
-
-function pickUnitEditAuditValue(unit: LeadraUnit, fields: string[]): Record<string, unknown> {
-  return Object.fromEntries(
-    fields.map((field) => [field, unit[field as keyof LeadraUnit]]),
-  )
-}
-
-function isAdminActor(actor: LeadraUser): boolean {
-  return actor.role === 'admin' || actor.role === 'sub_admin'
-}
-
-function emptyUser(): LeadraUser {
-  return {
-    id: '',
-    fullName: '',
-    email: '',
-    role: 'sales',
-    jobTitle: '',
-    phoneNumber: '',
-    teamId: '',
-    branchId: '',
-    status: 'inactive',
-  }
 }

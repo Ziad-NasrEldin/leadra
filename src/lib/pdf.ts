@@ -1,5 +1,5 @@
 import { PDFDocument, StandardFonts, rgb, type PDFFont, type PDFImage, type PDFPage } from 'pdf-lib'
-import { buildPaymentTimetable, canViewSalesSensitiveData, formatCurrency, formatDeliveryExpectancy, getApplicableUnitAreaFields, sanitizeUnitForPdf } from './domain'
+import { buildPaymentTimetable, calculateDisplayedPaymentTotals, canViewSalesSensitiveData, formatCurrency, formatDeliveryExpectancy, getApplicableUnitAreaFields, sanitizeUnitForPdf } from './domain'
 import { translate, type LocaleCode } from './i18n'
 import type { AppSettings, LeadraUnit, LeadraUser } from './types'
 
@@ -78,7 +78,7 @@ export async function generateUnitPdfFile(
   generatedAt = new Date(),
 ): Promise<GeneratedPdf> {
   const blob = await buildPermissionSafePdfBlob(user, unit, settings, locale)
-  return { blob, fileName: `leadra-${unit.unitCode}-${formatPdfTimestamp(generatedAt)}.pdf` }
+  return { blob, fileName: `${unit.unitCode}-${formatPdfExportDate(generatedAt)}.pdf` }
 }
 
 function buildPdfUnitDetails(user: LeadraUser, unit: LeadraUnit, locale: LocaleCode) {
@@ -115,10 +115,12 @@ function buildPdfUnitDetails(user: LeadraUser, unit: LeadraUnit, locale: LocaleC
   }
   if (unit.paymentMethod === 'installment') {
     const installments = buildPaymentTimetable(unit, locale)
+    const paymentTotals = calculateDisplayedPaymentTotals(unit)
     rows.push(
       { label: 'Total Amount', value: formatCurrency(unit.totalAmount, locale), kind: 'money' },
       { label: translate(locale, 'create.downPayment'), value: formatNullableCurrency(unit.downPayment, locale), kind: 'money' },
-      { label: 'Remaining Value', value: formatNullableCurrency(unit.remainingPayment, locale), kind: 'money' },
+      { label: translate(locale, 'details.paidAmount'), value: formatCurrency(paymentTotals.displayedPaidAmount, locale), kind: 'money' },
+      { label: 'Remaining Value', value: formatCurrency(paymentTotals.displayedRemainingAmount, locale), kind: 'money' },
       { label: 'Installments', value: installmentSummary(unit, installments, locale) },
     )
 
@@ -400,8 +402,9 @@ function formatOptionalArea(value: number | null | undefined) {
   return value == null ? '' : formatArea(value)
 }
 
-function formatPdfTimestamp(date: Date) {
-  return date.toISOString().replace(/\.\d{3}Z$/, 'Z').replace(/[:-]/g, '').replace('T', '-').replace('Z', '')
+function formatPdfExportDate(date: Date) {
+  const month = new Intl.DateTimeFormat('en-US', { month: 'short', timeZone: 'UTC' }).format(date)
+  return `${month}${date.getUTCDate()}`
 }
 
 export function downloadGeneratedPdf(pdf: GeneratedPdf): void {

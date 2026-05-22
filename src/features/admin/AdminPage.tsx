@@ -5,11 +5,43 @@ import { renderAuditAction } from '../../lib/messageRendering'
 import type { AppSettings, AuditLogItem, BranchDirectoryItem, LeadraUnit, LeadraUser, LookupKind, LookupValue, TeamDirectoryItem } from '../../lib/types'
 import { ControlledSelectField, EmptyState, Metric, NamedSelectField, PasswordField } from '../../components/LeadraUi'
 import { adminSections, auditLogPageSize, maxLogoUploadBytes, roleOrder, userManagementPageSize, type AdminSection, type LookupThumbnailChange, type MasterDataDirectory } from '../shared/constants'
+import { readFormEnum, readFormNumber, readTrimmedFormString } from '../shared/formUtils'
 import { fileToDataUrl } from '../shared/media'
 import { motionStyle } from '../shared/motion'
 import { sortLabel, translateAdminSection } from '../shared/labels'
 import { MasterDataPanel } from './MasterData'
 import { UserManagementCard } from './UserManagement'
+
+type AdminPageProps = {
+  users: LeadraUser[]
+  units: LeadraUnit[]
+  settings: AppSettings
+  auditLogs: AuditLogItem[]
+  lookupValues: LookupValue[]
+  lookupCount: number
+  activeSection: AdminSection
+  activeDirectory: MasterDataDirectory
+  onSectionChange: (section: AdminSection) => void
+  onDirectoryChange: (directory: MasterDataDirectory) => void
+  defaultBranchId: string
+  branches: BranchDirectoryItem[]
+  teams: TeamDirectoryItem[]
+  onCreateLookupValue: (kind: LookupKind, label: string, thumbnailFile?: File | null) => Promise<void>
+  onUpdateLookupValue: (lookupId: string, label: string, thumbnailChange?: LookupThumbnailChange) => Promise<void>
+  onArchiveLookupValue: (lookupId: string) => Promise<void>
+  onCreateBranch: (name: string) => Promise<void>
+  onUpdateBranch: (branchId: string, name: string) => Promise<void>
+  onArchiveBranch: (branchId: string) => Promise<void>
+  onCreateTeam: (name: string) => Promise<void>
+  onUpdateTeam: (teamId: string, name: string) => Promise<void>
+  onArchiveTeam: (teamId: string) => Promise<void>
+  onCreateUser: (formData: FormData) => Promise<void>
+  onUpdateUser: (userId: string, updates: Partial<LeadraUser>) => Promise<void>
+  onUpdateUserPassword: (userId: string, password: string) => Promise<void>
+  onDeleteSalesRepresentative: (salesUserId: string, replacementSalesUserId: string) => Promise<void>
+  onDeleteManagedUser: (managedUserId: string) => Promise<void>
+  onSettingsUpdate: (settings: Partial<AppSettings>) => Promise<void>
+}
 
 export function AdminPage({
   users,
@@ -40,36 +72,7 @@ export function AdminPage({
   onDeleteSalesRepresentative,
   onDeleteManagedUser,
   onSettingsUpdate,
-}: {
-  users: LeadraUser[]
-  units: LeadraUnit[]
-  settings: AppSettings
-  auditLogs: AuditLogItem[]
-  lookupValues: LookupValue[]
-  lookupCount: number
-  activeSection: AdminSection
-  activeDirectory: MasterDataDirectory
-  onSectionChange: (section: AdminSection) => void
-  onDirectoryChange: (directory: MasterDataDirectory) => void
-  defaultBranchId: string
-  branches: BranchDirectoryItem[]
-  teams: TeamDirectoryItem[]
-  onCreateLookupValue: (kind: LookupKind, label: string, thumbnailFile?: File | null) => Promise<void>
-  onUpdateLookupValue: (lookupId: string, label: string, thumbnailChange?: LookupThumbnailChange) => Promise<void>
-  onArchiveLookupValue: (lookupId: string) => Promise<void>
-  onCreateBranch: (name: string) => Promise<void>
-  onUpdateBranch: (branchId: string, name: string) => Promise<void>
-  onArchiveBranch: (branchId: string) => Promise<void>
-  onCreateTeam: (name: string) => Promise<void>
-  onUpdateTeam: (teamId: string, name: string) => Promise<void>
-  onArchiveTeam: (teamId: string) => Promise<void>
-  onCreateUser: (formData: FormData) => Promise<void>
-  onUpdateUser: (userId: string, updates: Partial<LeadraUser>) => Promise<void>
-  onUpdateUserPassword: (userId: string, password: string) => Promise<void>
-  onDeleteSalesRepresentative: (salesUserId: string, replacementSalesUserId: string) => Promise<void>
-  onDeleteManagedUser: (managedUserId: string) => Promise<void>
-  onSettingsUpdate: (settings: Partial<AppSettings>) => Promise<void>
-}) {
+}: AdminPageProps) {
   const { locale, t } = useLocale()
   const [userQuery, setUserQuery] = useState('')
   const [roleFilter, setRoleFilter] = useState<LeadraUser['role'] | 'all'>('all')
@@ -450,15 +453,7 @@ export function AdminPage({
               const formData = new FormData(event.currentTarget)
               setSettingsPending(true)
               try {
-                await onSettingsUpdate({
-                  companyName: String(formData.get('companyName') ?? '').trim() || 'Leadra',
-                  commissionPercentage: Number(formData.get('commissionPercentage')),
-                  footerText: String(formData.get('footerText') ?? '').trim(),
-                  contactDetails: String(formData.get('contactDetails') ?? '').trim(),
-                  logoPath: logoPathDraft,
-                  pdfLayout: String(formData.get('pdfLayout')) === 'compact' ? 'compact' : 'classic',
-                  mediaLimitMb: Number(formData.get('mediaLimitMb')),
-                })
+                await onSettingsUpdate(readSettingsUpdates(formData, logoPathDraft))
               } finally {
                 setSettingsPending(false)
               }
@@ -557,4 +552,16 @@ export function AdminPage({
       )}
     </section>
   )
+}
+
+function readSettingsUpdates(formData: FormData, logoPath: string): Partial<AppSettings> {
+  return {
+    companyName: readTrimmedFormString(formData, 'companyName', 'Leadra'),
+    commissionPercentage: readFormNumber(formData, 'commissionPercentage'),
+    footerText: readTrimmedFormString(formData, 'footerText'),
+    contactDetails: readTrimmedFormString(formData, 'contactDetails'),
+    logoPath,
+    pdfLayout: readFormEnum(formData, 'pdfLayout', ['classic', 'compact'] as const, 'classic'),
+    mediaLimitMb: readFormNumber(formData, 'mediaLimitMb'),
+  }
 }

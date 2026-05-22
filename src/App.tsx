@@ -38,8 +38,6 @@ import {
   formatCurrency,
   isSoldStatus,
   normalizeReactiveUnitFilters,
-  summarizeDestinations,
-  summarizeProjects,
   validateOwnerPhoneForCountry,
   searchUnits,
 } from './lib/domain'
@@ -66,6 +64,7 @@ import {
 } from './lib/messageRendering'
 import { authPasswordCandidates, createManagedUserProfile, updateManagedUserPassword, updateManagedUserProfile } from './lib/adminAuth'
 import { createUnitRemoteErrorFlash, mediaPdfVisibilityErrorFlash } from './lib/createUnitErrors'
+import { buildPdfActionRecords, getOrGenerateUnitPdf, getOrGenerateUnitPdfs, pdfAnalyticsEventType, type GeneratedPdfCache, type PdfActionKind } from './lib/pdfWorkflow'
 import { LeadraRepository } from './lib/repository'
 import { canUseDemoMode, isPerformanceDemoMode, isProductionMissingSupabaseConfig, isSupabaseConfigured, supabase } from './lib/supabase'
 import { loadSupabaseAnalyticsDashboard, loadSupabaseAppState, loadSupabaseProfile, markSupabaseLogin, setSupabaseThemePreference } from './lib/supabaseState'
@@ -115,7 +114,6 @@ import type {
   AppDataState,
   BranchDirectoryItem,
   CreateUnitInput,
-  DestinationSummary,
   LeadraMediaFile,
   LeadraUnit,
   LeadraUser,
@@ -124,7 +122,6 @@ import type {
   MessageParams,
   NotificationItem,
   PaymentMethod,
-  ProjectSummary,
   ThemePreference,
   InstallmentType,
   UnitEditInput,
@@ -134,14 +131,45 @@ import type {
 import { AdminPage } from './features/admin/AdminPage'
 import { CreateUnitPage } from './features/create/CreateUnitPage'
 import { UnitDetailsPage } from './features/details/UnitDetailsPage'
+import {
+  buildTeamDashboardRollups,
+  buildUnitDashboardRollups,
+  summarizeDestinationsWithLookups,
+  summarizeProjectsWithLookups,
+  type DashboardRollup,
+} from './features/dashboard/dashboardSummaries'
 import { UnitListRow, UnitsPage } from './features/units/UnitsPage'
 import { ControlledSelectField, EmptyState, InfoSection, Metric, MiniBar, NavButton, PasswordField } from './components/LeadraUi'
 import { paymentMethodValues, supportsLookupThumbnail, unitStatusValues, type AdminSection, type CreateUnitStep, type MasterDataDirectory } from './features/shared/constants'
 import { fileToDataUrl, removeLookupThumbnail, uploadLookupThumbnail } from './features/shared/media'
-import { getUnitCustomInstallmentText, getUnitInstallmentEndMonth, getUnitInstallmentStartMonth, isAutomaticInstallmentType, parseOptionalFormDate, parseOptionalFormMonthDate, parseOptionalFormNumber, parseOptionalFormText } from './features/shared/formUtils'
+import {
+  getUnitCustomInstallmentText,
+  getUnitInstallmentEndMonth,
+  getUnitInstallmentStartMonth,
+  isAutomaticInstallmentType,
+  parseOptionalFormDate,
+  parseOptionalFormMonthDate,
+  parseOptionalFormNumber,
+  parseOptionalFormText,
+  readFormBoolean,
+  readFormEnum,
+  readFormNumber,
+  readFormString,
+} from './features/shared/formUtils'
 import { motionStyle } from './features/shared/motion'
 
 type UnitsBrowserStage = 'destinations' | 'projects' | 'units'
+
+type ActiveRouteState = {
+  activeView: View
+  routeDestinationId: string | null
+  routeProjectId: string | null
+  routeUnitId: number | null
+  unitsBrowserStage: UnitsBrowserStage
+  activeCreateStep: CreateUnitStep
+  activeAdminSection: AdminSection
+  activeMasterDataDirectory: MasterDataDirectory
+}
 
 type TransitionDocument = Document & {
   startViewTransition?: (callback: () => void) => {
@@ -177,7 +205,6 @@ function runPageTransition(update: () => void) {
   }
 }
 type UiMessage = { message: string; messageKey?: string | null; messageParams?: MessageParams | null }
-type PdfActionKind = 'pdf_generated' | 'pdf_downloaded' | 'pdf_shared'
 
 function errorMessage(error: unknown) {
   if (error instanceof Error) return error.message
@@ -235,6 +262,22 @@ const masterDataDirectoryToSlug: Record<MasterDataDirectory, MasterDataDirectory
   finish: 'finishes',
   branches: 'branches',
   teams: 'teams',
+}
+
+function deriveActiveRouteState(route: AppRoute, user: LeadraUser): ActiveRouteState {
+  const routeDestinationId = route.view === 'units' ? route.destinationId : null
+  const routeProjectId = route.view === 'units' ? route.projectId : null
+
+  return {
+    activeView: isViewAllowedForUser(route.view, user) ? route.view : 'dashboard',
+    routeDestinationId,
+    routeProjectId,
+    routeUnitId: route.view === 'details' ? route.unitId : null,
+    unitsBrowserStage: routeProjectId ? 'units' : routeDestinationId ? 'projects' : 'destinations',
+    activeCreateStep: createStepFromSlug[route.createStep],
+    activeAdminSection: adminSectionFromSlug[route.adminSection],
+    activeMasterDataDirectory: masterDataDirectoryFromSlug[route.masterDataDirectory],
+  }
 }
 
 function analyticsFiltersFromRoute(route: AppRoute): LeadraAnalyticsFilters {
@@ -331,7 +374,7 @@ function LeadraApp() {
   } | null>(null)
   const [removingMediaId, setRemovingMediaId] = useState<string | null>(null)
   const [downloadingMediaId, setDownloadingMediaId] = useState<string | null>(null)
-  const [generatedPdfs, setGeneratedPdfs] = useState<Record<number, { blob: Blob; fileName: string }>>({})
+  const [generatedPdfs, setGeneratedPdfs] = useState<GeneratedPdfCache>({})
   const completingAuthUserRef = useRef<string | null>(null)
   const emailDeliveryReadyRef = useRef(false)
   const emailedNotificationIdsRef = useRef<Set<string>>(new Set())
@@ -347,20 +390,8 @@ function LeadraApp() {
   }
 
   async function recordPdfAction(unit: LeadraUnit, kind: PdfActionKind) {
-    const notificationMessage = createNotificationMessage(kind, { unitCode: unit.unitCode })
-    const auditMessage = createAuditMessage(kind, { unitCode: unit.unitCode })
-    const createdAt = new Date().toISOString()
-    const adminAudience = ['admin', 'sub_admin'] as const
-    const notifications = adminAudience.map((role) => ({
-      id: `notif-${kind}-${role}-${unit.id}-${createdAt}`,
-      title: notificationMessage.title.text,
-      body: notificationMessage.body.text,
-      messageKey: notificationMessage.body.messageKey ?? null,
-      messageParams: notificationMessage.body.messageParams ?? null,
-      audienceRole: role,
-      createdAt,
-      read: false,
-    }))
+    const { adminAudience, auditLog, auditMessage, notificationMessage, notifications } = buildPdfActionRecords(user, unit, kind)
+    const eventType = pdfAnalyticsEventType(kind)
     setAppState((state) =>
       addAnalyticsEventWorkflow(
         {
@@ -370,22 +401,12 @@ function LeadraApp() {
             ...state.notifications,
           ],
           auditLogs: [
-            {
-              id: `audit-${kind}-${unit.id}-${createdAt}`,
-              actorName: user.fullName,
-              actorRole: user.role,
-              actionType: auditMessage.text,
-              messageKey: auditMessage.messageKey ?? null,
-              messageParams: auditMessage.messageParams ?? null,
-              relatedUnitCode: unit.unitCode,
-              createdAt,
-              ipAddress: null,
-            },
+            auditLog,
             ...state.auditLogs,
           ],
         },
         user,
-        kind === 'pdf_generated' ? 'pdf_generated' : 'pdf_shared_or_downloaded',
+        eventType,
         unit,
       ),
     )
@@ -393,10 +414,10 @@ function LeadraApp() {
       await new LeadraRepository(supabase).recordPdfAction(
         user,
         unit,
-        kind === 'pdf_generated' ? 'pdf_generated' : 'pdf_shared_or_downloaded',
+        eventType,
         auditMessage,
         notificationMessage,
-        [...adminAudience],
+        adminAudience,
       )
     }
   }
@@ -581,19 +602,21 @@ function LeadraApp() {
   const user = currentUser
   const canUseAdmin = canAccessAdmin(user)
   const canUseAnalytics = canAccessAnalytics(user)
-  const activeView = isViewAllowedForUser(route.view, user) ? route.view : 'dashboard'
+  const {
+    activeView,
+    routeDestinationId,
+    routeProjectId,
+    routeUnitId,
+    unitsBrowserStage,
+    activeCreateStep,
+    activeAdminSection,
+    activeMasterDataDirectory,
+  } = deriveActiveRouteState(route, user)
   const visibleUnits = filterUnitsForUser(user, appState.units)
   const destinationSummaries = summarizeDestinationsWithLookups(visibleUnits, activeLookupValues, locale)
-  const routeDestinationId = route.view === 'units' ? route.destinationId : null
-  const routeProjectId = route.view === 'units' ? route.projectId : null
-  const routeUnitId = route.view === 'details' ? route.unitId : null
   const activeSelectedDestinationId = routeDestinationId
   const projectSummaries = summarizeProjectsWithLookups(visibleUnits, activeLookupValues, locale, activeSelectedDestinationId)
   const activeSelectedProjectId = routeProjectId
-  const unitsBrowserStage: UnitsBrowserStage = routeProjectId ? 'units' : routeDestinationId ? 'projects' : 'destinations'
-  const activeCreateStep = createStepFromSlug[route.createStep]
-  const activeAdminSection = adminSectionFromSlug[route.adminSection]
-  const activeMasterDataDirectory = masterDataDirectoryFromSlug[route.masterDataDirectory]
   const selectedUnit = activeView === 'details'
     ? visibleUnits.find((unit) => unit.id === routeUnitId) ?? null
     : visibleUnits[0] ?? null
@@ -639,22 +662,24 @@ function LeadraApp() {
   async function handleCreateUnit(event: FormEvent<HTMLFormElement>, uploadedMedia: LeadraMediaFile[]) {
     event.preventDefault()
     const formData = new FormData(event.currentTarget)
-    const paymentMethod = String(formData.get('paymentMethod')) as PaymentMethod
-    const projectId = String(formData.get('projectId'))
-    const destinationId = String(formData.get('destinationId'))
-    const developerId = String(formData.get('developerId'))
-    const viewId = String(formData.get('viewId'))
-    const finish = String(formData.get('finish'))
+    const paymentMethod = readFormEnum(formData, 'paymentMethod', paymentMethodValues, 'cash') as PaymentMethod
+    const projectId = readFormString(formData, 'projectId')
+    const destinationId = readFormString(formData, 'destinationId')
+    const developerId = readFormString(formData, 'developerId')
+    const viewId = readFormString(formData, 'viewId')
+    const finish = readFormString(formData, 'finish')
     const project = activeLookupValues.find((item) => item.id === projectId)
     const destination = activeLookupValues.find((item) => item.id === destinationId)
     const developer = activeLookupValues.find((item) => item.id === developerId)
     const viewLookup = activeLookupValues.find((item) => item.id === viewId)
     const finishLookup = activeLookupValues.find((item) => item.kind === 'finish' && item.label === finish)
-    const rawOwnerPhone = String(formData.get('ownerPhone'))
-    const selectedCountryCode = String(formData.get('countryCode') ?? '+20')
+    const rawOwnerPhone = readFormString(formData, 'ownerPhone')
+    const selectedCountryCode = readFormString(formData, 'countryCode', '+20')
     const ownerPhoneValidation = validateOwnerPhoneForCountry(rawOwnerPhone, selectedCountryCode, locale)
-    const maintenancePaid = formData.get('maintenancePaid') === 'on'
-    const installmentType = paymentMethod === 'installment' ? String(formData.get('installmentType')) as InstallmentType : null
+    const maintenancePaid = readFormBoolean(formData, 'maintenancePaid')
+    const installmentType = paymentMethod === 'installment'
+      ? readFormEnum(formData, 'installmentType', ['monthly', 'quarterly', 'semi_annual', 'annual', 'custom'] as const, 'monthly') as InstallmentType
+      : null
     const installmentStartMonth = paymentMethod === 'installment' && isAutomaticInstallmentType(installmentType)
       ? parseOptionalFormMonthDate(formData, 'installmentStartMonth')
       : null
@@ -695,23 +720,23 @@ function LeadraApp() {
       projectName: project?.label ?? 'Unknown project',
       destinationId,
       destinationName: destination?.label ?? 'Unknown destination',
-      unitType: String(formData.get('unitType')),
-      floor: String(formData.get('floor') ?? ''),
-      bua: Number(formData.get('bua')),
-      roofGardenArea: Number(formData.get('roofGardenArea')) || null,
-      gardenArea: Number(formData.get('gardenArea')) || null,
-      terraceArea: Number(formData.get('terraceArea')) || null,
+      unitType: readFormString(formData, 'unitType'),
+      floor: readFormString(formData, 'floor'),
+      bua: readFormNumber(formData, 'bua'),
+      roofGardenArea: readFormNumber(formData, 'roofGardenArea') || null,
+      gardenArea: readFormNumber(formData, 'gardenArea') || null,
+      terraceArea: readFormNumber(formData, 'terraceArea') || null,
       viewId,
       viewName: viewLookup.label,
-      bedrooms: Number(formData.get('bedrooms')),
-      bathrooms: Number(formData.get('bathrooms')),
-      elevator: formData.get('elevator') === 'on',
-      landArea: Number(formData.get('landArea')) || null,
-      furnished: String(formData.get('furnished')) === 'true',
+      bedrooms: readFormNumber(formData, 'bedrooms'),
+      bathrooms: readFormNumber(formData, 'bathrooms'),
+      elevator: readFormBoolean(formData, 'elevator'),
+      landArea: readFormNumber(formData, 'landArea') || null,
+      furnished: readFormString(formData, 'furnished') === 'true',
       finish,
       paymentMethod,
-      totalAmount: Number(formData.get('totalAmount')),
-      downPayment: paymentMethod === 'installment' ? Number(formData.get('downPayment')) : null,
+      totalAmount: readFormNumber(formData, 'totalAmount'),
+      downPayment: paymentMethod === 'installment' ? readFormNumber(formData, 'downPayment') : null,
       maintenancePaid,
       maintenanceCost: maintenancePaid ? null : parseOptionalFormNumber(formData, 'maintenanceCost'),
       maintenanceDueDate: maintenancePaid ? null : parseOptionalFormDate(formData, 'maintenanceDueDate'),
@@ -722,12 +747,12 @@ function LeadraApp() {
       installmentYears: null,
       deliveryExpectancy: {
         mode: 'year',
-        year: Number(formData.get('deliveryYear')),
+        year: readFormNumber(formData, 'deliveryYear'),
       },
-      originalOwnerName: String(formData.get('ownerName')),
+      originalOwnerName: readFormString(formData, 'ownerName'),
       countryCode: selectedCountryCode,
       originalOwnerPhone: ownerPhoneValidation.localPhone,
-      salesNotes: String(formData.get('salesNotes')),
+      salesNotes: readFormString(formData, 'salesNotes'),
       media: uploadedMedia,
     }
     const result = createUnitWorkflow(appState, user, input)
@@ -769,29 +794,24 @@ function LeadraApp() {
   async function handleUpdateUnit(unit: LeadraUnit, event: FormEvent<HTMLFormElement>): Promise<boolean> {
     event.preventDefault()
     const formData = new FormData(event.currentTarget)
-    const projectId = String(formData.get('projectId'))
-    const destinationId = String(formData.get('destinationId'))
-    const developerId = String(formData.get('developerId'))
-    const viewId = String(formData.get('viewId'))
-    const finish = String(formData.get('finish'))
+    const projectId = readFormString(formData, 'projectId')
+    const destinationId = readFormString(formData, 'destinationId')
+    const developerId = readFormString(formData, 'developerId')
+    const viewId = readFormString(formData, 'viewId')
+    const finish = readFormString(formData, 'finish')
     const project = activeLookupValues.find((item) => item.id === projectId)
     const destination = activeLookupValues.find((item) => item.id === destinationId)
     const developer = activeLookupValues.find((item) => item.id === developerId)
     const viewLookup = activeLookupValues.find((item) => item.id === viewId)
     const finishLookup = activeLookupValues.find((item) => item.kind === 'finish' && item.label === finish)
-    const maintenancePaid = formData.get('maintenancePaid') === 'on'
-    const submittedPaymentMethodValue = formData.get('paymentMethod')
-    const submittedPaymentMethod = submittedPaymentMethodValue === 'cash' || submittedPaymentMethodValue === 'installment'
-      ? submittedPaymentMethodValue
-      : unit.paymentMethod
-    const submittedInstallmentTypeValue = formData.get('installmentType')
-    const submittedInstallmentType = submittedInstallmentTypeValue === 'monthly' ||
-      submittedInstallmentTypeValue === 'quarterly' ||
-      submittedInstallmentTypeValue === 'semi_annual' ||
-      submittedInstallmentTypeValue === 'annual' ||
-      submittedInstallmentTypeValue === 'custom'
-      ? submittedInstallmentTypeValue
-      : unit.installmentType
+    const maintenancePaid = readFormBoolean(formData, 'maintenancePaid')
+    const submittedPaymentMethod = readFormEnum(formData, 'paymentMethod', paymentMethodValues, unit.paymentMethod)
+    const submittedInstallmentType = readFormEnum(
+      formData,
+      'installmentType',
+      ['monthly', 'quarterly', 'semi_annual', 'annual', 'custom'] as const,
+      unit.installmentType ?? 'monthly',
+    )
     const submittedInstallmentStartMonth = parseOptionalFormMonthDate(formData, 'installmentStartMonth')
     const submittedInstallmentEndMonth = parseOptionalFormMonthDate(formData, 'installmentEndMonth')
     const storedInstallmentStartMonth = getUnitInstallmentStartMonth(unit)
@@ -818,31 +838,31 @@ function LeadraApp() {
       projectName: project?.label ?? unit.projectName,
       destinationId,
       destinationName: destination?.label ?? unit.destinationName,
-      unitType: String(formData.get('unitType')),
-      floor: String(formData.get('floor') ?? ''),
-      bua: Number(formData.get('bua')),
-      roofGardenArea: Number(formData.get('roofGardenArea')) || null,
-      gardenArea: Number(formData.get('gardenArea')) || null,
-      terraceArea: Number(formData.get('terraceArea')) || null,
+      unitType: readFormString(formData, 'unitType'),
+      floor: readFormString(formData, 'floor'),
+      bua: readFormNumber(formData, 'bua'),
+      roofGardenArea: readFormNumber(formData, 'roofGardenArea') || null,
+      gardenArea: readFormNumber(formData, 'gardenArea') || null,
+      terraceArea: readFormNumber(formData, 'terraceArea') || null,
       viewId,
       viewName: viewLookup?.label ?? unit.viewName,
-      bedrooms: Number(formData.get('bedrooms')),
-      bathrooms: Number(formData.get('bathrooms')),
-      elevator: formData.get('elevator') === 'on',
-      landArea: Number(formData.get('landArea')) || null,
-      furnished: String(formData.get('furnished')) === 'true',
+      bedrooms: readFormNumber(formData, 'bedrooms'),
+      bathrooms: readFormNumber(formData, 'bathrooms'),
+      elevator: readFormBoolean(formData, 'elevator'),
+      landArea: readFormNumber(formData, 'landArea') || null,
+      furnished: readFormString(formData, 'furnished') === 'true',
       finish,
       paymentMethod: submittedPaymentMethod,
       downPayment: submittedPaymentMethod === 'installment' ? parseOptionalFormNumber(formData, 'downPayment') ?? unit.downPayment ?? 0 : null,
       deliveryExpectancy: {
         mode: 'year',
-        year: Number(formData.get('deliveryYear')),
+        year: readFormNumber(formData, 'deliveryYear'),
       },
-      originalOwnerName: String(formData.get('ownerName') ?? unit.originalOwnerName ?? ''),
-      countryCode: String(formData.get('countryCode') ?? unit.countryCode ?? '+20'),
-      originalOwnerPhone: String(formData.get('ownerPhone') ?? unit.originalOwnerPhone ?? ''),
-      salesNotes: String(formData.get('salesNotes') ?? unit.salesNotes),
-      totalAmount: Number(formData.get('totalAmount')),
+      originalOwnerName: readFormString(formData, 'ownerName', unit.originalOwnerName ?? ''),
+      countryCode: readFormString(formData, 'countryCode', unit.countryCode ?? '+20'),
+      originalOwnerPhone: readFormString(formData, 'ownerPhone', unit.originalOwnerPhone ?? ''),
+      salesNotes: readFormString(formData, 'salesNotes', unit.salesNotes),
+      totalAmount: readFormNumber(formData, 'totalAmount'),
       maintenancePaid,
       maintenanceCost: maintenancePaid ? null : parseOptionalFormNumber(formData, 'maintenanceCost'),
       maintenanceDueDate: maintenancePaid ? null : parseOptionalFormDate(formData, 'maintenanceDueDate'),
@@ -859,7 +879,7 @@ function LeadraApp() {
             installmentEndMonth,
           }
         : {}),
-      commissionPercentage: Number(formData.get('commissionPercentage')),
+      commissionPercentage: readFormNumber(formData, 'commissionPercentage'),
     }
     const result = updateUnitWorkflow(appState, user, unit.id, input)
     if (!result.ok) {
@@ -1273,10 +1293,7 @@ function LeadraApp() {
     if (batchPdfAction || generatingPdfUnitId || sharingPdfUnitId || selectedBatchUnits.length === 0) return
     setBatchPdfAction('share')
     try {
-      const generated = []
-      for (const unit of selectedBatchUnits) {
-        generated.push(generatedPdfs[unit.id] ?? await generatePdfFile(unit))
-      }
+      const generated = await getOrGenerateUnitPdfs(selectedBatchUnits, generatedPdfs, generatePdfFile)
       const { shareGeneratedPdfs, downloadGeneratedPdf } = await import('./lib/pdf')
       const shared = await shareGeneratedPdfs(generated)
       if (shared) {
@@ -1302,10 +1319,7 @@ function LeadraApp() {
     if (batchPdfAction || generatingPdfUnitId || sharingPdfUnitId || selectedBatchUnits.length === 0) return
     setBatchPdfAction('download')
     try {
-      const generated = []
-      for (const unit of selectedBatchUnits) {
-        generated.push(generatedPdfs[unit.id] ?? await generatePdfFile(unit))
-      }
+      const generated = await getOrGenerateUnitPdfs(selectedBatchUnits, generatedPdfs, generatePdfFile)
       const { downloadGeneratedPdf } = await import('./lib/pdf')
       for (const [index, unit] of selectedBatchUnits.entries()) {
         downloadGeneratedPdf(generated[index])
@@ -1337,7 +1351,7 @@ function LeadraApp() {
     if (generatingPdfUnitId || sharingPdfUnitId) return
     setGeneratingPdfUnitId(unit.id)
     try {
-      const generated = generatedPdfs[unit.id] ?? await generatePdfFile(unit)
+      const generated = await getOrGenerateUnitPdf(unit, generatedPdfs, generatePdfFile)
       const { downloadGeneratedPdf } = await import('./lib/pdf')
       await recordPdfAction(unit, 'pdf_downloaded')
       downloadGeneratedPdf(generated)
@@ -1353,7 +1367,7 @@ function LeadraApp() {
     if (sharingPdfUnitId || generatingPdfUnitId) return
     setSharingPdfUnitId(unit.id)
     try {
-      const generated = generatedPdfs[unit.id] ?? await generatePdfFile(unit)
+      const generated = await getOrGenerateUnitPdf(unit, generatedPdfs, generatePdfFile)
       const { shareGeneratedPdf, downloadGeneratedPdf } = await import('./lib/pdf')
       const shared = await shareGeneratedPdf(generated)
       if (shared) {
@@ -2508,16 +2522,6 @@ function Dashboard({
   )
 }
 
-type DashboardRollup = {
-  id: string
-  label: string
-  totalUnits: number
-  availableUnits: number
-  holdUnits: number
-  soldUnits: number
-  meta?: string
-}
-
 function AdminDashboard({
   user,
   appState,
@@ -2641,88 +2645,6 @@ function AdminRollupPanel({ title, items, locale }: { title: string; items: Dash
       </div>
     </section>
   )
-}
-
-function buildTeamDashboardRollups(units: LeadraUnit[], appState: AppDataState, locale: LocaleCode): DashboardRollup[] {
-  return appState.teams
-    .map((team) => {
-      const teamUnits = units.filter((unit) => unit.teamId === team.id)
-      const activeMembers = appState.users.filter((member) => member.teamId === team.id && member.status === 'active').length
-      return summarizeDashboardRollup(team.id, team.name, teamUnits, locale === 'ar' ? `${activeMembers} أعضاء نشطون` : `${activeMembers} active members`)
-    })
-    .filter((item) => item.totalUnits > 0 || item.meta)
-    .sort((a, b) => sortDashboardRollups(a, b, locale))
-}
-
-function buildUnitDashboardRollups(
-  units: LeadraUnit[],
-  idKey: 'developerId' | 'destinationId' | 'projectId',
-  labelKey: 'developerName' | 'destinationName' | 'projectName',
-  locale: LocaleCode,
-): DashboardRollup[] {
-  const grouped = new Map<string, LeadraUnit[]>()
-  for (const unit of units) {
-    const current = grouped.get(unit[idKey])
-    if (current) current.push(unit)
-    else grouped.set(unit[idKey], [unit])
-  }
-
-  return Array.from(grouped.entries())
-    .map(([id, groupedUnits]) => summarizeDashboardRollup(id, groupedUnits[0][labelKey], groupedUnits))
-    .sort((a, b) => sortDashboardRollups(a, b, locale))
-}
-
-function summarizeDestinationsWithLookups(units: LeadraUnit[], lookups: LookupValue[], locale: LocaleCode): DestinationSummary[] {
-  const summaries = new Map(summarizeDestinations(units, locale).map((summary) => [summary.destinationId, summary]))
-
-  for (const lookup of lookups) {
-    if (lookup.kind !== 'destination' || summaries.has(lookup.id)) continue
-    summaries.set(lookup.id, {
-      destinationId: lookup.id,
-      destinationName: lookup.label,
-      totalUnits: 0,
-      availableUnits: 0,
-      holdUnits: 0,
-      soldUnits: 0,
-    })
-  }
-
-  return Array.from(summaries.values()).sort((a, b) => compareText(locale, a.destinationName, b.destinationName))
-}
-
-function summarizeProjectsWithLookups(units: LeadraUnit[], lookups: LookupValue[], locale: LocaleCode, destinationId?: string | null): ProjectSummary[] {
-  const summaries = new Map(summarizeProjects(units, locale, destinationId).map((summary) => [summary.projectId, summary]))
-
-  for (const lookup of lookups) {
-    if (lookup.kind !== 'project' || summaries.has(lookup.id)) continue
-    summaries.set(lookup.id, {
-      projectId: lookup.id,
-      projectName: lookup.label,
-      destinationId: destinationId ?? undefined,
-      totalUnits: 0,
-      availableUnits: 0,
-      holdUnits: 0,
-      soldUnits: 0,
-    })
-  }
-
-  return Array.from(summaries.values()).sort((a, b) => compareText(locale, a.projectName, b.projectName))
-}
-
-function summarizeDashboardRollup(id: string, label: string, units: LeadraUnit[], meta?: string): DashboardRollup {
-  return {
-    id,
-    label,
-    totalUnits: units.length,
-    availableUnits: units.filter((unit) => unit.status === 'available').length,
-    holdUnits: units.filter((unit) => unit.status === 'hold').length,
-    soldUnits: units.filter((unit) => isSoldStatus(unit.status)).length,
-    meta,
-  }
-}
-
-function sortDashboardRollups(a: DashboardRollup, b: DashboardRollup, locale: LocaleCode) {
-  return b.totalUnits - a.totalUnits || compareText(locale, a.label, b.label)
 }
 
 function ManagerDashboard({

@@ -14,46 +14,22 @@ import type {
   UnitStatus,
 } from './types'
 import { compareText, getIntlLocale, type LocaleCode } from './i18n'
+import { getApplicableUnitAreaFields } from './domainUnitTypes'
+export {
+  getApplicableUnitAreaFields,
+  getPrdUnitTypeSpec,
+  isPrdUnitType,
+  PRD_FLOOR_OPTIONS,
+  PRD_UNIT_TYPES,
+  PRD_UNIT_TYPE_SPECS,
+  type PrdUnitAreaMode,
+  type PrdUnitType,
+  type PrdUnitTypeSpec,
+} from './domainUnitTypes'
 
 export const MAX_MEDIA_FILES = 10
 export const MAX_MEDIA_TOTAL_BYTES = 40 * 1024 * 1024
 export const DEFAULT_COMMISSION_PERCENTAGE = 1.5
-export const PRD_UNIT_TYPES = [
-  'One Story Villa',
-  'Stand Alone',
-  'Twin House',
-  'Town House',
-  'Apartment',
-  'Chalet',
-  'Duplex',
-  'Senior Chalet',
-  'Junior Chalet',
-  'Loft',
-  'Cabin',
-  'Penthouse',
-] as const
-
-export type PrdUnitType = (typeof PRD_UNIT_TYPES)[number]
-export type PrdUnitAreaMode = 'land' | 'floor' | 'bua_only' | 'terrace'
-
-export interface PrdUnitTypeSpec {
-  unitType: PrdUnitType
-  areaMode: PrdUnitAreaMode
-}
-
-export const PRD_UNIT_TYPE_SPECS: PrdUnitTypeSpec[] = PRD_UNIT_TYPES.map((unitType) => ({
-  unitType,
-  areaMode:
-    unitType === 'Cabin'
-      ? 'bua_only'
-      : unitType === 'Penthouse'
-        ? 'terrace'
-        : ['One Story Villa', 'Stand Alone', 'Twin House', 'Town House'].includes(unitType)
-          ? 'land'
-          : 'floor',
-}))
-export const PRD_FLOOR_OPTIONS = ['Ground', 'Last Floor', ...Array.from({ length: 40 }, (_, index) => formatOrdinalFloor(index + 1))] as const
-
 const paymentsPerYear = {
   monthly: 12,
   quarterly: 4,
@@ -69,24 +45,6 @@ const installmentStepMonths = {
   annual: 12,
   custom: null,
 } as const
-
-export function getPrdUnitTypeSpec(unitType: string): PrdUnitTypeSpec {
-  return PRD_UNIT_TYPE_SPECS.find((spec) => spec.unitType === unitType) ?? PRD_UNIT_TYPE_SPECS.find((spec) => spec.unitType === 'Apartment')!
-}
-
-export function isPrdUnitType(unitType: string): unitType is PrdUnitType {
-  return PRD_UNIT_TYPES.includes(unitType as PrdUnitType)
-}
-
-export function getApplicableUnitAreaFields(unitType: string, floor = '') {
-  const spec = getPrdUnitTypeSpec(unitType)
-  return {
-    showFloor: spec.areaMode === 'floor',
-    showLandArea: spec.areaMode === 'land',
-    showGardenArea: spec.areaMode === 'floor' && floor === 'Ground',
-    showTerraceArea: spec.areaMode === 'terrace',
-  }
-}
 
 export function normalizeUnitOutdoorFields(input: {
   unitType: string

@@ -1,3 +1,5 @@
+import { legacyHashPath } from './legacyRoutes'
+
 export const createStepSlugs = ['property', 'specs', 'payment', 'owner', 'review'] as const
 export const adminSectionSlugs = ['users', 'master-data', 'settings', 'metrics', 'audit'] as const
 export const masterDataDirectorySlugs = [
@@ -10,6 +12,7 @@ export const masterDataDirectorySlugs = [
   'teams',
 ] as const
 export const analyticsWindowSlugs = ['live', '30d', '90d', 'custom'] as const
+export { legacyHashPath }
 
 export type View =
   | 'dashboard'
@@ -153,18 +156,6 @@ export function parseAppRoute(pathname: string, search = '', hash = ''): AppRout
   return emptyRoute('dashboard', query)
 }
 
-export function legacyHashPath(hash: string): string | null {
-  const value = hash.replace(/^#/, '').replace(/^\//, '')
-  if (!value) return null
-  if (value.startsWith('details/')) return `/units/details/${encodeURIComponent(value.replace('details/', ''))}`
-  if (value.startsWith('create/')) return legacyNestedPath(value.replace('create/', ''), createStepSlugs, '/create')
-  if (value.startsWith('admin/master-data/')) return legacyNestedPath(value.replace('admin/master-data/', ''), masterDataDirectorySlugs, '/admin/master-data')
-  if (value.startsWith('admin/')) return legacyNestedPath(value.replace('admin/', ''), adminSectionSlugs, '/admin')
-  if (value.startsWith('analytics/')) return legacyNestedPath(value.replace('analytics/', ''), analyticsWindowSlugs, '/analytics')
-  if (isKnownView(value)) return `/${value}`
-  return null
-}
-
 export function normalizeIncomingAppUrl(url: string): string {
   const legacyPath = legacyHashPath(url)
   if (legacyPath) return legacyPath
@@ -237,10 +228,6 @@ function readAnalyticsFilters(search: string): AnalyticsFilters {
 
 function safeSlug<const T extends readonly string[]>(value: string | undefined, allowed: T, fallback: T[number]): T[number] {
   return allowed.includes(value ?? '') ? (value as T[number]) : fallback
-}
-
-function legacyNestedPath<const T extends readonly string[]>(value: string, allowed: T, prefix: string): string | null {
-  return allowed.includes(value) ? `${prefix}/${value}` : null
 }
 
 function readNumericRouteId(value: string | undefined): number | null {
