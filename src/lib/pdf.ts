@@ -127,12 +127,21 @@ function buildPdfUnitDetails(user: LeadraUser, unit: LeadraUnit, locale: LocaleC
     }
   }
 
+  rows.push({ label: translate(locale, 'details.maintenancePaid'), value: unit.maintenancePaid ? translate(locale, 'common.yes') : translate(locale, 'common.no') })
+
+  if (unit.maintenancePaid) {
+    rows.push(
+      { label: translate(locale, 'details.maintenanceCost'), value: formatNullableCurrency(unit.maintenanceCost, locale), kind: 'money' },
+      { label: translate(locale, 'details.maintenanceDueDate'), value: formatNullableDate(unit.maintenanceDueDate, locale) },
+    )
+  }
+
   rows.push({ label: 'Delivery Expectancy', value: formatDeliveryExpectancy(unit, locale) })
 
   if (canIncludeSalesExportData(user, unit)) {
     rows.push({ label: translate(locale, 'export.commission'), value: `${formatCurrency(unit.commissionAmount, locale)} (${unit.commissionPercentage}%)`, kind: 'money' })
   }
-  rows.push({ label: translate(locale, 'details.transferFees'), value: translate(locale, 'details.transferFeesNotice') })
+  rows.push({ label: translate(locale, 'details.transferFees'), value: formatTransferFees(unit.transferFees, locale), kind: unit.transferFees == null ? undefined : 'money' })
 
   return { rows: rows.filter((row) => Boolean(row.value)) }
 }
@@ -366,6 +375,21 @@ function installmentSummary(unit: LeadraUnit, installments: ReturnType<typeof bu
 
 function formatNullableCurrency(value: number | null | undefined, locale: LocaleCode) {
   return value == null ? '' : formatCurrency(value, locale)
+}
+
+function formatTransferFees(value: number | null | undefined, locale: LocaleCode) {
+  return value == null ? translate(locale, 'details.transferFeesNotice') : formatCurrency(value, locale)
+}
+
+function formatNullableDate(value: string | null | undefined, locale: LocaleCode) {
+  if (!value) return ''
+  const [year, month, day] = value.split('-').map(Number)
+  if (!year || !month || !day) return value
+  return new Intl.DateTimeFormat(locale === 'ar' ? 'ar-EG' : 'en-US', {
+    year: 'numeric',
+    month: 'long',
+    day: 'numeric',
+  }).format(new Date(year, month - 1, day))
 }
 
 function formatArea(value: number) {
