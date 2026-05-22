@@ -5360,6 +5360,17 @@ dd,
     display: inline;
   }
 
+  .compact-topbar .user-chip {
+    width: auto;
+    min-width: 44px;
+    padding-block: 0.3rem;
+    padding-inline: 0.3rem 0.65rem;
+  }
+
+  .compact-topbar .user-chip strong {
+    white-space: nowrap;
+  }
+
   .compact-topbar .ghost-button {
     width: auto;
     min-width: 44px;

@@ -484,6 +484,68 @@ describe('Leadra app shell', () => {
     expect(screen.getByRole('option', { name: /^senior chalet$/i })).toBeInTheDocument()
   })
 
+  it('reacts to payment filter choices and clears hidden payment filters', async () => {
+    renderApp()
+    const user = userEvent.setup()
+
+    await openLoginPage(user)
+    await signInAs(user, /continue as admin/i)
+    await user.click(screen.getByRole('link', { name: /view all units/i }))
+    await user.click(await screen.findByRole('button', { name: /show filters/i }))
+    await user.click(screen.getByText(/^pricing$/i))
+    await user.click(screen.getByText(/^payment$/i))
+
+    expect(screen.getByRole('spinbutton', { name: /total amount from/i })).toBeInTheDocument()
+    expect(screen.queryByRole('spinbutton', { name: /cash price from/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('combobox', { name: /installment type/i })).not.toBeInTheDocument()
+
+    await chooseFromSelect(user, /payment method/i, /^cash$/i)
+    expect(screen.getByRole('spinbutton', { name: /cash price from/i })).toBeInTheDocument()
+    expect(screen.queryByRole('combobox', { name: /installment type/i })).not.toBeInTheDocument()
+
+    await chooseFromSelect(user, /payment method/i, /^installment$/i)
+    expect(screen.queryByRole('spinbutton', { name: /cash price from/i })).not.toBeInTheDocument()
+    expect(screen.getByRole('spinbutton', { name: /down payment from/i })).toBeInTheDocument()
+    expect(screen.getByRole('spinbutton', { name: /remaining payment from/i })).toBeInTheDocument()
+    expect(screen.getByRole('combobox', { name: /installment type/i })).toBeInTheDocument()
+    expect(screen.getByRole('spinbutton', { name: /installment amount from/i })).toBeInTheDocument()
+
+    await user.type(screen.getByRole('spinbutton', { name: /installment amount from/i }), '300000')
+    expect(screen.queryByText(/NC3BR/i)).not.toBeInTheDocument()
+    await chooseFromSelect(user, /payment method/i, /^cash$/i)
+    expect(await screen.findByText(/ZE4BR/i)).toBeInTheDocument()
+  })
+
+  it('reacts to unit type and floor choices in area filters', async () => {
+    renderApp()
+    const user = userEvent.setup()
+
+    await openLoginPage(user)
+    await signInAs(user, /continue as admin/i)
+    await user.click(screen.getByRole('link', { name: /view all units/i }))
+    await user.click(await screen.findByRole('button', { name: /show filters/i }))
+    await user.click(screen.getByText(/^areas$/i))
+
+    expect(screen.getByRole('spinbutton', { name: /BUA from/i })).toBeInTheDocument()
+    expect(screen.queryByRole('spinbutton', { name: /land area from/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('combobox', { name: /^floor$/i })).not.toBeInTheDocument()
+
+    await chooseFromSelect(user, /unit type/i, /^penthouse$/i)
+    expect(screen.getByRole('spinbutton', { name: /terrace area from/i })).toBeInTheDocument()
+    expect(screen.queryByRole('combobox', { name: /^floor$/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('spinbutton', { name: /land area from/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('spinbutton', { name: /garden area from/i })).not.toBeInTheDocument()
+
+    await chooseFromSelect(user, /unit type/i, /^apartment$/i)
+    expect(screen.getByRole('combobox', { name: /^floor$/i })).toBeInTheDocument()
+    expect(screen.queryByRole('spinbutton', { name: /garden area from/i })).not.toBeInTheDocument()
+
+    await chooseFromSelect(user, /^floor$/i, /^ground$/i)
+    expect(screen.getByRole('spinbutton', { name: /garden area from/i })).toBeInTheDocument()
+    await chooseFromSelect(user, /^floor$/i, /^2nd$/i)
+    expect(screen.queryByRole('spinbutton', { name: /garden area from/i })).not.toBeInTheDocument()
+  })
+
   it('uses a create-unit wizard and still submits the complete form', async () => {
     renderApp()
     const user = userEvent.setup()

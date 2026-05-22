@@ -1,5 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
-import { validateMediaUpload } from './domain'
+import { normalizeReactiveUnitFilters, validateMediaUpload } from './domain'
 import {
   toPaymentHistoryViewModel,
   toPaymentScheduleViewModel,
@@ -395,7 +395,7 @@ async function throwFunctionError(error: unknown, fallback: string): Promise<nev
 
 function compactUnitFilters(filters: UnitFilters): Record<string, unknown> {
   return Object.fromEntries(
-    Object.entries(filters).filter(([, value]) => value !== undefined && value !== '' && value !== 'all'),
+    Object.entries(normalizeReactiveUnitFilters(filters)).filter(([, value]) => value !== undefined && value !== '' && value !== 'all'),
   )
 }
 
@@ -406,6 +406,7 @@ function isMissingAtomicCreateRpc(error: SupabaseErrorLike): boolean {
 }
 
 function matchesUnitFilters(unit: LeadraUnit, filters: UnitFilters): boolean {
+  filters = normalizeReactiveUnitFilters(filters)
   if (filters.projectId && unit.projectId !== filters.projectId) return false
   if (filters.destinationId && unit.destinationId !== filters.destinationId) return false
   if (filters.status && filters.status !== 'all' && unit.status !== filters.status) return false
@@ -414,6 +415,7 @@ function matchesUnitFilters(unit: LeadraUnit, filters: UnitFilters): boolean {
   if (filters.bedrooms && filters.bedrooms !== 'all' && unit.bedrooms !== filters.bedrooms) return false
   if (filters.bathrooms && filters.bathrooms !== 'all' && unit.bathrooms !== filters.bathrooms) return false
   if (filters.paymentMethod && filters.paymentMethod !== 'all' && unit.paymentMethod !== filters.paymentMethod) return false
+  if (filters.floor && unit.floor !== filters.floor) return false
   if (!matchesRange(unit.deliveryExpectancy.year, filters.deliveryYearFrom, filters.deliveryYearTo)) return false
   if (filters.deliveryMonth && filters.deliveryMonth !== 'all' && unit.deliveryExpectancy.month !== filters.deliveryMonth) return false
   if (filters.unitCode && !unit.unitCode.toLowerCase().includes(filters.unitCode.toLowerCase())) return false

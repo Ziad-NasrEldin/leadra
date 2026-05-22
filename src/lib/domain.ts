@@ -109,6 +109,53 @@ export function normalizeUnitOutdoorFields(input: {
   }
 }
 
+export function normalizeReactiveUnitFilters(filters: UnitFilters): UnitFilters {
+  const next = { ...filters }
+  const paymentMethod = next.paymentMethod ?? 'all'
+
+  if (paymentMethod !== 'cash') {
+    delete next.cashPriceFrom
+    delete next.cashPriceTo
+  }
+  if (paymentMethod !== 'installment') {
+    delete next.downPaymentFrom
+    delete next.downPaymentTo
+    delete next.remainingPaymentFrom
+    delete next.remainingPaymentTo
+    delete next.installmentType
+    delete next.installmentAmountFrom
+    delete next.installmentAmountTo
+  }
+
+  if (!next.unitType) {
+    delete next.floor
+    delete next.landAreaFrom
+    delete next.landAreaTo
+    delete next.gardenAreaFrom
+    delete next.gardenAreaTo
+    delete next.terraceAreaFrom
+    delete next.terraceAreaTo
+    return next
+  }
+
+  const areaFields = getApplicableUnitAreaFields(next.unitType, next.floor ?? '')
+  if (!areaFields.showFloor) delete next.floor
+  if (!areaFields.showLandArea) {
+    delete next.landAreaFrom
+    delete next.landAreaTo
+  }
+  if (!areaFields.showGardenArea) {
+    delete next.gardenAreaFrom
+    delete next.gardenAreaTo
+  }
+  if (!areaFields.showTerraceArea) {
+    delete next.terraceAreaFrom
+    delete next.terraceAreaTo
+  }
+
+  return next
+}
+
 type OwnerPhoneCountrySpec = {
   code: string
   labels: Record<LocaleCode, string>
@@ -732,7 +779,9 @@ export function sanitizeUnitForPdf(user: LeadraUser, unit: LeadraUnit): LeadraUn
 }
 
 export function searchUnits(user: LeadraUser, units: LeadraUnit[], filters: UnitFilters): LeadraUnit[] {
+  const normalizedFilters = normalizeReactiveUnitFilters(filters)
   return filterUnitsForUser(user, units).filter((unit) => {
+    const filters = normalizedFilters
     if (filters.projectId && unit.projectId !== filters.projectId) return false
     if (filters.status && filters.status !== 'all' && unit.status !== filters.status) return false
     if (filters.developerId && unit.developerId !== filters.developerId) return false
@@ -741,6 +790,7 @@ export function searchUnits(user: LeadraUser, units: LeadraUnit[], filters: Unit
     if (filters.bedrooms && filters.bedrooms !== 'all' && unit.bedrooms !== filters.bedrooms) return false
     if (filters.bathrooms && filters.bathrooms !== 'all' && unit.bathrooms !== filters.bathrooms) return false
     if (filters.paymentMethod && filters.paymentMethod !== 'all' && unit.paymentMethod !== filters.paymentMethod) return false
+    if (filters.floor && unit.floor !== filters.floor) return false
     if (!inRange(unit.bua, filters.buaFrom, filters.buaTo)) return false
     if (!inRange(unit.landArea, filters.landAreaFrom, filters.landAreaTo)) return false
     if (!inRange(unit.gardenArea, filters.gardenAreaFrom, filters.gardenAreaTo)) return false

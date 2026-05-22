@@ -213,6 +213,7 @@ export interface UnitFilters {
   bathrooms?: number | 'all'
   paymentMethod?: PaymentMethod | 'all'
   ownerPhone?: string
+  floor?: string
   buaFrom?: number
   buaTo?: number
   landAreaFrom?: number

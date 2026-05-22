@@ -37,6 +37,7 @@ import {
   filterUnitsForUser,
   formatCurrency,
   isSoldStatus,
+  normalizeReactiveUnitFilters,
   summarizeDestinations,
   summarizeProjects,
   validateOwnerPhoneForCountry,
@@ -1381,7 +1382,7 @@ function LeadraApp() {
   }
 
   function updateUnitFilter<K extends keyof UnitFilters>(key: K, value: UnitFilters[K]) {
-    const nextFilters = { ...unitFilters, [key]: value }
+    const nextFilters = normalizeReactiveUnitFilters({ ...unitFilters, [key]: value })
     setUnitFilters(nextFilters)
     setSelectedBatchUnitIds([])
     void loadRemoteUnitSearch(nextFilters)
@@ -1395,6 +1396,7 @@ function LeadraApp() {
   }
 
   async function loadRemoteUnitSearch(nextFilters: UnitFilters, destinationId = routeDestinationId, projectId = routeProjectId) {
+    const normalizedFilters = normalizeReactiveUnitFilters(nextFilters)
     if (!supabase || !isSupabaseConfigured) {
       setRemoteSearchUnits(null)
       setRemoteSearchView(null)
@@ -1403,9 +1405,9 @@ function LeadraApp() {
     try {
       const repository = new LeadraRepository(supabase)
       const units = await repository.searchUnits({
-        ...nextFilters,
-        destinationId: nextFilters.destinationId || destinationId || undefined,
-        projectId: nextFilters.projectId || projectId || undefined,
+        ...normalizedFilters,
+        destinationId: normalizedFilters.destinationId || destinationId || undefined,
+        projectId: normalizedFilters.projectId || projectId || undefined,
       })
       setRemoteSearchUnits(units)
       setRemoteSearchView(activeView === 'special' ? 'special' : 'inventory')

@@ -1,6 +1,6 @@
 import { Download, FileText, Image as ImageIcon, Share2, SlidersHorizontal, Star, X } from 'lucide-react'
 import { memo, useState, type CSSProperties } from 'react'
-import { canViewOwnerData, getThumbnailMedia, summarizeDestinations, summarizeProjects } from '../../lib/domain'
+import { canViewOwnerData, getApplicableUnitAreaFields, getThumbnailMedia, PRD_FLOOR_OPTIONS, summarizeDestinations, summarizeProjects } from '../../lib/domain'
 import { compareText, formatCount, getStatusLabel, useLocale } from '../../lib/i18n'
 import type { InstallmentType, LeadraUnit, LeadraUser, LookupValue, PaymentMethod, UnitFilters, UnitStatus } from '../../lib/types'
 import { ControlledSelectField, EmptyState } from '../../components/LeadraUi'
@@ -86,6 +86,9 @@ export function UnitsPage({
       ...units.map((unit) => unit.unitType),
     ]),
   ).sort((a, b) => compareText(locale, a, b))
+  const areaFields = filters.unitType ? getApplicableUnitAreaFields(filters.unitType, filters.floor ?? '') : null
+  const showCashFilters = filters.paymentMethod === 'cash'
+  const showInstallmentFilters = filters.paymentMethod === 'installment'
   const canUseOwnerPhoneSearch = user.role === 'admin' || user.role === 'sub_admin'
   const activeFilterCount = countActiveUnitFilters(filters)
   const invalidDestination = stage !== 'destinations' && !currentDestination
@@ -185,9 +188,20 @@ export function UnitsPage({
               <summary>{t('units.filterAreas')}</summary>
               <div className="filter-section-grid">
                 <RangeFilter label="BUA" from={filters.buaFrom} to={filters.buaTo} onFrom={(value) => onFilterChange('buaFrom', value)} onTo={(value) => onFilterChange('buaTo', value)} />
-                <RangeFilter label={t('details.landArea')} from={filters.landAreaFrom} to={filters.landAreaTo} onFrom={(value) => onFilterChange('landAreaFrom', value)} onTo={(value) => onFilterChange('landAreaTo', value)} />
-                <RangeFilter label={t('details.gardenArea')} from={filters.gardenAreaFrom} to={filters.gardenAreaTo} onFrom={(value) => onFilterChange('gardenAreaFrom', value)} onTo={(value) => onFilterChange('gardenAreaTo', value)} />
-                <RangeFilter label={t('details.terraceArea')} from={filters.terraceAreaFrom} to={filters.terraceAreaTo} onFrom={(value) => onFilterChange('terraceAreaFrom', value)} onTo={(value) => onFilterChange('terraceAreaTo', value)} />
+                {areaFields?.showLandArea && <RangeFilter label={t('details.landArea')} from={filters.landAreaFrom} to={filters.landAreaTo} onFrom={(value) => onFilterChange('landAreaFrom', value)} onTo={(value) => onFilterChange('landAreaTo', value)} />}
+                {areaFields?.showFloor && (
+                  <ControlledSelectField
+                    label={t('create.floor')}
+                    options={[
+                      { value: '', label: t('common.all') },
+                      ...PRD_FLOOR_OPTIONS.map((floor) => ({ value: floor, label: floor === 'Ground' ? t('create.ground') : floor })),
+                    ]}
+                    value={filters.floor ?? ''}
+                    onValueChange={(value) => onFilterChange('floor', value || undefined)}
+                  />
+                )}
+                {areaFields?.showGardenArea && <RangeFilter label={t('details.gardenArea')} from={filters.gardenAreaFrom} to={filters.gardenAreaTo} onFrom={(value) => onFilterChange('gardenAreaFrom', value)} onTo={(value) => onFilterChange('gardenAreaTo', value)} />}
+                {areaFields?.showTerraceArea && <RangeFilter label={t('details.terraceArea')} from={filters.terraceAreaFrom} to={filters.terraceAreaTo} onFrom={(value) => onFilterChange('terraceAreaFrom', value)} onTo={(value) => onFilterChange('terraceAreaTo', value)} />}
               </div>
             </details>
 
@@ -195,9 +209,9 @@ export function UnitsPage({
               <summary>{t('units.filterPricing')}</summary>
               <div className="filter-section-grid">
                 <RangeFilter label={t('details.totalAmount')} from={filters.priceFrom} to={filters.priceTo} onFrom={(value) => onFilterChange('priceFrom', value)} onTo={(value) => onFilterChange('priceTo', value)} />
-                <RangeFilter label={t('units.cashPrice')} from={filters.cashPriceFrom} to={filters.cashPriceTo} onFrom={(value) => onFilterChange('cashPriceFrom', value)} onTo={(value) => onFilterChange('cashPriceTo', value)} />
-                <RangeFilter label={t('create.downPayment')} from={filters.downPaymentFrom} to={filters.downPaymentTo} onFrom={(value) => onFilterChange('downPaymentFrom', value)} onTo={(value) => onFilterChange('downPaymentTo', value)} />
-                <RangeFilter label={t('details.remainingPayment')} from={filters.remainingPaymentFrom} to={filters.remainingPaymentTo} onFrom={(value) => onFilterChange('remainingPaymentFrom', value)} onTo={(value) => onFilterChange('remainingPaymentTo', value)} />
+                {showCashFilters && <RangeFilter label={t('units.cashPrice')} from={filters.cashPriceFrom} to={filters.cashPriceTo} onFrom={(value) => onFilterChange('cashPriceFrom', value)} onTo={(value) => onFilterChange('cashPriceTo', value)} />}
+                {showInstallmentFilters && <RangeFilter label={t('create.downPayment')} from={filters.downPaymentFrom} to={filters.downPaymentTo} onFrom={(value) => onFilterChange('downPaymentFrom', value)} onTo={(value) => onFilterChange('downPaymentTo', value)} />}
+                {showInstallmentFilters && <RangeFilter label={t('details.remainingPayment')} from={filters.remainingPaymentFrom} to={filters.remainingPaymentTo} onFrom={(value) => onFilterChange('remainingPaymentFrom', value)} onTo={(value) => onFilterChange('remainingPaymentTo', value)} />}
               </div>
             </details>
 
@@ -214,20 +228,22 @@ export function UnitsPage({
                   value={filters.paymentMethod ?? 'all'}
                   onValueChange={(value) => onFilterChange('paymentMethod', value as PaymentMethod | 'all')}
                 />
-                <ControlledSelectField
-                  label={t('details.installmentType')}
-                  options={[
-                    { value: 'all', label: t('common.all') },
-                    { value: 'monthly', label: t('create.monthly') },
-                    { value: 'quarterly', label: t('create.quarterly') },
-                    { value: 'semi_annual', label: t('create.semiAnnual') },
-                    { value: 'annual', label: t('create.annual') },
-                    { value: 'custom', label: t('create.customInstallments') },
-                  ]}
-                  value={filters.installmentType ?? 'all'}
-                  onValueChange={(value) => onFilterChange('installmentType', value as InstallmentType | 'all')}
-                />
-                <RangeFilter label={t('details.installmentAmount')} from={filters.installmentAmountFrom} to={filters.installmentAmountTo} onFrom={(value) => onFilterChange('installmentAmountFrom', value)} onTo={(value) => onFilterChange('installmentAmountTo', value)} />
+                {showInstallmentFilters && (
+                  <ControlledSelectField
+                    label={t('details.installmentType')}
+                    options={[
+                      { value: 'all', label: t('common.all') },
+                      { value: 'monthly', label: t('create.monthly') },
+                      { value: 'quarterly', label: t('create.quarterly') },
+                      { value: 'semi_annual', label: t('create.semiAnnual') },
+                      { value: 'annual', label: t('create.annual') },
+                      { value: 'custom', label: t('create.customInstallments') },
+                    ]}
+                    value={filters.installmentType ?? 'all'}
+                    onValueChange={(value) => onFilterChange('installmentType', value as InstallmentType | 'all')}
+                  />
+                )}
+                {showInstallmentFilters && <RangeFilter label={t('details.installmentAmount')} from={filters.installmentAmountFrom} to={filters.installmentAmountTo} onFrom={(value) => onFilterChange('installmentAmountFrom', value)} onTo={(value) => onFilterChange('installmentAmountTo', value)} />}
               </div>
             </details>
           </div>

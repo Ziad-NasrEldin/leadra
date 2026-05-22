@@ -1,4 +1,5 @@
 import { getIntlLocale, type LocaleCode } from '../../lib/i18n'
+import { normalizeReactiveUnitFilters } from '../../lib/domain'
 import type { InstallmentType, LeadraUnit, UnitFilters } from '../../lib/types'
 
 export function parseOptionalNumber(value: string): number | undefined {
@@ -109,5 +110,5 @@ export function getInstallmentTypeLabel(type: InstallmentType | null | undefined
 }
 
 export function countActiveUnitFilters(filters: UnitFilters): number {
-  return Object.values(filters).filter((value) => value !== undefined && value !== '' && value !== 'all').length
+  return Object.values(normalizeReactiveUnitFilters(filters)).filter((value) => value !== undefined && value !== '' && value !== 'all').length
 }

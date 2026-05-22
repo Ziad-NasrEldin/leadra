@@ -30,6 +30,7 @@ import {
   getOwnerPhoneCountryMeta,
   getOwnerPhoneCountryOptions,
   getThumbnailMedia,
+  normalizeReactiveUnitFilters,
   normalizeOwnerPhone,
   PRD_FLOOR_OPTIONS,
   PRD_UNIT_TYPES,
@@ -38,6 +39,7 @@ import {
   validateOwnerPhoneForCountry,
   validateMediaUpload,
 } from './domain'
+import { countActiveUnitFilters } from '../features/shared/formUtils'
 import type { LeadraMediaFile, LeadraUnit, LeadraUser } from './types'
 
 const admin: LeadraUser = {
@@ -468,10 +470,11 @@ describe('Leadra domain rules', () => {
     }
 
     expect(searchUnits(admin, [baseUnit, otherSalesUnit], { buaFrom: 0, buaTo: 100 })).toEqual([otherSalesUnit])
-    expect(searchUnits(admin, [{ ...baseUnit, unitType: 'Town House', landArea: 260 }, otherSalesUnit], { landAreaFrom: 200, landAreaTo: 300 })).toEqual([{ ...baseUnit, unitType: 'Town House', landArea: 260 }])
-    expect(searchUnits(admin, [{ ...baseUnit, floor: 'Ground', gardenArea: 55 }, otherSalesUnit], { gardenAreaFrom: 50, gardenAreaTo: 60 })).toEqual([{ ...baseUnit, floor: 'Ground', gardenArea: 55 }])
-    expect(searchUnits(admin, [{ ...baseUnit, unitType: 'Penthouse', terraceArea: 40 }, otherSalesUnit], { terraceAreaFrom: 35, terraceAreaTo: 45 })).toEqual([{ ...baseUnit, unitType: 'Penthouse', terraceArea: 40 }])
-    expect(searchUnits(admin, [baseUnit, otherSalesUnit], { installmentType: 'quarterly', installmentAmountFrom: 150_000, installmentAmountTo: 250_000 })).toEqual([baseUnit])
+    expect(searchUnits(admin, [{ ...baseUnit, unitType: 'Town House', landArea: 260 }, otherSalesUnit], { unitType: 'Town House', landAreaFrom: 200, landAreaTo: 300 })).toEqual([{ ...baseUnit, unitType: 'Town House', landArea: 260 }])
+    expect(searchUnits(admin, [{ ...baseUnit, floor: 'Ground', gardenArea: 55 }, otherSalesUnit], { unitType: 'Apartment', floor: 'Ground', gardenAreaFrom: 50, gardenAreaTo: 60 })).toEqual([{ ...baseUnit, floor: 'Ground', gardenArea: 55 }])
+    expect(searchUnits(admin, [{ ...baseUnit, unitType: 'Penthouse', terraceArea: 40 }, otherSalesUnit], { unitType: 'Penthouse', terraceAreaFrom: 35, terraceAreaTo: 45 })).toEqual([{ ...baseUnit, unitType: 'Penthouse', terraceArea: 40 }])
+    expect(searchUnits(admin, [{ ...baseUnit, id: 301, floor: 'Ground' }, { ...baseUnit, id: 302, floor: '2nd' }], { unitType: 'Apartment', floor: 'Ground' }).map((unit) => unit.id)).toEqual([301])
+    expect(searchUnits(admin, [baseUnit, otherSalesUnit], { paymentMethod: 'installment', installmentType: 'quarterly', installmentAmountFrom: 150_000, installmentAmountTo: 250_000 })).toEqual([baseUnit])
     expect(searchUnits(admin, [
       { ...baseUnit, id: 201, deliveryExpectancy: { mode: 'year', year: 2027 } },
       { ...baseUnit, id: 202, deliveryExpectancy: { mode: 'year', year: 2028 } },
@@ -491,6 +494,30 @@ describe('Leadra domain rules', () => {
     expect(searchUnits(salesA, [baseUnit, otherSalesUnit], { ownerPhone: '01099999999' })).toEqual([])
     expect(searchUnits(salesA, [baseUnit, otherSalesUnit], { ownerPhone: '501234567' })).toEqual([])
     expect(searchUnits(subAdmin, [baseUnit, otherSalesUnit], { ownerPhone: '501234567' })).toEqual([baseUnit])
+  })
+
+  it('normalizes reactive filters before counting or searching', () => {
+    expect(normalizeReactiveUnitFilters({
+      paymentMethod: 'cash',
+      installmentType: 'quarterly',
+      installmentAmountFrom: 100_000,
+      cashPriceFrom: 1_000_000,
+    })).toEqual({
+      paymentMethod: 'cash',
+      cashPriceFrom: 1_000_000,
+    })
+    expect(normalizeReactiveUnitFilters({
+      unitType: 'Apartment',
+      floor: '2nd',
+      gardenAreaFrom: 20,
+    })).toEqual({
+      unitType: 'Apartment',
+      floor: '2nd',
+    })
+    expect(countActiveUnitFilters({
+      paymentMethod: 'cash',
+      installmentAmountFrom: 100_000,
+    })).toBe(1)
   })
 
   it('keeps advanced search usable on a pre-filtered special unit set', () => {
