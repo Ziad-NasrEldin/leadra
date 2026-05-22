@@ -145,10 +145,10 @@ describe('pdf generation', () => {
     expect(text).toContain('Installments: Sep 2026: EGP\u00a0345,678')
     expect(text).not.toContain('Installment 1:')
     expect(text).not.toContain('Installment 2:')
+    expect(text).toContain('Maintenance Paid: No')
     expect(text).toContain('Delivery Expectancy: March 2028')
     expect(text).toContain('Commission: EGP\u00a075,000 (1.5%)')
-    expect(text).toContain('Transfer Fees: If Applicable')
-    expect(text).not.toContain('Transfer Fees: EGP\u00a0125,000')
+    expect(text).toContain('Transfer Fees: EGP\u00a0125,000')
     expect(text.indexOf('Installments:')).toBeLessThan(text.indexOf('Delivery Expectancy:'))
     expect(text.indexOf('Delivery Expectancy:')).toBeLessThan(text.indexOf('Commission:'))
     expect(text.indexOf('Commission:')).toBeLessThan(text.indexOf('Transfer Fees:'))
@@ -197,12 +197,21 @@ describe('pdf generation', () => {
     expect(text).toContain('Elevator: No')
   })
 
-  it('shows the fixed transfer-fee notice even when no numeric fee is stored', () => {
+  it('shows actual maintenance fields and falls back to the transfer-fee notice when no numeric fee is stored', () => {
     const user = demoUsers[0]
-    const unit = { ...seedUnits[0], transferFees: 0 }
+    const unit = {
+      ...seedUnits[0],
+      transferFees: null,
+      maintenancePaid: true,
+      maintenanceCost: 40_000,
+      maintenanceDueDate: '2029-01-15',
+    }
 
     const text = buildPermissionSafePdfText(user, unit, initialAppState.settings)
 
+    expect(text).toContain('Maintenance Paid: Yes')
+    expect(text).toContain('Maintenance Cost: EGP\u00a040,000')
+    expect(text).toContain('Maintenance Due Date: January 15, 2029')
     expect(text).toContain('Transfer Fees: If Applicable')
   })
 
@@ -260,6 +269,7 @@ describe('pdf generation', () => {
   it('shares multiple generated pdf files when the browser supports them', async () => {
     const canShare = vi.fn(() => true)
     const share = vi.fn().mockResolvedValue(undefined)
+    ensureTestNavigator()
     Object.defineProperty(navigator, 'canShare', { configurable: true, value: canShare })
     Object.defineProperty(navigator, 'share', { configurable: true, value: share })
     const pdfs = [
@@ -280,6 +290,7 @@ describe('pdf generation', () => {
   it('does not open native share for multiple pdf files when unsupported', async () => {
     const canShare = vi.fn(() => false)
     const share = vi.fn().mockResolvedValue(undefined)
+    ensureTestNavigator()
     Object.defineProperty(navigator, 'canShare', { configurable: true, value: canShare })
     Object.defineProperty(navigator, 'share', { configurable: true, value: share })
 
@@ -288,3 +299,11 @@ describe('pdf generation', () => {
     expect(share).not.toHaveBeenCalled()
   })
 })
+
+function ensureTestNavigator() {
+  if (typeof navigator !== 'undefined') return
+  Object.defineProperty(globalThis, 'navigator', {
+    configurable: true,
+    value: {},
+  })
+}
