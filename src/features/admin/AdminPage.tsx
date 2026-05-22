@@ -90,18 +90,15 @@ export function AdminPage({
   const [settingsPending, setSettingsPending] = useState(false)
   const deferredUserQuery = useDeferredValue(userQuery)
   const userListStateKey = `${deferredUserQuery}-${roleFilter}-${statusFilter}-${teamFilter}-${sortUsersBy}`
-  const teamOptions = useMemo(() => {
-    const activeTeams = teams
-      .filter((team) => !team.archived)
-      .map((team) => ({ value: team.id, label: team.name }))
-      .sort((first, second) => compareText(locale, first.label, second.label))
-    if (activeTeams.length > 0) return activeTeams
-
-    return Array.from(new Set(users.map((item) => item.teamId).filter(Boolean)))
-      .sort((first, second) => compareText(locale, first, second))
-      .map((teamId) => ({ value: teamId, label: teamId }))
-  }, [teams, users, locale])
-  const createUserTeamOptions = [{ value: '', label: t('admin.noTeam') }, ...teamOptions]
+  const teamOptions = useMemo(
+    () =>
+      teams
+        .filter((team) => !team.archived)
+        .map((team) => ({ value: team.id, label: team.name }))
+        .sort((first, second) => compareText(locale, first.label, second.label)),
+    [teams, locale],
+  )
+  const createUserTeamOptions = teamOptions
   const branchOptions = useMemo(() => {
     const activeBranches = branches
       .filter((branch) => !branch.archived)
@@ -113,10 +110,10 @@ export function AdminPage({
       .sort((first, second) => compareText(locale, first, second))
       .map((branchId) => ({ value: branchId, label: branchId }))
   }, [branches, users, locale])
-  const userTeamOptions = createUserTeamOptions
+  const userTeamOptions = teamOptions
   const userBranchOptions = [{ value: '', label: t('admin.noBranch') }, ...branchOptions]
   const teamFilterOptions = teamOptions
-  const defaultCreateTeamId = ''
+  const defaultCreateTeamId = teamOptions[0]?.value ?? ''
   const defaultCreateBranchId = branchOptions.some((option) => option.value === defaultBranchId)
     ? defaultBranchId
     : branchOptions[0]?.value ?? ''

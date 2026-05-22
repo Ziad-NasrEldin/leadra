@@ -3,11 +3,13 @@ import { act, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import App from './App'
+import { AdminPage } from './features/admin/AdminPage'
 import { CreateUnitPage } from './features/create/CreateUnitPage'
 import { initialAppState, lookupValues } from './data/seed'
 import { createUnitRemoteErrorFlash, mediaPdfVisibilityErrorFlash } from './lib/createUnitErrors'
 import { LocaleProvider } from './lib/i18n'
 import { ThemeProvider } from './lib/theme'
+import type { LeadraUser } from './lib/types'
 
 const mockGenerateUnitPdfFile = vi.fn(async (_user: unknown, unit: { unitCode: string }) => ({
   blob: new Blob([unit.unitCode], { type: 'application/pdf' }),
@@ -39,6 +41,46 @@ function renderApp() {
         </QueryClientProvider>
       </LocaleProvider>
     </ThemeProvider>,
+  )
+}
+
+function renderAdminUsersPage({ users, teams = initialAppState.teams }: {
+  users: LeadraUser[]
+  teams?: typeof initialAppState.teams
+}) {
+  return render(
+    <LocaleProvider>
+      <AdminPage
+        users={users}
+        units={[]}
+        settings={initialAppState.settings}
+        auditLogs={[]}
+        lookupValues={[]}
+        lookupCount={0}
+        activeSection="Users"
+        activeDirectory="teams"
+        onSectionChange={vi.fn()}
+        onDirectoryChange={vi.fn()}
+        defaultBranchId="branch-cairo"
+        branches={initialAppState.branches}
+        teams={teams}
+        onCreateLookupValue={vi.fn(async () => undefined)}
+        onUpdateLookupValue={vi.fn(async () => undefined)}
+        onArchiveLookupValue={vi.fn(async () => undefined)}
+        onCreateBranch={vi.fn(async () => undefined)}
+        onUpdateBranch={vi.fn(async () => undefined)}
+        onArchiveBranch={vi.fn(async () => undefined)}
+        onCreateTeam={vi.fn(async () => undefined)}
+        onUpdateTeam={vi.fn(async () => undefined)}
+        onArchiveTeam={vi.fn(async () => undefined)}
+        onCreateUser={vi.fn(async () => undefined)}
+        onUpdateUser={vi.fn(async () => undefined)}
+        onUpdateUserPassword={vi.fn(async () => undefined)}
+        onDeleteSalesRepresentative={vi.fn(async () => undefined)}
+        onDeleteManagedUser={vi.fn(async () => undefined)}
+        onSettingsUpdate={vi.fn(async () => undefined)}
+      />
+    </LocaleProvider>,
   )
 }
 
@@ -910,6 +952,54 @@ describe('Leadra app shell', () => {
     await user.type(screen.getByRole('textbox', { name: /branch name/i }), 'Alexandria Branch')
     await user.click(screen.getByRole('button', { name: /add branch/i }))
     expect(await screen.findByText(/alexandria branch/i, undefined, { timeout: 3000 })).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: /team management/i }))
+    await waitFor(() => expect(window.location.pathname).toContain('/admin/master-data/teams'))
+    await user.type(screen.getByRole('textbox', { name: /team name/i }), 'Delta Team')
+    await user.click(screen.getByRole('button', { name: /add team/i }))
+    expect(await screen.findByText(/delta team/i, undefined, { timeout: 3000 })).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: /^users$/i }))
+    await user.click(screen.getByRole('button', { name: /new user/i }))
+    await user.type(screen.getByRole('textbox', { name: /full name/i }), 'Delta Advisor')
+    await user.type(screen.getByRole('textbox', { name: /email/i }), 'delta.advisor@leadra.test')
+    await user.type(screen.getByLabelText(/^new password/i), 'Leadra8!')
+    await user.type(screen.getByLabelText(/confirm password/i), 'Leadra8!')
+    const createUserForm = screen.getByRole('button', { name: /^create user$/i }).closest('form')
+    expect(createUserForm).not.toBeNull()
+    await user.click(within(createUserForm as HTMLFormElement).getByRole('combobox', { name: /^team$/i }))
+    expect(await screen.findByRole('option', { name: /delta team/i })).toBeInTheDocument()
+    expect(screen.queryByRole('option', { name: /no team/i })).not.toBeInTheDocument()
+    await user.click(screen.getByRole('option', { name: /delta team/i }))
+    await user.click(screen.getByRole('button', { name: /^create user$/i }))
+    expect(await screen.findByText(/delta advisor/i)).toBeInTheDocument()
+
+    await chooseFromSelect(user, /^team$/i, /delta team/i)
+    expect(screen.getByText(/delta advisor/i)).toBeInTheDocument()
+  })
+
+  it('does not offer user-derived team ids when assigning managed users', async () => {
+    renderAdminUsersPage({
+      users: [
+        {
+          ...initialAppState.users[0],
+          teamId: 'legacy-team-only-on-user',
+        },
+      ],
+      teams: [
+        { id: 'team-live', name: 'Live Team', branchId: 'branch-cairo' },
+      ],
+    })
+    const user = userEvent.setup()
+
+    await user.click(screen.getByRole('button', { name: /new user/i }))
+    const createUserForm = screen.getByRole('button', { name: /^create user$/i }).closest('form')
+    expect(createUserForm).not.toBeNull()
+    await user.click(within(createUserForm as HTMLFormElement).getByRole('combobox', { name: /^team$/i }))
+
+    expect(await screen.findByRole('option', { name: /live team/i })).toBeInTheDocument()
+    expect(screen.queryByRole('option', { name: /legacy-team-only-on-user/i })).not.toBeInTheDocument()
+    expect(screen.queryByRole('option', { name: /no team/i })).not.toBeInTheDocument()
   })
 
   it('filters and edits users in admin user management', async () => {
