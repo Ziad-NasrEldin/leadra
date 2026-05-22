@@ -40,8 +40,8 @@ const input: CreateUnitInput = {
   downPayment: 1_000_000,
   transferFees: 125_000,
   maintenancePaid: true,
-  maintenanceCost: 45_000,
-  maintenanceDueDate: '2028-03-01',
+  maintenanceCost: null,
+  maintenanceDueDate: null,
   installmentType: 'quarterly',
   installmentYears: 5,
   installmentStartMonth: '2026-03-01',
@@ -103,8 +103,8 @@ describe('Supabase mappers', () => {
       down_payment: 1_000_000,
       transfer_fees: 125_000,
       maintenance_paid: true,
-      maintenance_cost: 45_000,
-      maintenance_due_date: '2028-03-01',
+      maintenance_cost: null,
+      maintenance_due_date: null,
       installment_type: 'quarterly',
       installment_years: null,
       installment_start_month: '2026-03-01',
@@ -129,16 +129,16 @@ describe('Supabase mappers', () => {
     })
   })
 
-  it('keeps unpaid maintenance cost and omits its due date on insert', () => {
+  it('keeps unpaid maintenance cost and due date on insert', () => {
     expect(toUnitInsertPayload({
       ...input,
       maintenancePaid: false,
       maintenanceCost: 45_000,
-      maintenanceDueDate: null,
+      maintenanceDueDate: '2028-03-01',
     }, actor)).toMatchObject({
       maintenance_paid: false,
       maintenance_cost: 45_000,
-      maintenance_due_date: null,
+      maintenance_due_date: '2028-03-01',
     })
   })
 

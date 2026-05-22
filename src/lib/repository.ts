@@ -218,6 +218,22 @@ export class LeadraRepository {
     return toUnitViewModel(data as unknown as SupabaseUnitRow)
   }
 
+  async updatePaymentScheduleAmount(unitId: number, scheduleId: string, amount: number): Promise<LeadraUnit> {
+    const { error } = await this.client.rpc('set_unit_payment_amount', {
+      target_unit_id: unitId,
+      target_schedule_id: scheduleId,
+      new_amount: amount,
+    })
+    if (error) throw error
+    const { data, error: loadError } = await this.client
+      .from('units')
+      .select(unitSelect)
+      .eq('id', unitId)
+      .single()
+    if (loadError) throw loadError
+    return toUnitViewModel(data as unknown as SupabaseUnitRow)
+  }
+
   async reconcileDueUnitPayments(): Promise<void> {
     const { error } = await this.client.rpc('reconcile_due_unit_payments')
     if (error) throw error
@@ -398,7 +414,7 @@ function matchesUnitFilters(unit: LeadraUnit, filters: UnitFilters): boolean {
   if (filters.bedrooms && filters.bedrooms !== 'all' && unit.bedrooms !== filters.bedrooms) return false
   if (filters.bathrooms && filters.bathrooms !== 'all' && unit.bathrooms !== filters.bathrooms) return false
   if (filters.paymentMethod && filters.paymentMethod !== 'all' && unit.paymentMethod !== filters.paymentMethod) return false
-  if (filters.deliveryYear && filters.deliveryYear !== 'all' && unit.deliveryExpectancy.year !== filters.deliveryYear) return false
+  if (!matchesRange(unit.deliveryExpectancy.year, filters.deliveryYearFrom, filters.deliveryYearTo)) return false
   if (filters.deliveryMonth && filters.deliveryMonth !== 'all' && unit.deliveryExpectancy.month !== filters.deliveryMonth) return false
   if (filters.unitCode && !unit.unitCode.toLowerCase().includes(filters.unitCode.toLowerCase())) return false
   if (!matchesRange(unit.bua, filters.buaFrom, filters.buaTo)) return false

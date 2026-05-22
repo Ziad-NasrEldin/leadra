@@ -17,6 +17,7 @@ import {
   generateUnitCode,
   getInstallmentScheduledDueMonths,
   applyPaymentScheduleAction,
+  applyPaymentScheduleAmountAction,
   buildPaymentTimetable,
   createInitialPaymentSchedule,
   searchUnits,
@@ -370,6 +371,32 @@ describe('Leadra domain rules', () => {
     expect(unpaid?.history.action).toBe('unpaid')
   })
 
+  it('edits one installment amount without redistributing other installments', () => {
+    const schedule = createInitialPaymentSchedule({
+      ...baseUnit,
+      installmentYears: null,
+      installmentStartMonth: '2026-03-01',
+      installmentEndMonth: '2026-12-01',
+      installmentAmount: 1_000_000,
+      remainingPayment: 4_000_000,
+    })
+    const unit = {
+      ...baseUnit,
+      installmentYears: null,
+      installmentStartMonth: '2026-03-01',
+      installmentEndMonth: '2026-12-01',
+      installmentAmount: 1_000_000,
+      remainingPayment: 4_000_000,
+      paymentSchedule: schedule,
+    }
+
+    const updated = applyPaymentScheduleAmountAction(unit, schedule[0].id, 750_000, '2026-05-15T12:00:00.000Z')
+
+    expect(updated?.paymentSchedule?.map((row) => row.amount)).toEqual([750_000, 1_000_000, 1_000_000, 1_000_000])
+    expect(updated?.remainingPayment).toBe(3_750_000)
+    expect(updated?.updatedAt).toBe('2026-05-15T12:00:00.000Z')
+  })
+
   it('calculates displayed paid and remaining totals with maintenance allocation', () => {
     const schedule = createInitialPaymentSchedule({
       ...baseUnit,
@@ -397,9 +424,9 @@ describe('Leadra domain rules', () => {
       unpaidMaintenanceAmount: 250_000,
     })
     expect(calculateDisplayedPaymentTotals({ ...unit, maintenancePaid: true })).toMatchObject({
-      displayedPaidAmount: 2_250_000,
+      displayedPaidAmount: 2_000_000,
       displayedRemainingAmount: 3_000_000,
-      paidMaintenanceAmount: 250_000,
+      paidMaintenanceAmount: 0,
     })
   })
 
@@ -445,6 +472,22 @@ describe('Leadra domain rules', () => {
     expect(searchUnits(admin, [{ ...baseUnit, floor: 'Ground', gardenArea: 55 }, otherSalesUnit], { gardenAreaFrom: 50, gardenAreaTo: 60 })).toEqual([{ ...baseUnit, floor: 'Ground', gardenArea: 55 }])
     expect(searchUnits(admin, [{ ...baseUnit, unitType: 'Penthouse', terraceArea: 40 }, otherSalesUnit], { terraceAreaFrom: 35, terraceAreaTo: 45 })).toEqual([{ ...baseUnit, unitType: 'Penthouse', terraceArea: 40 }])
     expect(searchUnits(admin, [baseUnit, otherSalesUnit], { installmentType: 'quarterly', installmentAmountFrom: 150_000, installmentAmountTo: 250_000 })).toEqual([baseUnit])
+    expect(searchUnits(admin, [
+      { ...baseUnit, id: 201, deliveryExpectancy: { mode: 'year', year: 2027 } },
+      { ...baseUnit, id: 202, deliveryExpectancy: { mode: 'year', year: 2028 } },
+      { ...baseUnit, id: 203, deliveryExpectancy: { mode: 'year', year: 2029 } },
+    ], { deliveryYearTo: 2028 }).map((unit) => unit.id)).toEqual([201, 202])
+    expect(searchUnits(admin, [
+      { ...baseUnit, id: 204, deliveryExpectancy: { mode: 'year', year: 2026 } },
+      { ...baseUnit, id: 205, deliveryExpectancy: { mode: 'year', year: 2027 } },
+      { ...baseUnit, id: 206, deliveryExpectancy: { mode: 'year', year: 2028 } },
+      { ...baseUnit, id: 207, deliveryExpectancy: { mode: 'year', year: 2029 } },
+    ], { deliveryYearFrom: 2027, deliveryYearTo: 2028 }).map((unit) => unit.id)).toEqual([205, 206])
+    expect(searchUnits(admin, [
+      { ...baseUnit, id: 208, deliveryExpectancy: { mode: 'year', year: 2027 } },
+      { ...baseUnit, id: 209, deliveryExpectancy: { mode: 'year', year: 2028 } },
+      { ...baseUnit, id: 210, deliveryExpectancy: { mode: 'year', year: 2029 } },
+    ], { deliveryYearFrom: 2028 }).map((unit) => unit.id)).toEqual([209, 210])
     expect(searchUnits(salesA, [baseUnit, otherSalesUnit], { ownerPhone: '01099999999' })).toEqual([])
     expect(searchUnits(salesA, [baseUnit, otherSalesUnit], { ownerPhone: '501234567' })).toEqual([])
     expect(searchUnits(subAdmin, [baseUnit, otherSalesUnit], { ownerPhone: '501234567' })).toEqual([baseUnit])

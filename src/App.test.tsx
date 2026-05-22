@@ -470,6 +470,20 @@ describe('Leadra app shell', () => {
     expect(screen.queryByRole('option', { name: /^senior chalet$/i })).not.toBeInTheDocument()
   })
 
+  it('shows unit type filters from master data instead of only displayed units', async () => {
+    renderApp()
+    const user = userEvent.setup()
+
+    await openLoginPage(user)
+    await signInAs(user, /continue as admin/i)
+    await user.click(screen.getByRole('link', { name: /view all units/i }))
+    await user.click(await screen.findByRole('button', { name: /show filters/i }))
+    await user.click(screen.getByRole('combobox', { name: /unit type/i }))
+
+    expect(screen.getByRole('option', { name: /^penthouse$/i })).toBeInTheDocument()
+    expect(screen.getByRole('option', { name: /^senior chalet$/i })).toBeInTheDocument()
+  })
+
   it('uses a create-unit wizard and still submits the complete form', async () => {
     renderApp()
     const user = userEvent.setup()
@@ -580,6 +594,29 @@ describe('Leadra app shell', () => {
 
     expect(screen.getByRole('spinbutton', { name: /total amount/i })).toBeInTheDocument()
     expect(screen.queryByRole('spinbutton', { name: /transfer fees/i })).not.toBeInTheDocument()
+  })
+
+  it('hides maintenance cost and due date when maintenance is paid', async () => {
+    const user = userEvent.setup()
+    render(
+      <LocaleProvider>
+        <CreateUnitPage
+          activeStep="Payment"
+          lookupValues={lookupValues}
+          settings={initialAppState.settings}
+          onStepChange={vi.fn()}
+          onSubmit={vi.fn()}
+        />
+      </LocaleProvider>,
+    )
+
+    expect(screen.getByRole('spinbutton', { name: /maintenance cost/i })).toBeInTheDocument()
+    expect(screen.getByLabelText(/maintenance due date/i)).toBeInTheDocument()
+
+    await user.click(screen.getByRole('checkbox', { name: /maintenance paid/i }))
+
+    expect(screen.queryByRole('spinbutton', { name: /maintenance cost/i })).not.toBeInTheDocument()
+    expect(screen.queryByLabelText(/maintenance due date/i)).not.toBeInTheDocument()
   })
 
   it('blocks create-unit submission until at least one image is uploaded', async () => {

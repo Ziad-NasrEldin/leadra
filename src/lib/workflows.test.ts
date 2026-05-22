@@ -9,6 +9,7 @@ import {
   deleteUnitAdminNoteWorkflow,
   saveUnitAdminNoteWorkflow,
   signInWorkflow,
+  updatePaymentScheduleAmountWorkflow,
   updatePaymentScheduleWorkflow,
   updateSettingsWorkflow,
   updateUnitStatusWorkflow,
@@ -230,8 +231,8 @@ describe('Leadra product workflows', () => {
       downPayment: 1_200_000,
       transferFees: 150_000,
       maintenancePaid: true,
-      maintenanceCost: 40_000,
-      maintenanceDueDate: '2029-01-15',
+      maintenanceCost: null,
+      maintenanceDueDate: null,
       installmentType: 'annual',
       installmentStartMonth: '2029-01-01',
       installmentEndMonth: '2032-01-01',
@@ -249,8 +250,8 @@ describe('Leadra product workflows', () => {
     expect(result.state.units[0].remainingPayment).toBe(4_800_000)
     expect(result.state.units[0].transferFees).toBe(150_000)
     expect(result.state.units[0].maintenancePaid).toBe(true)
-    expect(result.state.units[0].maintenanceCost).toBe(40_000)
-    expect(result.state.units[0].maintenanceDueDate).toBe('2029-01-15')
+    expect(result.state.units[0].maintenanceCost).toBeNull()
+    expect(result.state.units[0].maintenanceDueDate).toBeNull()
     expect(result.state.units[0].installmentYears).toBeNull()
     expect(result.state.units[0].installmentStartMonth).toBe('2029-01-01')
     expect(result.state.units[0].installmentEndMonth).toBe('2032-01-01')
@@ -538,8 +539,8 @@ describe('Leadra product workflows', () => {
       totalAmount: 5_500_000,
       transferFees: 175_000,
       maintenancePaid: true,
-      maintenanceCost: 25_000,
-      maintenanceDueDate: '2028-10-01',
+      maintenanceCost: null,
+      maintenanceDueDate: null,
       installmentType: 'quarterly',
       installmentStartMonth: '2027-01-01',
       installmentEndMonth: '2027-10-01',
@@ -556,8 +557,8 @@ describe('Leadra product workflows', () => {
       remainingPayment: unit.remainingPayment,
       transferFees: 175_000,
       maintenancePaid: true,
-      maintenanceCost: 25_000,
-      maintenanceDueDate: '2028-10-01',
+      maintenanceCost: null,
+      maintenanceDueDate: null,
       installmentYears: null,
       installmentStartMonth: '2027-01-01',
       installmentEndMonth: '2027-10-01',
@@ -597,8 +598,8 @@ describe('Leadra product workflows', () => {
       totalAmount: teamUnit.totalAmount + 500_000,
       transferFees: 90_000,
       maintenancePaid: true,
-      maintenanceCost: 10_000,
-      maintenanceDueDate: '2028-11-01',
+      maintenanceCost: null,
+      maintenanceDueDate: null,
     }))
     expect(insideTeam.ok).toBe(true)
     const updated = insideTeam.state.units.find((item) => item.id === teamUnit.id)
@@ -631,6 +632,7 @@ describe('Leadra product workflows', () => {
       downPayment: 1_200_000,
       maintenancePaid: false,
       maintenanceCost: 300_000,
+      maintenanceDueDate: '2029-01-15',
       installmentType: 'annual',
       installmentStartMonth: '2029-01-01',
       installmentEndMonth: '2032-01-01',
@@ -661,6 +663,53 @@ describe('Leadra product workflows', () => {
     const unpaidUnit = unpaid.state.units.find((item) => item.id === unit.id)!
     expect(unpaidUnit.remainingPayment).toBe(5_100_000)
     expect(unpaidUnit.paymentHistory?.[0]).toMatchObject({ action: 'unpaid', previousRemainingValue: 3_900_000, newRemainingValue: 5_100_000 })
+  })
+
+  it('edits one payment timetable amount and recalculates remaining value', () => {
+    const created = createUnitWorkflow(state(), sales, {
+      developerId: 'dev-palm',
+      developerName: 'Palm Hills',
+      projectId: 'project-zed',
+      projectName: 'ZED East',
+      destinationId: 'dest-new-cairo',
+      destinationName: 'New Cairo',
+      unitType: 'Apartment',
+      floor: '1st',
+      bua: 155,
+      viewId: 'view-garden',
+      viewName: 'Garden',
+      bedrooms: 3,
+      bathrooms: 2,
+      elevator: true,
+      finish: 'Fully Finished',
+      furnished: false,
+      paymentMethod: 'installment',
+      totalAmount: 6_000_000,
+      downPayment: 1_200_000,
+      maintenancePaid: false,
+      maintenanceCost: 300_000,
+      maintenanceDueDate: '2029-01-15',
+      installmentType: 'annual',
+      installmentStartMonth: '2029-01-01',
+      installmentEndMonth: '2032-01-01',
+      deliveryExpectancy: { mode: 'year', year: 2029 },
+      originalOwnerName: 'Payment Owner',
+      countryCode: '+20',
+      originalOwnerPhone: '010 4444 5555',
+      salesNotes: 'Payment timetable lead.',
+      media: [],
+    })
+    expect(created.ok).toBe(true)
+    const unit = created.state.units[0]
+
+    const updated = updatePaymentScheduleAmountWorkflow(created.state, admin, unit.id, unit.paymentSchedule![0].id, 900_000)
+
+    expect(updated.ok).toBe(true)
+    const updatedUnit = updated.state.units.find((item) => item.id === unit.id)!
+    expect(updatedUnit.paymentSchedule?.map((row) => row.amount)).toEqual([900_000, 1_200_000, 1_200_000, 1_200_000])
+    expect(updatedUnit.remainingPayment).toBe(4_800_000)
+    expect(updated.state.auditLogs.at(0)?.actionType).toBe('Installment amount updated')
+    expect(updated.state.analyticsEvents.at(0)?.metadata).toMatchObject({ action: 'amount_updated' })
   })
 
   it('lets admins edit owner fields with validation and duplicate-phone protection', () => {

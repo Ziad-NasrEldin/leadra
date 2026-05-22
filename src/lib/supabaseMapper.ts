@@ -220,8 +220,8 @@ export function toUnitInsertPayload(input: CreateUnitInput, actor: LeadraUser) {
     down_payment: input.paymentMethod === 'installment' ? input.downPayment ?? 0 : null,
     transfer_fees: input.transferFees ?? null,
     maintenance_paid: input.maintenancePaid ?? false,
-    maintenance_cost: input.maintenanceCost ?? null,
-    maintenance_due_date: input.maintenancePaid ? input.maintenanceDueDate ?? null : null,
+    maintenance_cost: input.maintenancePaid ? null : input.maintenanceCost ?? null,
+    maintenance_due_date: input.maintenancePaid ? null : input.maintenanceDueDate ?? null,
     installment_type: installmentType,
     installment_years: null,
     installment_start_month: installmentType && installmentType !== 'custom'
@@ -291,8 +291,8 @@ export function toUnitUpdatePayload(
           ...(input.paymentMethod === 'cash' ? { down_payment: null } : {}),
           ...(input.transferFees !== undefined ? { transfer_fees: input.transferFees } : {}),
           maintenance_paid: input.maintenancePaid ?? false,
-          maintenance_cost: input.maintenanceCost ?? null,
-          maintenance_due_date: input.maintenancePaid ? input.maintenanceDueDate ?? null : null,
+          maintenance_cost: input.maintenancePaid ? null : input.maintenanceCost ?? null,
+          maintenance_due_date: input.maintenancePaid ? null : input.maintenanceDueDate ?? null,
           ...installmentPatch,
         }
       : {}),

@@ -2,6 +2,7 @@ import {
   calculatePaymentSummary,
   calculateDisplayedRemainingPayment,
   applyPaymentScheduleAction,
+  applyPaymentScheduleAmountAction,
   canAddAdminManagerNote,
   canArchiveUnit,
   canEditAnyUnitDetails,
@@ -293,8 +294,8 @@ export function createUnitWorkflow(
   if ((input.maintenanceCost ?? 0) < 0) {
     return { ok: false, state, error: 'Maintenance cost cannot be negative.', errorKey: null, errorParams: null }
   }
-  if (input.maintenancePaid && (input.maintenanceCost == null || !input.maintenanceDueDate)) {
-    return { ok: false, state, error: 'Maintenance cost and due date are required when maintenance is paid.', errorKey: null, errorParams: null }
+  if (input.maintenancePaid && (input.maintenanceCost != null || input.maintenanceDueDate)) {
+    return { ok: false, state, error: 'Maintenance cost and due date must be empty when maintenance is paid.', errorKey: null, errorParams: null }
   }
   const nextId = state.units.reduce((highest, unit) => Math.max(highest, unit.id), 0) + 1
   const payment = calculatePaymentSummary({
@@ -337,8 +338,8 @@ export function createUnitWorkflow(
     remainingPayment: payment.remainingPayment,
     transferFees: input.transferFees ?? null,
     maintenancePaid: input.maintenancePaid ?? false,
-    maintenanceCost: input.maintenanceCost ?? null,
-    maintenanceDueDate: input.maintenancePaid ? input.maintenanceDueDate ?? null : null,
+    maintenanceCost: input.maintenancePaid ? null : input.maintenanceCost ?? null,
+    maintenanceDueDate: input.maintenancePaid ? null : input.maintenanceDueDate ?? null,
     commissionPercentage: state.settings.commissionPercentage,
     commissionAmount: payment.commissionAmount,
     installmentType: installmentFields.fields.installmentType,
@@ -673,6 +674,61 @@ export function updatePaymentScheduleWorkflow(
   }
 }
 
+export function updatePaymentScheduleAmountWorkflow(
+  state: AppDataState,
+  actor: LeadraUser,
+  unitId: number,
+  scheduleId: string,
+  amount: number,
+): WorkflowResult {
+  const unit = state.units.find((item) => item.id === unitId)
+  if (!unit) return { ok: false, state, ...createErrorMessage('error.unitNotFound', 'Unit not found.') }
+  if (!canViewUnit(actor, unit)) return { ok: false, state, ...createErrorMessage('error.unitOutsideVisibility', 'Unit is outside your visibility scope.') }
+  if (!canEditUnitPricing(actor, unit)) return { ok: false, state, error: 'You cannot edit this payment timetable.', errorKey: null, errorParams: null }
+  if (unit.paymentMethod !== 'installment' || unit.installmentType === 'custom') {
+    return { ok: false, state, error: 'Payment timetable is only available for automatic installment units.', errorKey: null, errorParams: null }
+  }
+
+  const appliedUnit = applyPaymentScheduleAmountAction(unit, scheduleId, amount)
+  if (!appliedUnit) return { ok: false, state, error: 'Payment timetable row was not changed.', errorKey: null, errorParams: null }
+  const previousRow = (unit.paymentSchedule ?? createInitialPaymentSchedule(unit)).find((row) => row.id === scheduleId)
+  const nextRow = appliedUnit.paymentSchedule?.find((row) => row.id === scheduleId)
+
+  const nextState = {
+    ...state,
+    units: state.units.map((item) => item.id === unitId ? appliedUnit : item),
+  }
+
+  return {
+    ok: true,
+    state: withAnalyticsEvent(
+      withAudit(
+        nextState,
+        actor,
+        'Installment amount updated',
+        unit.unitCode,
+        { remainingPayment: unit.remainingPayment, amount: previousRow?.amount ?? null },
+        { remainingPayment: appliedUnit.remainingPayment, amount: nextRow?.amount ?? null, scheduleId },
+      ),
+      actor,
+      'installment_updated',
+      {
+        unit: appliedUnit,
+        amountValue: nextRow?.amount ?? amount,
+        metadata: {
+          unitCode: unit.unitCode,
+          scheduleId,
+          action: 'amount_updated',
+          previousAmount: previousRow?.amount ?? null,
+          newAmount: nextRow?.amount ?? amount,
+          previousRemainingValue: unit.remainingPayment,
+          newRemainingValue: appliedUnit.remainingPayment,
+        },
+      },
+    ),
+  }
+}
+
 export function updateUnitWorkflow(
   state: AppDataState,
   actor: LeadraUser,
@@ -732,8 +788,8 @@ export function updateUnitWorkflow(
   if (canEditPricing && (input.maintenanceCost ?? 0) < 0) {
     return { ok: false, state, error: 'Maintenance cost cannot be negative.', errorKey: null, errorParams: null }
   }
-  if (canEditPricing && nextMaintenancePaid && (input.maintenanceCost == null || !input.maintenanceDueDate)) {
-    return { ok: false, state, error: 'Maintenance cost and due date are required when maintenance is paid.', errorKey: null, errorParams: null }
+  if (canEditPricing && nextMaintenancePaid && (input.maintenanceCost != null || input.maintenanceDueDate)) {
+    return { ok: false, state, error: 'Maintenance cost and due date must be empty when maintenance is paid.', errorKey: null, errorParams: null }
   }
   if (canEditPricing && nextPaymentMethod === 'installment' && nextDownPayment != null && nextDownPayment > nextTotalAmount) {
     return { ok: false, state, error: 'Down payment cannot be greater than total amount.', errorKey: null, errorParams: null }
@@ -741,11 +797,11 @@ export function updateUnitWorkflow(
   let nextMaintenanceCost: number | null
   let nextMaintenanceDueDate: string | null = null
   if (canEditPricing) {
-    nextMaintenanceCost = input.maintenanceCost ?? null
+    nextMaintenanceCost = nextMaintenancePaid ? null : input.maintenanceCost ?? null
   } else {
     nextMaintenanceCost = unit.maintenanceCost ?? null
   }
-  if (nextMaintenancePaid) {
+  if (!nextMaintenancePaid) {
     nextMaintenanceDueDate = canEditPricing ? input.maintenanceDueDate ?? null : unit.maintenanceDueDate ?? null
   }
   const nextInstallmentFields = resolveUnitEditInstallmentFields(unit, input, canEditPricing)

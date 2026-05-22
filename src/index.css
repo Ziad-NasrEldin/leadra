@@ -2337,6 +2337,47 @@ dd {
   color: var(--muted);
 }
 
+.installment-amount-display {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.installment-amount-form {
+  display: grid;
+  grid-template-columns: minmax(8rem, 12rem) 2.25rem 2.25rem;
+  align-items: center;
+  gap: 0.35rem;
+  min-width: 0;
+}
+
+.installment-amount-form input {
+  width: 100%;
+  min-height: 2.25rem;
+  border: 1px solid var(--line);
+  border-radius: 0.55rem;
+  padding: 0.35rem 0.5rem;
+  background: var(--surface);
+  color: var(--ink);
+  font: inherit;
+  font-weight: 850;
+}
+
+.installment-amount-form .icon-button,
+.installment-edit-button {
+  width: 2.25rem;
+  height: 2.25rem;
+  min-height: 2.25rem;
+  padding: 0;
+}
+
+.installment-amount-error {
+  grid-column: 1 / -1;
+  color: var(--danger);
+  font-weight: 800;
+}
+
 .installment-period {
   color: var(--muted);
   font-weight: 850;

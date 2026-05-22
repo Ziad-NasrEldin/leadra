@@ -80,7 +80,12 @@ export function UnitsPage({
   const thumbnailSources = useLookupThumbnailSources(lookupValues)
   const destinationLookupById = new Map(destinationOptions.map((destination) => [destination.id, destination]))
   const projectLookupById = new Map(projectOptions.map((project) => [project.id, project]))
-  const unitTypeOptions = Array.from(new Set(units.map((unit) => unit.unitType))).sort((a, b) => compareText(locale, a, b))
+  const unitTypeOptions = Array.from(
+    new Set([
+      ...lookupValues.filter((item) => item.kind === 'unit_type').map((item) => item.label),
+      ...units.map((unit) => unit.unitType),
+    ]),
+  ).sort((a, b) => compareText(locale, a, b))
   const canUseOwnerPhoneSearch = user.role === 'admin' || user.role === 'sub_admin'
   const activeFilterCount = countActiveUnitFilters(filters)
   const invalidDestination = stage !== 'destinations' && !currentDestination
@@ -172,7 +177,7 @@ export function UnitsPage({
               <div className="filter-section-grid">
                 <NumberFilter label={t('details.bedrooms')} value={filters.bedrooms === 'all' ? undefined : filters.bedrooms} onChange={(value) => onFilterChange('bedrooms', value ?? 'all')} />
                 <NumberFilter label={t('details.bathrooms')} value={filters.bathrooms === 'all' ? undefined : filters.bathrooms} onChange={(value) => onFilterChange('bathrooms', value ?? 'all')} />
-                <NumberFilter label={t('details.expectedDelivery')} value={filters.deliveryYear === 'all' ? undefined : filters.deliveryYear} onChange={(value) => onFilterChange('deliveryYear', value ?? 'all')} />
+                <RangeFilter label={t('details.expectedDelivery')} from={filters.deliveryYearFrom} to={filters.deliveryYearTo} onFrom={(value) => onFilterChange('deliveryYearFrom', value)} onTo={(value) => onFilterChange('deliveryYearTo', value)} />
               </div>
             </details>
 

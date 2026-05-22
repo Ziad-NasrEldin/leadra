@@ -80,6 +80,7 @@ import {
   removeUnitMediaWorkflow,
   saveUnitAdminNoteWorkflow,
   setUnitSpecialWorkflow,
+  updatePaymentScheduleAmountWorkflow,
   updatePaymentScheduleWorkflow,
   updateSettingsWorkflow,
   updateUnitStatusWorkflow,
@@ -321,6 +322,7 @@ function LeadraApp() {
   const [updatingStatusUnitId, setUpdatingStatusUnitId] = useState<number | null>(null)
   const [updatingSpecialUnitId, setUpdatingSpecialUnitId] = useState<number | null>(null)
   const [updatingPaymentScheduleId, setUpdatingPaymentScheduleId] = useState<string | null>(null)
+  const [updatingPaymentScheduleAmountId, setUpdatingPaymentScheduleAmountId] = useState<string | null>(null)
   const [statusActionFeedback, setStatusActionFeedback] = useState<{
     unitId: number
     status: UnitStatus
@@ -710,8 +712,8 @@ function LeadraApp() {
       totalAmount: Number(formData.get('totalAmount')),
       downPayment: paymentMethod === 'installment' ? Number(formData.get('downPayment')) : null,
       maintenancePaid,
-      maintenanceCost: parseOptionalFormNumber(formData, 'maintenanceCost'),
-      maintenanceDueDate: maintenancePaid ? parseOptionalFormDate(formData, 'maintenanceDueDate') : null,
+      maintenanceCost: maintenancePaid ? null : parseOptionalFormNumber(formData, 'maintenanceCost'),
+      maintenanceDueDate: maintenancePaid ? null : parseOptionalFormDate(formData, 'maintenanceDueDate'),
       installmentType,
       installmentStartMonth,
       installmentEndMonth,
@@ -841,8 +843,8 @@ function LeadraApp() {
       salesNotes: String(formData.get('salesNotes') ?? unit.salesNotes),
       totalAmount: Number(formData.get('totalAmount')),
       maintenancePaid,
-      maintenanceCost: parseOptionalFormNumber(formData, 'maintenanceCost'),
-      maintenanceDueDate: maintenancePaid ? parseOptionalFormDate(formData, 'maintenanceDueDate') : null,
+      maintenanceCost: maintenancePaid ? null : parseOptionalFormNumber(formData, 'maintenanceCost'),
+      maintenanceDueDate: maintenancePaid ? null : parseOptionalFormDate(formData, 'maintenanceDueDate'),
       ...(submittedPaymentMethod === 'installment' && submittedInstallmentType === 'custom'
         ? {
             installmentType: submittedInstallmentType,
@@ -935,7 +937,7 @@ function LeadraApp() {
   }
 
   async function updatePaymentSchedule(unit: LeadraUnit, scheduleId: string, paid: boolean) {
-    if (updatingPaymentScheduleId) return
+    if (updatingPaymentScheduleId || updatingPaymentScheduleAmountId) return
     const result = updatePaymentScheduleWorkflow(appState, user, unit.id, scheduleId, paid)
     if (!result.ok) {
       setFlash({ text: result.error, messageKey: result.errorKey ?? null, messageParams: result.errorParams ?? null })
@@ -969,6 +971,40 @@ function LeadraApp() {
       setFlash({ text: `Payment timetable could not be saved: ${errorMessage(error)}`, messageKey: null, messageParams: null })
     } finally {
       setUpdatingPaymentScheduleId(null)
+    }
+  }
+
+  async function updatePaymentScheduleAmount(unit: LeadraUnit, scheduleId: string, amount: number) {
+    if (updatingPaymentScheduleId || updatingPaymentScheduleAmountId) return
+    const result = updatePaymentScheduleAmountWorkflow(appState, user, unit.id, scheduleId, amount)
+    if (!result.ok) {
+      setFlash({ text: result.error, messageKey: result.errorKey ?? null, messageParams: result.errorParams ?? null })
+      return
+    }
+
+    const previousState = appState
+    const updatedUnit = result.state.units.find((item) => item.id === unit.id) ?? unit
+    setUpdatingPaymentScheduleAmountId(scheduleId)
+    setAppState(result.state)
+    setRemoteSearchUnits((items) => items?.map((item) => item.id === unit.id ? updatedUnit : item) ?? null)
+
+    try {
+      if (supabase && isSupabaseConfigured) {
+        const remoteUnit = await new LeadraRepository(supabase).updatePaymentScheduleAmount(unit.id, scheduleId, amount)
+        setAppState((state) => ({
+          ...state,
+          units: state.units.map((item) => item.id === unit.id ? remoteUnit : item),
+        }))
+        setRemoteSearchUnits((items) => items?.map((item) => item.id === unit.id ? remoteUnit : item) ?? null)
+      }
+      invalidateGeneratedPdf(unit.id)
+      setFlash({ text: 'Installment amount updated and Remaining Value recalculated.', messageKey: null, messageParams: null })
+    } catch (error) {
+      setAppState(previousState)
+      setRemoteSearchUnits((items) => items?.map((item) => item.id === unit.id ? unit : item) ?? null)
+      setFlash({ text: `Installment amount could not be saved: ${errorMessage(error)}`, messageKey: null, messageParams: null })
+    } finally {
+      setUpdatingPaymentScheduleAmountId(null)
     }
   }
 
@@ -1622,11 +1658,13 @@ function LeadraApp() {
               onDeleteNote={() => deleteSharedNote(selectedUnit)}
               onRemoveMedia={(mediaId) => removeUnitMedia(selectedUnit, mediaId)}
               onPaymentScheduleChange={(scheduleId, paid) => updatePaymentSchedule(selectedUnit, scheduleId, paid)}
+              onPaymentScheduleAmountChange={(scheduleId, amount) => updatePaymentScheduleAmount(selectedUnit, scheduleId, amount)}
               onMediaPdfVisibilityChange={(mediaId, includeInPdf) => setUnitMediaPdfVisibility(selectedUnit.id, mediaId, includeInPdf)}
               onMediaDownload={downloadUnitMedia}
               removingMediaId={removingMediaId}
               downloadingMediaId={downloadingMediaId}
               updatingPaymentScheduleId={updatingPaymentScheduleId}
+              updatingPaymentScheduleAmountId={updatingPaymentScheduleAmountId}
             />
           </div>
         )}

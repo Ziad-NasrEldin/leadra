@@ -520,7 +520,7 @@ export function calculateDisplayedPaymentTotals(unit: LeadraUnit): DisplayedPaym
       ? Math.max(0, (unit.totalAmount ?? 0) - originalDownPayment - paidInstallmentsTotal)
       : 0
   const maintenanceAmount = unit.maintenanceCost ?? 0
-  const paidMaintenanceAmount = unit.maintenancePaid ? maintenanceAmount : 0
+  const paidMaintenanceAmount = 0
   const unpaidMaintenanceAmount = unit.maintenancePaid ? 0 : maintenanceAmount
 
   return {
@@ -588,6 +588,34 @@ export function applyPaymentScheduleAction(
       updatedAt: now,
     },
     history,
+  }
+}
+
+export function applyPaymentScheduleAmountAction(
+  unit: LeadraUnit,
+  scheduleId: string,
+  amount: number,
+  now = new Date().toISOString(),
+): LeadraUnit | null {
+  if (!Number.isFinite(amount) || amount <= 0) return null
+  const currentSchedule = unit.paymentSchedule ?? createInitialPaymentSchedule(unit)
+  const target = currentSchedule.find((row) => row.id === scheduleId)
+  if (!target) return null
+
+  const nextAmount = roundMoney(amount)
+  if (target.amount === nextAmount) return null
+
+  const nextSchedule = currentSchedule.map((row) =>
+    row.id === scheduleId ? { ...row, amount: nextAmount } : row,
+  )
+  const nextUnitForTotals = { ...unit, paymentSchedule: nextSchedule }
+  const newRemainingValue = calculateDisplayedPaymentTotals(nextUnitForTotals).displayedRemainingAmount
+
+  return {
+    ...unit,
+    paymentSchedule: nextSchedule,
+    remainingPayment: newRemainingValue,
+    updatedAt: now,
   }
 }
 
@@ -723,7 +751,7 @@ export function searchUnits(user: LeadraUser, units: LeadraUnit[], filters: Unit
     if (!inRange(unit.remainingPayment, filters.remainingPaymentFrom, filters.remainingPaymentTo)) return false
     if (filters.installmentType && filters.installmentType !== 'all' && unit.installmentType !== filters.installmentType) return false
     if (!inRange(unit.installmentAmount, filters.installmentAmountFrom, filters.installmentAmountTo)) return false
-    if (filters.deliveryYear && filters.deliveryYear !== 'all' && unit.deliveryExpectancy.year !== filters.deliveryYear) return false
+    if (!inRange(unit.deliveryExpectancy.year, filters.deliveryYearFrom, filters.deliveryYearTo)) return false
     if (filters.deliveryMonth && filters.deliveryMonth !== 'all' && unit.deliveryExpectancy.month !== filters.deliveryMonth) return false
     if (filters.unitCode && !unit.unitCode.toLowerCase().includes(filters.unitCode.toLowerCase())) return false
 

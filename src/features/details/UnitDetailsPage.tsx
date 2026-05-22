@@ -1,4 +1,4 @@
-import { Archive, Download, FileText, Share2, Star, Trash2 } from 'lucide-react'
+import { Archive, Download, FileText, Pencil, Save, Share2, Star, Trash2, X } from 'lucide-react'
 import { useEffect, useState, type FormEvent } from 'react'
 import { buildPaymentTimetable, calculateDisplayedPaymentTotals, canAddAdminManagerNote, canArchiveUnit, canEditAnyUnitDetails, canEditNonOwnerUnitDetails, canEditOwnerFields, canEditUnitCommission, canEditUnitPricing, canManageUnitSpecialStatus, canViewOwnerData, canViewSalesSensitiveData, formatCurrency, formatDeliveryExpectancy, getApplicableUnitAreaFields, getOwnerPhoneCountryMeta, getOwnerPhoneCountryOptions, PRD_FLOOR_OPTIONS, PRD_UNIT_TYPES } from '../../lib/domain'
 import { formatCount, formatDateTime, getPaymentMethodLabel, getRoleLabel, getStatusLabel, useLocale, type LocaleCode } from '../../lib/i18n'
@@ -29,11 +29,13 @@ export function UnitDetailsPage({
   onDeleteNote,
   onRemoveMedia,
   onPaymentScheduleChange,
+  onPaymentScheduleAmountChange,
   onMediaPdfVisibilityChange,
   onMediaDownload,
   removingMediaId,
   downloadingMediaId,
   updatingPaymentScheduleId,
+  updatingPaymentScheduleAmountId,
 }: {
   user: LeadraUser
   unit: LeadraUnit
@@ -56,11 +58,13 @@ export function UnitDetailsPage({
   onDeleteNote: () => void
   onRemoveMedia: (mediaId: string) => void
   onPaymentScheduleChange: (scheduleId: string, paid: boolean) => void
+  onPaymentScheduleAmountChange: (scheduleId: string, amount: number) => void
   onMediaPdfVisibilityChange: (mediaId: string, includeInPdf: boolean) => void
   onMediaDownload: (file: LeadraMediaFile) => void
   removingMediaId: string | null
   downloadingMediaId: string | null
   updatingPaymentScheduleId: string | null
+  updatingPaymentScheduleAmountId: string | null
 }) {
   const { locale, t } = useLocale()
   const ownerAllowed = canViewOwnerData(user, unit)
@@ -186,11 +190,13 @@ export function UnitDetailsPage({
           onDeleteNote={onDeleteNote}
           onRemoveMedia={onRemoveMedia}
           onPaymentScheduleChange={onPaymentScheduleChange}
+          onPaymentScheduleAmountChange={onPaymentScheduleAmountChange}
           onMediaPdfVisibilityChange={onMediaPdfVisibilityChange}
           onMediaDownload={onMediaDownload}
           removingMediaId={removingMediaId}
           downloadingMediaId={downloadingMediaId}
           updatingPaymentScheduleId={updatingPaymentScheduleId}
+          updatingPaymentScheduleAmountId={updatingPaymentScheduleAmountId}
         />
       ) : (
         <section className="content-card motion-stage details-deferred-card" style={motionStyle(2, 70)}>
@@ -346,15 +352,15 @@ function UnitDetailsEditForm({
             />{' '}
             {t('create.maintenancePaid')}
           </label>
-          <label>
-            <RequiredLabel label={t('create.maintenanceCost')} required={canEditPricing} />
-            <input name="maintenanceCost" type="number" min={0} step="0.01" defaultValue={unit.maintenanceCost ?? 0} disabled={!canEditPricing || saving} required={canEditPricing} />
-          </label>
-          {maintenancePaid && (
+          {!maintenancePaid && (
             <>
               <label>
-                <RequiredLabel label={t('create.maintenanceDueDate')} required={canEditPricing} />
-                <input name="maintenanceDueDate" type="date" defaultValue={unit.maintenanceDueDate ?? ''} disabled={!canEditPricing || saving} required={canEditPricing} />
+                <RequiredLabel label={t('create.maintenanceCost')} required={canEditPricing} />
+                <input name="maintenanceCost" type="number" min={0} step="0.01" defaultValue={unit.maintenanceCost ?? 0} disabled={!canEditPricing || saving} required={canEditPricing} />
+              </label>
+              <label>
+                {t('create.maintenanceDueDate')}
+                <input name="maintenanceDueDate" type="date" defaultValue={unit.maintenanceDueDate ?? ''} disabled={!canEditPricing || saving} />
               </label>
             </>
           )}
@@ -459,11 +465,13 @@ function UnitDetailsDeepSections({
   onDeleteNote,
   onRemoveMedia,
   onPaymentScheduleChange,
+  onPaymentScheduleAmountChange,
   onMediaPdfVisibilityChange,
   onMediaDownload,
   removingMediaId,
   downloadingMediaId,
   updatingPaymentScheduleId,
+  updatingPaymentScheduleAmountId,
 }: {
   locale: LocaleCode
   t: ReturnType<typeof useLocale>['t']
@@ -476,11 +484,13 @@ function UnitDetailsDeepSections({
   onDeleteNote: () => void
   onRemoveMedia: (mediaId: string) => void
   onPaymentScheduleChange: (scheduleId: string, paid: boolean) => void
+  onPaymentScheduleAmountChange: (scheduleId: string, amount: number) => void
   onMediaPdfVisibilityChange: (mediaId: string, includeInPdf: boolean) => void
   onMediaDownload: (file: LeadraMediaFile) => void
   removingMediaId: string | null
   downloadingMediaId: string | null
   updatingPaymentScheduleId: string | null
+  updatingPaymentScheduleAmountId: string | null
 }) {
   const installmentSchedule = buildPaymentTimetable(unit, locale)
   const installmentStartMonth = getUnitInstallmentStartMonth(unit)
@@ -492,6 +502,32 @@ function UnitDetailsDeepSections({
   const timetableRemaining = paymentTotals.displayedRemainingAmount
   const areaFields = getApplicableUnitAreaFields(unit.unitType, unit.floor)
   const canRemoveMedia = canEditNonOwnerUnitDetails(user, unit)
+  const canEditInstallmentAmounts = canEditUnitPricing(user, unit)
+  const [editingInstallmentId, setEditingInstallmentId] = useState<string | null>(null)
+  const [editingInstallmentAmount, setEditingInstallmentAmount] = useState('')
+  const [editingInstallmentError, setEditingInstallmentError] = useState<string | null>(null)
+  const beginInstallmentAmountEdit = (scheduleId: string, amount: number) => {
+    setEditingInstallmentId(scheduleId)
+    setEditingInstallmentAmount(String(amount))
+    setEditingInstallmentError(null)
+  }
+  const cancelInstallmentAmountEdit = () => {
+    setEditingInstallmentId(null)
+    setEditingInstallmentAmount('')
+    setEditingInstallmentError(null)
+  }
+  const submitInstallmentAmountEdit = (event: FormEvent<HTMLFormElement>) => {
+    event.preventDefault()
+    if (!editingInstallmentId || updatingPaymentScheduleAmountId) return
+    const amount = Number(editingInstallmentAmount)
+    if (!Number.isFinite(amount) || amount <= 0) {
+      setEditingInstallmentError(t('details.installmentAmountInvalid'))
+      return
+    }
+    setEditingInstallmentError(null)
+    onPaymentScheduleAmountChange(editingInstallmentId, amount)
+    cancelInstallmentAmountEdit()
+  }
   const mainInfoRows: [string, string | number | null][] = [
     [t('details.unitCode'), unit.unitCode],
     [t('details.uploader'), unit.createdByName],
@@ -530,14 +566,18 @@ function UnitDetailsDeepSections({
           [t('details.remainingPayment'), formatCurrency(paymentTotals.displayedRemainingAmount, locale)] as [string, string | number | null],
         ]),
     [t('details.maintenancePaid'), unit.maintenancePaid ? t('common.yes') : t('common.no')],
-    [t('details.maintenanceCost'), formatCurrency(unit.maintenanceCost ?? null, locale)],
-    [t('details.maintenanceAllocation'), unit.maintenancePaid ? t('details.maintenanceInPaidAmount') : t('details.maintenanceInRemainingAmount')],
+    ...(!unit.maintenancePaid
+      ? [
+          [t('details.maintenanceCost'), formatCurrency(unit.maintenanceCost ?? null, locale)] as [string, string | number | null],
+          [t('details.maintenanceAllocation'), t('details.maintenanceInRemainingAmount')] as [string, string | number | null],
+        ]
+      : []),
   ]
   const installmentRows: [string, string | number | null][] = []
   const postDeliveryRows: [string, string | number | null][] = [
     [t('details.commission'), `${formatCurrency(unit.commissionAmount, locale)} (${unit.commissionPercentage}%)`],
   ]
-  if (unit.maintenancePaid) {
+  if (!unit.maintenancePaid) {
     pricingRows.push(
       [t('details.maintenanceDueDate'), unit.maintenanceDueDate ?? t('common.notSet')],
     )
@@ -605,7 +645,56 @@ function UnitDetailsDeepSections({
                 </span>
                 <span className="installment-main" role="cell">
                   <span className="installment-period">{row.periodLabel}</span>
-                  <strong>{formatCurrency(row.amount, locale)}</strong>
+                  {editingInstallmentId === row.id ? (
+                    <form className="installment-amount-form" onSubmit={submitInstallmentAmountEdit}>
+                      <input
+                        aria-label={t('details.editInstallmentAmount')}
+                        inputMode="decimal"
+                        min="0.01"
+                        name="installmentAmount"
+                        onChange={(event) => setEditingInstallmentAmount(event.target.value)}
+                        step="0.01"
+                        type="number"
+                        value={editingInstallmentAmount}
+                      />
+                      <button
+                        aria-label={t('details.saveInstallmentAmount')}
+                        className="icon-button"
+                        disabled={updatingPaymentScheduleAmountId === row.id}
+                        title={t('details.saveInstallmentAmount')}
+                        type="submit"
+                      >
+                        <Save size={16} />
+                      </button>
+                      <button
+                        aria-label={t('common.cancel')}
+                        className="icon-button"
+                        disabled={updatingPaymentScheduleAmountId === row.id}
+                        onClick={cancelInstallmentAmountEdit}
+                        title={t('common.cancel')}
+                        type="button"
+                      >
+                        <X size={16} />
+                      </button>
+                      {editingInstallmentError && <small className="installment-amount-error">{editingInstallmentError}</small>}
+                    </form>
+                  ) : (
+                    <span className="installment-amount-display">
+                      <strong>{formatCurrency(row.amount, locale)}</strong>
+                      {canEditInstallmentAmounts && (
+                        <button
+                          aria-label={t('details.editInstallmentAmount')}
+                          className="icon-button installment-edit-button"
+                          disabled={Boolean(updatingPaymentScheduleId || updatingPaymentScheduleAmountId)}
+                          onClick={() => beginInstallmentAmountEdit(row.id, row.amount)}
+                          title={t('details.editInstallmentAmount')}
+                          type="button"
+                        >
+                          <Pencil size={15} />
+                        </button>
+                      )}
+                    </span>
+                  )}
                   {row.paidAt && <small>{formatDateTime(locale, row.paidAt)} / {row.paidByName ?? t('common.notSet')}</small>}
                 </span>
                 <span className="installment-controls" role="cell">
@@ -613,7 +702,7 @@ function UnitDetailsDeepSections({
                   <button
                     className="secondary-button installment-action-button"
                     type="button"
-                    disabled={updatingPaymentScheduleId === row.id}
+                    disabled={updatingPaymentScheduleId === row.id || Boolean(updatingPaymentScheduleAmountId)}
                     onClick={() => onPaymentScheduleChange(row.id, !row.paid)}
                   >
                     {updatingPaymentScheduleId === row.id ? t('common.saving') : row.paid ? t('details.markInstallmentUnpaid') : t('details.markInstallmentPaid')}

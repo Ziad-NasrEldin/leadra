@@ -232,7 +232,8 @@ export interface UnitFilters {
   installmentType?: InstallmentType | 'all'
   installmentAmountFrom?: number
   installmentAmountTo?: number
-  deliveryYear?: number | 'all'
+  deliveryYearFrom?: number
+  deliveryYearTo?: number
   deliveryMonth?: number | 'all'
 }
 

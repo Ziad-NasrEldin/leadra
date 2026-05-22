@@ -47,7 +47,7 @@ export function CreateUnitPage({
   const isCreateBlocked = submitting || !hasSelectedImage || !mediaValidation.ok
   const totalMediaMb = selectedMedia.reduce((total, file) => total + file.sizeBytes, 0) / (1024 * 1024)
   const remainingPayment = Math.max(0, totalAmount - downPayment)
-  const displayedPaidAmount = paymentMethod === 'installment' ? downPayment + (maintenancePaid ? maintenanceCost : 0) : totalAmount + (maintenancePaid ? maintenanceCost : 0)
+  const displayedPaidAmount = paymentMethod === 'installment' ? downPayment : totalAmount
   const displayedRemainingPayment = paymentMethod === 'installment' ? remainingPayment + (maintenancePaid ? 0 : maintenanceCost) : maintenancePaid ? 0 : maintenanceCost
   const calculatedInstallment =
     paymentMethod === 'installment' && isAutomaticInstallmentType(installmentType)
@@ -228,15 +228,15 @@ export function CreateUnitPage({
             />{' '}
             {t('create.maintenancePaid')}
           </label>
-          <label>
-            <RequiredLabel label={t('create.maintenanceCost')} required />
-            <input name="maintenanceCost" type="number" min={0} step="0.01" required value={maintenanceCost} onChange={(event) => setMaintenanceCost(Number(event.target.value))} />
-          </label>
-          {maintenancePaid && (
+          {!maintenancePaid && (
             <>
               <label>
-                <RequiredLabel label={t('create.maintenanceDueDate')} required />
-                <input name="maintenanceDueDate" type="date" required />
+                <RequiredLabel label={t('create.maintenanceCost')} required />
+                <input name="maintenanceCost" type="number" min={0} step="0.01" required value={maintenanceCost} onChange={(event) => setMaintenanceCost(Number(event.target.value))} />
+              </label>
+              <label>
+                {t('create.maintenanceDueDate')}
+                <input name="maintenanceDueDate" type="date" />
               </label>
             </>
           )}
