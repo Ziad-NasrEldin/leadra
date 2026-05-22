@@ -74,6 +74,7 @@ export async function setSupabaseThemePreference(client: SupabaseClient, themePr
 
 export async function loadSupabaseAppState(client: SupabaseClient): Promise<RemoteState> {
   const repository = new LeadraRepository(client)
+  await repository.reconcileDueUnitPayments()
   const [users, units, branches, teams, lookupValues, settings, notifications, auditLogs, analyticsEvents, analyticsTargets] = await Promise.all([
     loadProfiles(client),
     repository.listUnits(),

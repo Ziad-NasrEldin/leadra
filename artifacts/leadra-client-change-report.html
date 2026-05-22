@@ -1,0 +1,420 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Leadra Client Change Report</title>
+    <style>
+      :root {
+        --ink: #2a2623;
+        --muted: #7d7468;
+        --line: #ded3c8;
+        --paper: #fbfaf6;
+        --panel: #fffdf8;
+        --brand: #1f1f23;
+        --brand-soft: #eee6de;
+        --copper: #a76f4d;
+        --copper-soft: #eadfd6;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        background: var(--paper);
+        color: var(--ink);
+        font-family: "Aptos", "Segoe UI", Arial, sans-serif;
+        line-height: 1.45;
+      }
+
+      @page {
+        size: A4;
+        margin: 0;
+      }
+
+      .page {
+        width: 210mm;
+        height: 297mm;
+        margin: 0 auto;
+        padding: 20mm 18mm 18mm;
+        background: var(--paper);
+        position: relative;
+        overflow: hidden;
+      }
+
+      .page::before {
+        content: "";
+        position: absolute;
+        inset: 0;
+        border-top: 8px solid var(--brand);
+        pointer-events: none;
+      }
+
+      .header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 24px;
+        margin-bottom: 18mm;
+      }
+
+      .logo {
+        display: flex;
+        align-items: center;
+        gap: 14px;
+      }
+
+      .logo img {
+        width: 58px;
+        height: 58px;
+        border-radius: 16px;
+        object-fit: cover;
+      }
+
+      .brand-name {
+        font-size: 24px;
+        font-weight: 750;
+        letter-spacing: 0;
+        color: var(--brand);
+      }
+
+      .report-meta {
+        text-align: right;
+        color: var(--muted);
+        font-size: 13px;
+      }
+
+      .hero {
+        display: grid;
+        grid-template-columns: 1.15fr 0.85fr;
+        gap: 18mm;
+        align-items: end;
+        margin-bottom: 14mm;
+      }
+
+      .eyebrow {
+        color: var(--copper);
+        font-size: 12px;
+        font-weight: 800;
+        letter-spacing: 1.4px;
+        text-transform: uppercase;
+        margin: 0 0 10px;
+      }
+
+      h1 {
+        color: var(--brand);
+        font-size: 44px;
+        line-height: 1.02;
+        letter-spacing: 0;
+        margin: 0 0 16px;
+      }
+
+      .intro {
+        color: #4f4740;
+        font-size: 17px;
+        margin: 0;
+        max-width: 570px;
+      }
+
+      .summary-card {
+        background: var(--brand);
+        color: #f7efe3;
+        border-radius: 18px;
+        padding: 22px;
+      }
+
+      .summary-card h2 {
+        margin: 0 0 12px;
+        font-size: 18px;
+      }
+
+      .summary-card p {
+        margin: 0;
+        color: rgba(247, 239, 227, 0.82);
+        font-size: 14px;
+      }
+
+      .section-title {
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        margin: 0 0 14px;
+        color: var(--brand);
+        font-size: 22px;
+      }
+
+      .section-title::before {
+        content: "";
+        width: 34px;
+        height: 3px;
+        background: var(--copper);
+        border-radius: 99px;
+      }
+
+      .changes {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 14px;
+        margin-bottom: 16mm;
+      }
+
+      .change {
+        background: rgba(255, 255, 255, 0.86);
+        border: 1px solid var(--line);
+        border-radius: 16px;
+        padding: 18px;
+        min-height: 132px;
+      }
+
+      .change strong {
+        display: block;
+        color: var(--brand);
+        font-size: 16px;
+        margin-bottom: 8px;
+      }
+
+      .change p {
+        margin: 0;
+        color: var(--muted);
+        font-size: 13.5px;
+      }
+
+      .impact {
+        display: grid;
+        grid-template-columns: 0.95fr 1.05fr;
+        gap: 14px;
+        margin-bottom: 14mm;
+      }
+
+      .panel {
+        background: var(--panel);
+        border: 1px solid var(--line);
+        border-radius: 18px;
+        padding: 20px;
+      }
+
+      .panel.copper {
+        background: var(--copper-soft);
+        border-color: rgba(167, 111, 77, 0.35);
+      }
+
+      .panel h3 {
+        margin: 0 0 12px;
+        color: var(--brand);
+        font-size: 18px;
+      }
+
+      ul {
+        margin: 0;
+        padding: 0;
+        list-style: none;
+      }
+
+      li {
+        display: flex;
+        gap: 10px;
+        color: var(--muted);
+        font-size: 13.5px;
+        margin: 10px 0;
+      }
+
+      li::before {
+        content: "";
+        width: 7px;
+        height: 7px;
+        flex: 0 0 auto;
+        margin-top: 7px;
+        border-radius: 50%;
+        background: var(--copper);
+      }
+
+      .status-strip {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 10px;
+        margin-top: 12px;
+      }
+
+      .status-item {
+        background: var(--brand-soft);
+        border-radius: 14px;
+        padding: 14px;
+        color: var(--brand);
+      }
+
+      .status-item span {
+        display: block;
+        font-size: 11px;
+        font-weight: 800;
+        text-transform: uppercase;
+        letter-spacing: 0.8px;
+        color: var(--copper);
+        margin-bottom: 4px;
+      }
+
+      .status-item b {
+        font-size: 15px;
+      }
+
+      .footer {
+        position: absolute;
+        left: 18mm;
+        right: 18mm;
+        bottom: 12mm;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        border-top: 1px solid var(--line);
+        padding-top: 10px;
+        color: var(--muted);
+        font-size: 11px;
+      }
+
+      .footer img {
+        width: 22px;
+        height: 22px;
+        border-radius: 6px;
+      }
+
+      @media print {
+        body {
+          background: white;
+        }
+
+        .page {
+          margin: 0;
+          box-shadow: none;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="page">
+      <header class="header">
+        <div class="logo">
+          <img src="../src/assets/brand/leadra-mark-dark.png" alt="Leadra" />
+          <div>
+            <div class="brand-name">Leadra</div>
+            <div class="report-meta" style="text-align: left">Client update report</div>
+          </div>
+        </div>
+        <div class="report-meta">
+          Prepared for client review<br />
+          May 18, 2026
+        </div>
+      </header>
+
+      <section class="hero">
+        <div>
+          <p class="eyebrow">Completed improvements</p>
+          <h1>Leadra App Update Summary</h1>
+          <p class="intro">
+            This report summarizes the latest implemented improvements across the Leadra app, focused on easier unit discovery, smoother unit creation, cleaner client documents, and a more polished review experience.
+          </p>
+        </div>
+        <aside class="summary-card">
+          <h2>Update Status</h2>
+          <p>
+            The latest improvements have been applied to the live Leadra app and are ready for client review.
+          </p>
+          <div class="status-strip">
+            <div class="status-item">
+              <span>Status</span>
+              <b>Complete</b>
+            </div>
+            <div class="status-item">
+              <span>Focus</span>
+              <b>Usability</b>
+            </div>
+            <div class="status-item">
+              <span>Review</span>
+              <b>Ready</b>
+            </div>
+          </div>
+        </aside>
+      </section>
+
+      <section>
+        <h2 class="section-title">Implemented Changes</h2>
+        <div class="changes">
+          <article class="change">
+            <strong>Global Unit Search</strong>
+            <p>
+              The Units page now supports searching and filtering across all destinations and projects immediately, without requiring users to select a destination first.
+            </p>
+          </article>
+          <article class="change">
+            <strong>Improved Browsing Flow</strong>
+            <p>
+              Destination and project cards remain available as quick browsing shortcuts, while global search gives users a faster way to find units directly.
+            </p>
+          </article>
+          <article class="change">
+            <strong>Owner Name Flexibility</strong>
+            <p>
+              Users can now reuse an owner name when creating a new unit. Duplicate prevention remains focused on owner phone numbers where it matters.
+            </p>
+          </article>
+          <article class="change">
+            <strong>Cleaner Client PDF Names</strong>
+            <p>
+              Shared client PDFs now use shorter, cleaner filenames that keep the key unit information and remove unnecessary extra details.
+            </p>
+          </article>
+          <article class="change">
+            <strong>Media Review Polish</strong>
+            <p>
+              The media review area has been improved for readability, especially in dark mode, making uploaded images and review information easier to see.
+            </p>
+          </article>
+          <article class="change">
+            <strong>Mobile Layout Refinement</strong>
+            <p>
+              The create-unit review screen now behaves better on mobile, with actions positioned so they do not cover uploaded media.
+            </p>
+          </article>
+          <article class="change">
+            <strong>Smoother Unit Creation</strong>
+            <p>
+              The create-unit flow has been strengthened so users receive clearer guidance if something cannot be saved successfully.
+            </p>
+          </article>
+          <article class="change">
+            <strong>Live App Update</strong>
+            <p>
+              The latest version has been applied to the live Leadra app and checked for availability.
+            </p>
+          </article>
+        </div>
+      </section>
+
+      <section class="impact">
+        <div class="panel copper">
+          <h3>Client Benefit</h3>
+          <ul>
+            <li>Users can find units faster from a single place.</li>
+            <li>Data entry is less restrictive and better matches real usage.</li>
+            <li>Client-facing PDF files look cleaner and easier to share.</li>
+            <li>The create-unit experience is clearer and more reliable.</li>
+          </ul>
+        </div>
+        <div class="panel">
+          <h3>Suggested Client Review</h3>
+          <ul>
+            <li>Open the Units page and try filtering before choosing a destination.</li>
+            <li>Create a unit using an owner name that already exists.</li>
+            <li>Upload media and review the final create-unit screen on mobile.</li>
+            <li>Generate a client PDF and confirm the shorter filename format.</li>
+          </ul>
+        </div>
+      </section>
+
+      <footer class="footer">
+        <span>Leadra client update report</span>
+        <img src="../src/assets/brand/leadra-mark-dark.png" alt="" />
+      </footer>
+    </main>
+  </body>
+</html>

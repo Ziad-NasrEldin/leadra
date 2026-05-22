@@ -361,6 +361,39 @@ describe('Leadra product workflows', () => {
     expect(result.errorKey).toBe('error.invalidVideoUpload')
   })
 
+  it('rejects malformed unit creation numbers before creating a unit', () => {
+    const result = createUnitWorkflow(state(), sales, {
+      developerId: 'dev-palm',
+      developerName: 'Palm Hills',
+      projectId: 'project-zed',
+      projectName: 'ZED East',
+      destinationId: 'dest-new-cairo',
+      destinationName: 'New Cairo',
+      unitType: 'Apartment',
+      floor: '1st',
+      bua: Number.NaN,
+      viewId: 'view-garden',
+      viewName: 'Garden',
+      bedrooms: 3,
+      bathrooms: 2,
+      elevator: true,
+      finish: 'Fully Finished',
+      furnished: false,
+      paymentMethod: 'cash',
+      totalAmount: 6_000_000,
+      deliveryExpectancy: { mode: 'year', year: 2029 },
+      originalOwnerName: 'Malformed Owner',
+      countryCode: '+20',
+      originalOwnerPhone: '010 3333 8899',
+      salesNotes: 'Malformed attempt.',
+      media: [],
+    })
+
+    expect(result.ok).toBe(false)
+    expect(result.error).toBe('BUA must be greater than zero.')
+    expect(result.state.units).toHaveLength(state().units.length)
+  })
+
   it('rejects same-project duplicate owner phone and records the attempt', () => {
     const result = createUnitWorkflow(state(), sales, {
       developerId: 'dev-palm',
@@ -397,6 +430,72 @@ describe('Leadra product workflows', () => {
       actorId: sales.id,
       projectId: 'project-new-cairo',
     })
+  })
+
+  it('allows the same owner name inside one project when owner phones differ', () => {
+    const result = createUnitWorkflow(state(), sales, {
+      developerId: 'dev-palm',
+      developerName: 'Palm Hills',
+      projectId: 'project-new-cairo',
+      projectName: 'New Cairo Estates',
+      destinationId: 'dest-new-cairo',
+      destinationName: 'New Cairo',
+      unitType: 'Apartment',
+      floor: '1st',
+      bua: 155,
+      viewId: 'view-garden',
+      viewName: 'Garden',
+      bedrooms: 3,
+      bathrooms: 2,
+      elevator: true,
+      finish: 'Fully Finished',
+      furnished: false,
+      paymentMethod: 'cash',
+      totalAmount: 6_000_000,
+      deliveryExpectancy: { mode: 'year', year: 2029 },
+      originalOwnerName: 'Hassan Nabil',
+      countryCode: '+20',
+      originalOwnerPhone: '010 3333 4444',
+      salesNotes: 'Repeated owner name with a new phone.',
+      media: [],
+    })
+
+    expect(result.ok).toBe(true)
+    expect(result.state.units[0].originalOwnerName).toBe('Hassan Nabil')
+    expect(result.state.units[0].normalizedOwnerPhone).toBe('+201033334444')
+  })
+
+  it('allows the same owner phone in a different project', () => {
+    const result = createUnitWorkflow(state(), sales, {
+      developerId: 'dev-palm',
+      developerName: 'Palm Hills',
+      projectId: 'project-zed',
+      projectName: 'ZED East',
+      destinationId: 'dest-new-cairo',
+      destinationName: 'New Cairo',
+      unitType: 'Apartment',
+      floor: '1st',
+      bua: 155,
+      viewId: 'view-garden',
+      viewName: 'Garden',
+      bedrooms: 3,
+      bathrooms: 2,
+      elevator: true,
+      finish: 'Fully Finished',
+      furnished: false,
+      paymentMethod: 'cash',
+      totalAmount: 6_000_000,
+      deliveryExpectancy: { mode: 'year', year: 2029 },
+      originalOwnerName: 'Different Project Owner',
+      countryCode: '+971',
+      originalOwnerPhone: '+971 50 123 4567',
+      salesNotes: 'Same phone in a different project.',
+      media: [],
+    })
+
+    expect(result.ok).toBe(true)
+    expect(result.state.units[0].projectId).toBe('project-zed')
+    expect(result.state.units[0].normalizedOwnerPhone).toBe('+971501234567')
   })
 
   it('rejects owner phone values that do not match the selected country format', () => {
@@ -530,6 +629,8 @@ describe('Leadra product workflows', () => {
       paymentMethod: 'installment',
       totalAmount: 6_000_000,
       downPayment: 1_200_000,
+      maintenancePaid: false,
+      maintenanceCost: 300_000,
       installmentType: 'annual',
       installmentStartMonth: '2029-01-01',
       installmentEndMonth: '2032-01-01',
@@ -543,21 +644,23 @@ describe('Leadra product workflows', () => {
     expect(created.ok).toBe(true)
     const unit = created.state.units[0]
     expect(unit.paymentSchedule).toHaveLength(4)
+    expect(unit.remainingPayment).toBe(5_100_000)
+    expect(unit.maintenanceCost).toBe(300_000)
 
     const paid = updatePaymentScheduleWorkflow(created.state, admin, unit.id, unit.paymentSchedule![0].id, true)
     expect(paid.ok).toBe(true)
     const paidUnit = paid.state.units.find((item) => item.id === unit.id)!
-    expect(paidUnit.remainingPayment).toBe(3_600_000)
+    expect(paidUnit.remainingPayment).toBe(3_900_000)
     expect(paidUnit.paymentSchedule?.[0]).toMatchObject({ paid: true, paidByName: admin.fullName })
-    expect(paidUnit.paymentHistory?.[0]).toMatchObject({ action: 'paid', previousRemainingValue: 4_800_000, newRemainingValue: 3_600_000 })
+    expect(paidUnit.paymentHistory?.[0]).toMatchObject({ action: 'paid', previousRemainingValue: 5_100_000, newRemainingValue: 3_900_000 })
     expect(paid.state.auditLogs.at(0)?.actionType).toBe('Payment marked paid')
     expect(paid.state.analyticsEvents.at(0)?.eventType).toBe('installment_updated')
 
     const unpaid = updatePaymentScheduleWorkflow(paid.state, admin, unit.id, unit.paymentSchedule![0].id, false)
     expect(unpaid.ok).toBe(true)
     const unpaidUnit = unpaid.state.units.find((item) => item.id === unit.id)!
-    expect(unpaidUnit.remainingPayment).toBe(4_800_000)
-    expect(unpaidUnit.paymentHistory?.[0]).toMatchObject({ action: 'unpaid', previousRemainingValue: 3_600_000, newRemainingValue: 4_800_000 })
+    expect(unpaidUnit.remainingPayment).toBe(5_100_000)
+    expect(unpaidUnit.paymentHistory?.[0]).toMatchObject({ action: 'unpaid', previousRemainingValue: 3_900_000, newRemainingValue: 5_100_000 })
   })
 
   it('lets admins edit owner fields with validation and duplicate-phone protection', () => {

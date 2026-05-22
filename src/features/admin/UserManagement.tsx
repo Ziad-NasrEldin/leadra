@@ -57,10 +57,10 @@ export function UserManagementCard({
         <div className="user-avatar">{getUserInitials(user.fullName)}</div>
         <div>
           <div className="user-card-title">
-            <strong>{user.fullName}</strong>
+            <strong dir="auto">{user.fullName}</strong>
             <span className={`status-pill ${user.status === 'active' ? 'available' : 'sold'}`}>{getAccountStatusLabel(locale, user.status)}</span>
           </div>
-          <p>{user.jobTitle}</p>
+          <p dir="auto">{user.jobTitle}</p>
           <small dir="auto">{user.email} / {user.phoneNumber}</small>
         </div>
       </div>

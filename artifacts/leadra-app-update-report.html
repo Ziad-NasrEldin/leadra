@@ -1,0 +1,520 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Leadra App Update Report</title>
+    <style>
+      @page {
+        size: Letter;
+        margin: 0;
+      }
+
+      :root {
+        --brand-ivory: #f6f1ea;
+        --brand-linen: #efe7dd;
+        --brand-copper: #a76f4d;
+        --brand-black: #0d0d0f;
+        --brand-slate: #1f2933;
+        --brand-graphite: #1f1f23;
+        --brand-charcoal: #2a2623;
+        --brand-taupe: #7b6f64;
+        --panel: #fffdf8;
+        --line: rgba(42, 38, 35, 0.14);
+        --on-dark: #f7efe3;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        background: #ddd7ce;
+        color: var(--brand-charcoal);
+        font-family: Manrope, Avenir Next, Arial, sans-serif;
+        -webkit-print-color-adjust: exact;
+        print-color-adjust: exact;
+      }
+
+      .page {
+        position: relative;
+        width: 8.5in;
+        height: 11in;
+        margin: 0 auto;
+        overflow: hidden;
+        background: var(--brand-ivory);
+        padding: 0.45in 0.52in 0.38in;
+      }
+
+      .page::before {
+        content: "";
+        position: absolute;
+        inset: 0 0 auto;
+        height: 0.09in;
+        background: linear-gradient(90deg, var(--brand-black), var(--brand-graphite), var(--brand-copper));
+      }
+
+      header,
+      main,
+      footer {
+        position: relative;
+        z-index: 1;
+      }
+
+      header {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 0.3in;
+        margin-bottom: 0.24in;
+      }
+
+      .brand {
+        display: flex;
+        align-items: center;
+        gap: 0.13in;
+      }
+
+      .brand img {
+        width: 0.58in;
+        height: 0.58in;
+        border-radius: 0.12in;
+      }
+
+      .brand-name {
+        margin: 0;
+        color: var(--brand-graphite);
+        font-size: 0.23in;
+        font-weight: 900;
+        line-height: 1;
+      }
+
+      .brand-meta {
+        margin: 0.04in 0 0;
+        color: var(--brand-taupe);
+        font-size: 0.087in;
+        font-weight: 700;
+      }
+
+      .meta {
+        display: grid;
+        gap: 0.04in;
+        min-width: 2.05in;
+        color: var(--brand-taupe);
+        font-size: 0.082in;
+        font-weight: 800;
+        text-align: right;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+      }
+
+      .meta span {
+        color: var(--brand-charcoal);
+        font-size: 0.096in;
+        letter-spacing: 0;
+        text-transform: none;
+      }
+
+      .hero {
+        display: grid;
+        grid-template-columns: 1.25fr 0.85fr;
+        gap: 0.26in;
+        align-items: stretch;
+        margin-bottom: 0.18in;
+      }
+
+      .eyebrow {
+        margin: 0 0 0.07in;
+        color: #a76f4d;
+        font-size: 0.075in;
+        font-weight: 900;
+        letter-spacing: 0.15em;
+        text-transform: uppercase;
+      }
+
+      h1 {
+        margin: 0;
+        color: var(--brand-graphite);
+        font-family: Fraunces, Georgia, serif;
+        font-size: 0.39in;
+        font-weight: 800;
+        letter-spacing: 0;
+        line-height: 0.92;
+      }
+
+      .subtitle {
+        margin: 0.08in 0 0;
+        max-width: 4.5in;
+        color: var(--brand-charcoal);
+        font-size: 0.125in;
+        font-weight: 800;
+        line-height: 1.35;
+      }
+
+      .intro {
+        margin: 0.08in 0 0;
+        max-width: 4.4in;
+        color: #4b554e;
+        font-size: 0.097in;
+        line-height: 1.45;
+      }
+
+      .status-card {
+        align-self: end;
+        min-height: 1.54in;
+        padding: 0.18in;
+        border: 1px solid rgba(167, 111, 77, 0.28);
+        border-radius: 0.16in;
+        background: var(--brand-graphite);
+        color: var(--on-dark);
+      }
+
+      .status-card h2 {
+        margin: 0 0 0.08in;
+        font-size: 0.14in;
+        line-height: 1.1;
+      }
+
+      .status-card p {
+        margin: 0;
+        font-size: 0.088in;
+        line-height: 1.44;
+      }
+
+      .status-pills {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 0.07in;
+        margin-top: 0.13in;
+      }
+
+      .pill {
+        min-height: 0.42in;
+        padding: 0.07in;
+        border-radius: 0.1in;
+        background: #edf2ec;
+        color: var(--brand-graphite);
+      }
+
+      .pill small {
+        display: block;
+        margin-bottom: 0.03in;
+        color: #a76f4d;
+        font-size: 0.058in;
+        font-weight: 900;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+      }
+
+      .pill strong {
+        font-size: 0.092in;
+        line-height: 1;
+      }
+
+      .summary {
+        display: grid;
+        grid-template-columns: 0.96fr 1.04fr;
+        gap: 0.14in;
+        margin-bottom: 0.16in;
+      }
+
+      .summary-box {
+        padding: 0.13in 0.15in;
+        border: 1px solid var(--line);
+        border-radius: 0.13in;
+        background: var(--panel);
+      }
+
+      .summary-box h2,
+      .section-title {
+        margin: 0 0 0.08in;
+        color: var(--brand-graphite);
+        font-size: 0.14in;
+        font-weight: 900;
+        line-height: 1;
+      }
+
+      .summary-box p {
+        margin: 0;
+        color: #4b554e;
+        font-size: 0.086in;
+        line-height: 1.43;
+      }
+
+      .benefits {
+        display: grid;
+        grid-template-columns: repeat(2, 1fr);
+        gap: 0.055in 0.12in;
+        margin: 0;
+        padding: 0;
+        list-style: none;
+      }
+
+      .benefits li {
+        position: relative;
+        padding-left: 0.12in;
+        color: #435047;
+        font-size: 0.078in;
+        font-weight: 750;
+        line-height: 1.34;
+      }
+
+      .benefits li::before {
+        content: "";
+        position: absolute;
+        left: 0;
+        top: 0.045in;
+        width: 0.045in;
+        height: 0.045in;
+        border-radius: 50%;
+        background: var(--brand-copper);
+      }
+
+      .section-heading {
+        display: flex;
+        align-items: center;
+        gap: 0.08in;
+        margin-bottom: 0.1in;
+      }
+
+      .section-heading::before {
+        content: "";
+        width: 0.26in;
+        height: 0.02in;
+        border-radius: 99px;
+        background: var(--brand-copper);
+      }
+
+      .section-heading .section-title {
+        margin: 0;
+        font-size: 0.16in;
+      }
+
+      .improvements {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 0.095in;
+        margin-bottom: 0.16in;
+      }
+
+      .improvement {
+        min-height: 0.88in;
+        padding: 0.11in 0.12in;
+        border: 1px solid rgba(42, 38, 35, 0.12);
+        border-radius: 0.11in;
+        background: var(--panel);
+      }
+
+      .improvement h3 {
+        margin: 0 0 0.045in;
+        color: var(--brand-graphite);
+        font-size: 0.092in;
+        font-weight: 900;
+        line-height: 1.16;
+      }
+
+      .improvement p {
+        margin: 0;
+        color: #526057;
+        font-size: 0.072in;
+        line-height: 1.32;
+      }
+
+      .review {
+        display: grid;
+        grid-template-columns: 1.05fr 0.95fr;
+        gap: 0.13in;
+        align-items: start;
+      }
+
+      .checklist {
+        margin: 0;
+        padding: 0;
+        list-style: none;
+      }
+
+      .checklist li {
+        display: grid;
+        grid-template-columns: 0.17in 1fr;
+        gap: 0.07in;
+        margin-bottom: 0.055in;
+        color: #435047;
+        font-size: 0.077in;
+        font-weight: 750;
+        line-height: 1.28;
+      }
+
+      .checklist li::before {
+        content: "";
+        width: 0.12in;
+        height: 0.12in;
+        margin-top: 0.01in;
+        border: 1px solid rgba(167, 111, 77, 0.78);
+        border-radius: 0.035in;
+        background: var(--brand-linen);
+      }
+
+      .closing {
+        padding: 0.14in 0.16in;
+        border-radius: 0.13in;
+        background: #ebe2d4;
+        color: var(--brand-graphite);
+        font-size: 0.087in;
+        font-weight: 800;
+        line-height: 1.42;
+      }
+
+      footer {
+        position: absolute;
+        right: 0.52in;
+        bottom: 0.25in;
+        left: 0.52in;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        color: var(--brand-taupe);
+        font-size: 0.066in;
+        font-weight: 800;
+      }
+
+      footer img {
+        width: 0.19in;
+        height: 0.19in;
+        border-radius: 0.04in;
+      }
+    </style>
+  </head>
+  <body>
+    <article class="page">
+      <header>
+        <div class="brand">
+          <img src="../src/assets/brand/leadra-logo-dark.jpeg" alt="Leadra logo" />
+          <div>
+            <p class="brand-name">Leadra</p>
+            <p class="brand-meta">Client update report</p>
+          </div>
+        </div>
+        <div class="meta">
+          <div>Date <span>May 18, 2026</span></div>
+          <div>Status <span>Implemented and ready for review</span></div>
+        </div>
+      </header>
+
+      <main>
+        <section class="hero">
+          <div>
+            <p class="eyebrow">Completed improvements and refinements</p>
+            <h1>Leadra App Update Report</h1>
+            <p class="subtitle">
+              A concise summary of the latest improvements completed for the Leadra app.
+            </p>
+            <p class="intro">
+              The updates focused on making the platform easier to use, improving the unit creation
+              experience, refining client-facing documents, and polishing key mobile and review screens.
+            </p>
+          </div>
+          <aside class="status-card">
+            <h2>Update Status</h2>
+            <p>
+              The latest version has been applied to the live Leadra app and is ready for client review.
+            </p>
+            <div class="status-pills">
+              <div class="pill"><small>Status</small><strong>Live</strong></div>
+              <div class="pill"><small>Focus</small><strong>Usability</strong></div>
+              <div class="pill"><small>Review</small><strong>Ready</strong></div>
+            </div>
+          </aside>
+        </section>
+
+        <section class="summary">
+          <div class="summary-box">
+            <h2>Executive Summary</h2>
+            <p>
+              This update improves how users search for units, create listings, review uploaded media,
+              and share unit PDFs with clients. Daily workflows are now faster, clearer, and more
+              reliable for the Leadra team.
+            </p>
+          </div>
+          <div class="summary-box">
+            <h2>Client Benefits</h2>
+            <ul class="benefits">
+              <li>Faster unit discovery from one central page.</li>
+              <li>More practical data entry for sales and admin teams.</li>
+              <li>Cleaner PDF files when sharing units with clients.</li>
+              <li>Better mobile experience during unit creation.</li>
+              <li>Clearer feedback when creating or reviewing listings.</li>
+              <li>More polished and reliable day-to-day workflow.</li>
+            </ul>
+          </div>
+        </section>
+
+        <section>
+          <div class="section-heading"><h2 class="section-title">Implemented Improvements</h2></div>
+          <div class="improvements">
+            <div class="improvement">
+              <h3>Global Unit Search</h3>
+              <p>Search and filter units from the main Units page across all destinations and projects.</p>
+            </div>
+            <div class="improvement">
+              <h3>Improved Browsing Flow</h3>
+              <p>Destination and project cards remain available, with a faster direct-search path.</p>
+            </div>
+            <div class="improvement">
+              <h3>Owner Name Flexibility</h3>
+              <p>The same owner name can now be reused when creating units for real-world cases.</p>
+            </div>
+            <div class="improvement">
+              <h3>Smarter Duplicate Handling</h3>
+              <p>Duplicate prevention stays focused on owner phone numbers to avoid actual duplicate records.</p>
+            </div>
+            <div class="improvement">
+              <h3>Cleaner Client PDF Names</h3>
+              <p>Client PDF filenames are shorter and cleaner while preserving important unit information.</p>
+            </div>
+            <div class="improvement">
+              <h3>Improved Media Review</h3>
+              <p>Uploaded image review is easier to read and use before submitting a unit.</p>
+            </div>
+            <div class="improvement">
+              <h3>Better Mobile Layout</h3>
+              <p>Review screen action buttons no longer cover uploaded media on mobile.</p>
+            </div>
+            <div class="improvement">
+              <h3>Clearer Create-Unit Feedback</h3>
+              <p>The creation flow gives clearer messages when something needs user attention.</p>
+            </div>
+            <div class="improvement">
+              <h3>More Reliable Unit Creation</h3>
+              <p>Saved units and their media now behave more consistently through creation.</p>
+            </div>
+          </div>
+        </section>
+
+        <section class="review">
+          <div class="summary-box">
+            <h2>Suggested Review Checklist</h2>
+            <ul class="checklist">
+              <li>Open Units and test filtering before selecting a destination.</li>
+              <li>Search across multiple destinations and projects.</li>
+              <li>Create a unit using an owner name that already exists.</li>
+              <li>Upload media and review the final create-unit screen on mobile.</li>
+              <li>Generate a client PDF and confirm the shorter filename format.</li>
+              <li>Confirm the live app feels clear and ready for team use.</li>
+            </ul>
+          </div>
+          <div class="closing">
+            <strong>Closing</strong><br />
+            These updates improve the usability, clarity, and polish of the Leadra platform while
+            keeping the app aligned with the team’s real operational workflow.
+          </div>
+        </section>
+      </main>
+
+      <footer>
+        <span>Leadra App Update Report · Prepared for client review</span>
+        <img src="../src/assets/brand/leadra-mark-dark.png" alt="Leadra mark" />
+      </footer>
+    </article>
+  </body>
+</html>

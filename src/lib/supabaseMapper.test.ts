@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { toUnitInsertPayload, toUnitUpdatePayload, toUnitViewModel, type SupabaseUnitRow } from './supabaseMapper'
+import { toMediaInsertPayload, toUnitInsertPayload, toUnitUpdatePayload, toUnitViewModel, type SupabaseUnitRow } from './supabaseMapper'
 import type { CreateUnitInput, LeadraUser, UnitEditInput } from './types'
 
 const actor: LeadraUser = {
@@ -129,6 +129,19 @@ describe('Supabase mappers', () => {
     })
   })
 
+  it('keeps unpaid maintenance cost and omits its due date on insert', () => {
+    expect(toUnitInsertPayload({
+      ...input,
+      maintenancePaid: false,
+      maintenanceCost: 45_000,
+      maintenanceDueDate: null,
+    }, actor)).toMatchObject({
+      maintenance_paid: false,
+      maintenance_cost: 45_000,
+      maintenance_due_date: null,
+    })
+  })
+
   it('creates a snake_case unit update payload without protected fields', () => {
     const payload = toUnitUpdatePayload(editInput, {
       canEditOwner: true,
@@ -200,6 +213,44 @@ describe('Supabase mappers', () => {
     expect(payload).not.toHaveProperty('transfer_fees')
   })
 
+  it('maps image PDF visibility into media inserts and leaves database ids server-generated', () => {
+    const payload = toMediaInsertPayload({
+      id: 'media-1',
+      type: 'image',
+      url: 'units/105/media-1.jpg',
+      name: 'media-1.jpg',
+      sizeBytes: 1024,
+      includeInPdf: true,
+    })
+
+    expect(payload).toMatchObject({
+      type: 'image',
+      storage_path: 'units/105/media-1.jpg',
+      file_name: 'media-1.jpg',
+      size_bytes: 1024,
+      include_in_pdf: true,
+    })
+    expect(payload).not.toHaveProperty('id')
+    expect(payload).not.toHaveProperty('unit_id')
+  })
+
+  it('keeps PDF attachments out of generated unit PDFs when persisting media', () => {
+    expect(toMediaInsertPayload({
+      id: 'media-pdf',
+      type: 'pdf',
+      url: 'units/105/floor-plan.pdf',
+      name: 'floor-plan.pdf',
+      sizeBytes: 2048,
+      includeInPdf: true,
+    })).toMatchObject({
+      type: 'pdf',
+      storage_path: 'units/105/floor-plan.pdf',
+      file_name: 'floor-plan.pdf',
+      size_bytes: 2048,
+      include_in_pdf: false,
+    })
+  })
+
   it('maps joined Supabase rows back to the app unit model', () => {
     const row: SupabaseUnitRow = {
       id: 105,
@@ -249,6 +300,9 @@ describe('Supabase mappers', () => {
       sales_notes: 'Serious lead.',
       status: 'available',
       archived: false,
+      is_special: true,
+      special_marked_at: '2026-05-05T00:00:00.000Z',
+      special_marked_by: 'admin-1',
       created_by: 'user-1',
       creator: { full_name: 'Sales User' },
       team_id: null,
@@ -270,6 +324,9 @@ describe('Supabase mappers', () => {
     expect(toUnitViewModel(row).maintenanceDueDate).toBe('2028-06-15')
     expect(toUnitViewModel(row).installmentStartMonth).toBeNull()
     expect(toUnitViewModel(row).customInstallmentText).toBeNull()
+    expect(toUnitViewModel(row).isSpecial).toBe(true)
+    expect(toUnitViewModel(row).specialMarkedAt).toBe('2026-05-05T00:00:00.000Z')
+    expect(toUnitViewModel(row).specialMarkedBy).toBe('admin-1')
     expect(toUnitViewModel(row).teamId).toBe('')
     expect(toUnitViewModel(row).branchId).toBe('')
     expect(toUnitViewModel(row).media).toEqual([

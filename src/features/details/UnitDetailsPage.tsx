@@ -1,6 +1,6 @@
-import { Archive, Download, FileText, Share2, Trash2 } from 'lucide-react'
+import { Archive, Download, FileText, Share2, Star, Trash2 } from 'lucide-react'
 import { useEffect, useState, type FormEvent } from 'react'
-import { buildPaymentTimetable, canAddAdminManagerNote, canArchiveUnit, canEditAnyUnitDetails, canEditNonOwnerUnitDetails, canEditOwnerFields, canEditUnitCommission, canEditUnitPricing, canViewOwnerData, canViewSalesSensitiveData, formatCurrency, formatDeliveryExpectancy, getApplicableUnitAreaFields, getOwnerPhoneCountryMeta, getOwnerPhoneCountryOptions, PRD_FLOOR_OPTIONS, PRD_UNIT_TYPES } from '../../lib/domain'
+import { buildPaymentTimetable, calculateDisplayedPaymentTotals, canAddAdminManagerNote, canArchiveUnit, canEditAnyUnitDetails, canEditNonOwnerUnitDetails, canEditOwnerFields, canEditUnitCommission, canEditUnitPricing, canManageUnitSpecialStatus, canViewOwnerData, canViewSalesSensitiveData, formatCurrency, formatDeliveryExpectancy, getApplicableUnitAreaFields, getOwnerPhoneCountryMeta, getOwnerPhoneCountryOptions, PRD_FLOOR_OPTIONS, PRD_UNIT_TYPES } from '../../lib/domain'
 import { formatCount, formatDateTime, getPaymentMethodLabel, getRoleLabel, getStatusLabel, useLocale, type LocaleCode } from '../../lib/i18n'
 import type { InstallmentType, LeadraMediaFile, LeadraUnit, LeadraUser, LookupValue, PaymentMethod, UnitStatus } from '../../lib/types'
 import { EmptyState, InfoPanel, NativeLookupSelect, NamedSelectField, NumberField, OwnerPhoneField, ReadOnlyField, RequiredLabel } from '../../components/LeadraUi'
@@ -12,6 +12,7 @@ export function UnitDetailsPage({
   unit,
   lookupValues,
   onArchive,
+  onSpecialChange,
   onUpdateUnit,
   onStatusChange,
   onGeneratePdf,
@@ -22,6 +23,7 @@ export function UnitDetailsPage({
   pdfSharing,
   pdfReady,
   statusUpdating,
+  specialUpdating,
   statusActionFeedback,
   onSaveNote,
   onDeleteNote,
@@ -37,6 +39,7 @@ export function UnitDetailsPage({
   unit: LeadraUnit
   lookupValues: LookupValue[]
   onArchive: () => void
+  onSpecialChange: (special: boolean) => void
   onUpdateUnit: (event: FormEvent<HTMLFormElement>) => Promise<boolean>
   onStatusChange: (status: UnitStatus) => void
   onGeneratePdf: () => void
@@ -47,6 +50,7 @@ export function UnitDetailsPage({
   pdfSharing: boolean
   pdfReady: boolean
   statusUpdating: boolean
+  specialUpdating: boolean
   statusActionFeedback: { status: UnitStatus; state: 'saving' | 'saved' } | null
   onSaveNote: (content: string) => void
   onDeleteNote: () => void
@@ -61,6 +65,7 @@ export function UnitDetailsPage({
   const { locale, t } = useLocale()
   const ownerAllowed = canViewOwnerData(user, unit)
   const canEditUnit = canEditAnyUnitDetails(user, unit)
+  const canManageSpecial = canManageUnitSpecialStatus(user, unit)
   const [sharedNoteState, setSharedNoteState] = useState({ unitId: unit.id, value: unit.adminManagerNotes[0]?.content ?? '' })
   const sharedNote = sharedNoteState.unitId === unit.id ? sharedNoteState.value : unit.adminManagerNotes[0]?.content ?? ''
   const setSharedNote = (value: string) => setSharedNoteState({ unitId: unit.id, value })
@@ -127,13 +132,13 @@ export function UnitDetailsPage({
           <span>{t('details.generateBrief')}</span>
           <div className="action-row wrap">
           <button className="primary-button" type="button" onClick={onGeneratePdf} disabled={pdfGenerating || pdfSharing}>
-            <FileText size={18} /> {pdfGenerating ? 'Preparing PDF...' : pdfReady ? t('details.regeneratePdf') : t('details.generateBrief')}
+            <FileText size={18} /> {pdfGenerating ? t('details.preparingPdf') : pdfReady ? t('details.regeneratePdf') : t('details.generateBrief')}
           </button>
           <button className="secondary-button" type="button" onClick={onDownloadPdf} disabled={!pdfReady || pdfGenerating || pdfSharing}>
             <Download size={18} /> {t('details.downloadPdf')}
           </button>
           <button className="secondary-button" type="button" onClick={onSharePdf} disabled={!pdfReady || pdfGenerating || pdfSharing}>
-            <Share2 size={18} /> {pdfSharing ? 'Preparing share...' : t('details.sharePdf')}
+            <Share2 size={18} /> {pdfSharing ? t('details.preparingShare') : t('details.sharePdf')}
           </button>
           <button className="secondary-button" type="button" onClick={onCopyShareLink}>
             <Share2 size={18} /> {t('details.shareLink')}
@@ -141,6 +146,17 @@ export function UnitDetailsPage({
           {canEditUnit && (
             <button className="secondary-button" type="button" onClick={() => setEditMode((value) => !value)}>
               {editMode ? t('details.cancelEdit') : t('details.editUnit')}
+            </button>
+          )}
+          {canManageSpecial && (
+            <button
+              className={`secondary-button special-action-button ${unit.isSpecial ? 'is-active' : ''}`}
+              type="button"
+              onClick={() => onSpecialChange(!unit.isSpecial)}
+              disabled={specialUpdating}
+            >
+              <Star size={18} fill={unit.isSpecial ? 'currentColor' : 'none'} />
+              {specialUpdating ? t('details.specialSaving') : unit.isSpecial ? t('details.removeSpecial') : t('details.markSpecial')}
             </button>
           )}
           {canArchiveUnit(user, unit) && <button className="danger-button" type="button" onClick={onArchive}><Archive size={18} /> {t('details.archive')}</button>}
@@ -178,7 +194,7 @@ export function UnitDetailsPage({
         />
       ) : (
         <section className="content-card motion-stage details-deferred-card" style={motionStyle(2, 70)}>
-          <p className="eyebrow">Preparing details</p>
+          <p className="eyebrow">{t('details.preparingDetails')}</p>
           <h2>{t('details.mainInfo')}</h2>
           <DetailsLoadingSkeleton />
         </section>
@@ -330,12 +346,12 @@ function UnitDetailsEditForm({
             />{' '}
             {t('create.maintenancePaid')}
           </label>
+          <label>
+            <RequiredLabel label={t('create.maintenanceCost')} required={canEditPricing} />
+            <input name="maintenanceCost" type="number" min={0} step="0.01" defaultValue={unit.maintenanceCost ?? 0} disabled={!canEditPricing || saving} required={canEditPricing} />
+          </label>
           {maintenancePaid && (
             <>
-              <label>
-                <RequiredLabel label={t('create.maintenanceCost')} required={canEditPricing} />
-                <input name="maintenanceCost" type="number" min={0} step="0.01" defaultValue={unit.maintenanceCost ?? ''} disabled={!canEditPricing || saving} required={canEditPricing} />
-              </label>
               <label>
                 <RequiredLabel label={t('create.maintenanceDueDate')} required={canEditPricing} />
                 <input name="maintenanceDueDate" type="date" defaultValue={unit.maintenanceDueDate ?? ''} disabled={!canEditPricing || saving} required={canEditPricing} />
@@ -356,6 +372,7 @@ function UnitDetailsEditForm({
                 label={t('details.installmentType')}
                 disabled={!canEditPaymentPlan || saving}
                 options={[
+                  { value: 'monthly', label: t('create.monthly') },
                   { value: 'quarterly', label: t('create.quarterly') },
                   { value: 'semi_annual', label: t('create.semiAnnual') },
                   { value: 'annual', label: t('create.annual') },
@@ -470,9 +487,9 @@ function UnitDetailsDeepSections({
   const installmentEndMonth = getUnitInstallmentEndMonth(unit)
   const customInstallmentText = getUnitCustomInstallmentText(unit)
   const hasInstallmentPeriod = Boolean(installmentStartMonth && installmentEndMonth)
-  const scheduledInstallmentTotal = installmentSchedule.reduce((total, row) => total + row.amount, 0)
+  const paymentTotals = calculateDisplayedPaymentTotals(unit)
   const paidInstallmentTotal = installmentSchedule.reduce((total, row) => total + (row.paid ? row.amount : 0), 0)
-  const timetableRemaining = Math.max(scheduledInstallmentTotal - paidInstallmentTotal, 0)
+  const timetableRemaining = paymentTotals.displayedRemainingAmount
   const areaFields = getApplicableUnitAreaFields(unit.unitType, unit.floor)
   const canRemoveMedia = canEditNonOwnerUnitDetails(user, unit)
   const mainInfoRows: [string, string | number | null][] = [
@@ -502,9 +519,19 @@ function UnitDetailsDeepSections({
   const pricingRows: [string, string | number | null][] = [
     [t('details.paymentMethod'), getPaymentMethodLabel(locale, unit.paymentMethod)],
     [t('details.totalAmount'), formatCurrency(unit.totalAmount, locale)],
-    [t('create.downPayment'), formatCurrency(unit.downPayment, locale)],
-    [t('details.remainingPayment'), formatCurrency(unit.remainingPayment, locale)],
+    ...(unit.paymentMethod === 'installment'
+      ? [
+          [t('create.downPayment'), formatCurrency(paymentTotals.originalDownPayment, locale)] as [string, string | number | null],
+          [t('details.paidAmount'), formatCurrency(paymentTotals.displayedPaidAmount, locale)] as [string, string | number | null],
+          [t('details.remainingPayment'), formatCurrency(paymentTotals.displayedRemainingAmount, locale)] as [string, string | number | null],
+        ]
+      : [
+          [t('details.paidAmount'), formatCurrency(paymentTotals.displayedPaidAmount, locale)] as [string, string | number | null],
+          [t('details.remainingPayment'), formatCurrency(paymentTotals.displayedRemainingAmount, locale)] as [string, string | number | null],
+        ]),
     [t('details.maintenancePaid'), unit.maintenancePaid ? t('common.yes') : t('common.no')],
+    [t('details.maintenanceCost'), formatCurrency(unit.maintenanceCost ?? null, locale)],
+    [t('details.maintenanceAllocation'), unit.maintenancePaid ? t('details.maintenanceInPaidAmount') : t('details.maintenanceInRemainingAmount')],
   ]
   const installmentRows: [string, string | number | null][] = []
   const postDeliveryRows: [string, string | number | null][] = [
@@ -512,7 +539,6 @@ function UnitDetailsDeepSections({
   ]
   if (unit.maintenancePaid) {
     pricingRows.push(
-      [t('details.maintenanceCost'), formatCurrency(unit.maintenanceCost ?? null, locale)],
       [t('details.maintenanceDueDate'), unit.maintenanceDueDate ?? t('common.notSet')],
     )
   }
@@ -597,11 +623,18 @@ function UnitDetailsDeepSections({
             ))}
             {installmentSchedule.length > 12 && <small>{t('details.scheduleTruncated', { count: formatCount(locale, installmentSchedule.length) })}</small>}
             {(unit.paymentHistory?.length ?? 0) > 0 && (
-              <div className="payment-history-list" aria-label="Payment history">
-                <strong>Payment history</strong>
+              <div className="payment-history-list" aria-label={t('details.paymentHistory')}>
+                <strong>{t('details.paymentHistory')}</strong>
                 {(unit.paymentHistory ?? []).slice(0, 5).map((history) => (
                   <small key={history.id}>
-                    {history.actorName} marked {formatCurrency(history.amount, locale)} {history.action} on {formatDateTime(locale, history.createdAt)}. Remaining: {formatCurrency(history.previousRemainingValue, locale)} to {formatCurrency(history.newRemainingValue, locale)}
+                    {t('details.paymentHistoryItem', {
+                      actorName: history.actorName,
+                      amount: formatCurrency(history.amount, locale),
+                      action: history.action,
+                      date: formatDateTime(locale, history.createdAt),
+                      previous: formatCurrency(history.previousRemainingValue, locale),
+                      next: formatCurrency(history.newRemainingValue, locale),
+                    })}
                   </small>
                 ))}
               </div>

@@ -12,6 +12,7 @@ import {
   Plus,
   Settings,
   SlidersHorizontal,
+  Star,
   Sun,
   Users,
 } from 'lucide-react'
@@ -32,6 +33,7 @@ import {
   canEditOwnerFields,
   canEditUnitCommission,
   canEditUnitPricing,
+  canManageUnitSpecialStatus,
   filterUnitsForUser,
   formatCurrency,
   isSoldStatus,
@@ -62,6 +64,7 @@ import {
   type LocalizedFlashMessage,
 } from './lib/messageRendering'
 import { authPasswordCandidates, createManagedUserProfile, updateManagedUserPassword, updateManagedUserProfile } from './lib/adminAuth'
+import { createUnitRemoteErrorFlash, mediaPdfVisibilityErrorFlash } from './lib/createUnitErrors'
 import { LeadraRepository } from './lib/repository'
 import { canUseDemoMode, isPerformanceDemoMode, isProductionMissingSupabaseConfig, isSupabaseConfigured, supabase } from './lib/supabase'
 import { loadSupabaseAnalyticsDashboard, loadSupabaseAppState, loadSupabaseProfile, markSupabaseLogin, setSupabaseThemePreference } from './lib/supabaseState'
@@ -76,6 +79,7 @@ import {
   deleteUnitAdminNoteWorkflow,
   removeUnitMediaWorkflow,
   saveUnitAdminNoteWorkflow,
+  setUnitSpecialWorkflow,
   updatePaymentScheduleWorkflow,
   updateSettingsWorkflow,
   updateUnitStatusWorkflow,
@@ -178,7 +182,6 @@ function errorMessage(error: unknown) {
   if (typeof error === 'object' && error && 'message' in error) return String(error.message)
   return 'Please try again.'
 }
-
 
 const createStepFromSlug: Record<CreateStepSlug, CreateUnitStep> = {
   property: 'Property',
@@ -306,6 +309,7 @@ function LeadraApp() {
   const [activeLookupValues, setActiveLookupValues] = useState<LookupValue[]>(initialWorkspace.lookupValues)
   const [unitFilters, setUnitFilters] = useState<UnitFilters>({ status: 'all' })
   const [remoteSearchUnits, setRemoteSearchUnits] = useState<LeadraUnit[] | null>(null)
+  const [remoteSearchView, setRemoteSearchView] = useState<'inventory' | 'special' | null>(null)
   const [flash, setFlash] = useState<LocalizedFlashMessage | null>(null)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [authLoading, setAuthLoading] = useState(isSupabaseConfigured)
@@ -315,6 +319,7 @@ function LeadraApp() {
   const [batchPdfAction, setBatchPdfAction] = useState<'generate' | 'download' | 'share' | null>(null)
   const [selectedBatchUnitIds, setSelectedBatchUnitIds] = useState<number[]>([])
   const [updatingStatusUnitId, setUpdatingStatusUnitId] = useState<number | null>(null)
+  const [updatingSpecialUnitId, setUpdatingSpecialUnitId] = useState<number | null>(null)
   const [updatingPaymentScheduleId, setUpdatingPaymentScheduleId] = useState<string | null>(null)
   const [statusActionFeedback, setStatusActionFeedback] = useState<{
     unitId: number
@@ -460,6 +465,10 @@ function LeadraApp() {
         routerNavigate(legacyPath, { replace: true })
         return
       }
+      if (currentUser && !isViewAllowedForUser(requestedRoute.view, currentUser)) {
+        routerNavigate('/dashboard', { replace: true })
+        return
+      }
       runPageTransition(() => {
         setView(requestedRoute.view)
         setFlash(null)
@@ -469,7 +478,7 @@ function LeadraApp() {
     syncRouteFromLocation()
     window.addEventListener('hashchange', syncRouteFromLocation)
     return () => window.removeEventListener('hashchange', syncRouteFromLocation)
-  }, [location.pathname, location.hash, routerNavigate])
+  }, [currentUser, location.pathname, location.hash, routerNavigate])
 
   useEffect(() => {
     if (!isSupabaseConfigured || !supabase) return undefined
@@ -575,9 +584,9 @@ function LeadraApp() {
   const routeDestinationId = route.view === 'units' ? route.destinationId : null
   const routeProjectId = route.view === 'units' ? route.projectId : null
   const routeUnitId = route.view === 'details' ? route.unitId : null
-  const activeSelectedDestinationId = routeDestinationId || unitFilters.destinationId || null
+  const activeSelectedDestinationId = routeDestinationId
   const projectSummaries = summarizeProjectsWithLookups(visibleUnits, activeLookupValues, locale, activeSelectedDestinationId)
-  const activeSelectedProjectId = routeProjectId || unitFilters.projectId || null
+  const activeSelectedProjectId = routeProjectId
   const unitsBrowserStage: UnitsBrowserStage = routeProjectId ? 'units' : routeDestinationId ? 'projects' : 'destinations'
   const activeCreateStep = createStepFromSlug[route.createStep]
   const activeAdminSection = adminSectionFromSlug[route.adminSection]
@@ -587,11 +596,14 @@ function LeadraApp() {
     : visibleUnits[0] ?? null
   const filteredUnits = searchUnits(user, appState.units, {
     ...unitFilters,
-    destinationId: unitFilters.destinationId || activeSelectedDestinationId || undefined,
-    projectId: activeSelectedProjectId ?? undefined,
+    destinationId: routeDestinationId ?? unitFilters.destinationId,
+    projectId: routeProjectId ?? unitFilters.projectId,
   })
-  const displayedUnits = remoteSearchUnits ?? filteredUnits
-  const selectedBatchUnits = displayedUnits.filter((unit) => selectedBatchUnitIds.includes(unit.id))
+  const displayedUnits = remoteSearchView === 'inventory' && remoteSearchUnits ? remoteSearchUnits : filteredUnits
+  const specialFilteredUnits = searchUnits(user, appState.units.filter((unit) => unit.isSpecial && !unit.archived), unitFilters)
+  const displayedSpecialUnits = (remoteSearchView === 'special' && remoteSearchUnits ? remoteSearchUnits : specialFilteredUnits).filter((unit) => unit.isSpecial && !unit.archived)
+  const activeBatchUnits = activeView === 'special' ? displayedSpecialUnits : displayedUnits
+  const selectedBatchUnits = activeBatchUnits.filter((unit) => selectedBatchUnitIds.includes(unit.id))
   const unreadCount = appState.notifications.filter(
     (notification) =>
       !notification.read &&
@@ -698,7 +710,7 @@ function LeadraApp() {
       totalAmount: Number(formData.get('totalAmount')),
       downPayment: paymentMethod === 'installment' ? Number(formData.get('downPayment')) : null,
       maintenancePaid,
-      maintenanceCost: maintenancePaid ? parseOptionalFormNumber(formData, 'maintenanceCost') : null,
+      maintenanceCost: parseOptionalFormNumber(formData, 'maintenanceCost'),
       maintenanceDueDate: maintenancePaid ? parseOptionalFormDate(formData, 'maintenanceDueDate') : null,
       installmentType,
       installmentStartMonth,
@@ -739,7 +751,7 @@ function LeadraApp() {
         newUnit = remoteUnit
       }
     } catch (error) {
-      setFlash({ text: `Unit could not be created: ${errorMessage(error)}`, messageKey: null, messageParams: null })
+      setFlash(createUnitRemoteErrorFlash(error))
       return
     }
 
@@ -770,7 +782,8 @@ function LeadraApp() {
       ? submittedPaymentMethodValue
       : unit.paymentMethod
     const submittedInstallmentTypeValue = formData.get('installmentType')
-    const submittedInstallmentType = submittedInstallmentTypeValue === 'quarterly' ||
+    const submittedInstallmentType = submittedInstallmentTypeValue === 'monthly' ||
+      submittedInstallmentTypeValue === 'quarterly' ||
       submittedInstallmentTypeValue === 'semi_annual' ||
       submittedInstallmentTypeValue === 'annual' ||
       submittedInstallmentTypeValue === 'custom'
@@ -828,7 +841,7 @@ function LeadraApp() {
       salesNotes: String(formData.get('salesNotes') ?? unit.salesNotes),
       totalAmount: Number(formData.get('totalAmount')),
       maintenancePaid,
-      maintenanceCost: maintenancePaid ? parseOptionalFormNumber(formData, 'maintenanceCost') : null,
+      maintenanceCost: parseOptionalFormNumber(formData, 'maintenanceCost'),
       maintenanceDueDate: maintenancePaid ? parseOptionalFormDate(formData, 'maintenanceDueDate') : null,
       ...(submittedPaymentMethod === 'installment' && submittedInstallmentType === 'custom'
         ? {
@@ -959,18 +972,68 @@ function LeadraApp() {
     }
   }
 
-  function archiveUnit(unit: LeadraUnit) {
-    const result = archiveUnitWorkflow(appState, user, unit.id)
-    setAppState(result.state)
+  async function setUnitSpecial(unit: LeadraUnit, special: boolean) {
+    if (updatingSpecialUnitId || !canManageUnitSpecialStatus(user, unit)) return
+    const result = setUnitSpecialWorkflow(appState, user, unit.id, special)
     if (!result.ok) {
       setFlash({ text: result.error, messageKey: result.errorKey ?? null, messageParams: result.errorParams ?? null })
       return
     }
-    setFlash(createFlashMessage('flash.unitArchived', 'Unit archived. It remains stored for history, audit, and backups.'))
-    runPageTransition(() => {
-      setView('units')
-      routerNavigate('/units')
-    })
+
+    const previousState = appState
+    const previousRemoteSearchUnits = remoteSearchUnits
+    const optimisticUnit = result.state.units.find((item) => item.id === unit.id) ?? unit
+    setUpdatingSpecialUnitId(unit.id)
+    setAppState(result.state)
+    setRemoteSearchUnits((items) => items?.map((item) => item.id === unit.id ? optimisticUnit : item) ?? null)
+
+    try {
+      if (supabase && isSupabaseConfigured) {
+        const remoteUnit = await new LeadraRepository(supabase).setUnitSpecial(unit.id, special)
+        setAppState((state) => ({
+          ...state,
+          units: state.units.map((item) => item.id === unit.id ? remoteUnit : item),
+        }))
+        setRemoteSearchUnits((items) => items?.map((item) => item.id === unit.id ? remoteUnit : item) ?? null)
+      }
+      setFlash(createFlashMessage(special ? 'flash.unitSpecialMarked' : 'flash.unitSpecialRemoved', special ? 'Unit marked special.' : 'Unit removed from Special.'))
+    } catch (error) {
+      setAppState(previousState)
+      setRemoteSearchUnits(previousRemoteSearchUnits)
+      setFlash({ text: `Special status could not be saved: ${errorMessage(error)}`, messageKey: null, messageParams: null })
+    } finally {
+      setUpdatingSpecialUnitId(null)
+    }
+  }
+
+  async function archiveUnit(unit: LeadraUnit) {
+    const result = archiveUnitWorkflow(appState, user, unit.id)
+    if (!result.ok) {
+      setAppState(result.state)
+      setFlash({ text: result.error, messageKey: result.errorKey ?? null, messageParams: result.errorParams ?? null })
+      return
+    }
+
+    const previousState = appState
+    const archivedUnit = result.state.units.find((item) => item.id === unit.id) ?? { ...unit, archived: true, updatedAt: new Date().toISOString() }
+    setAppState(result.state)
+    setRemoteSearchUnits((items) => items?.map((item) => item.id === unit.id ? archivedUnit : item) ?? null)
+
+    try {
+      if (supabase && isSupabaseConfigured) {
+        await new LeadraRepository(supabase).archiveUnit(unit.id)
+      }
+      invalidateGeneratedPdf(unit.id)
+      setFlash(createFlashMessage('flash.unitArchived', 'Unit archived. It remains stored for history, audit, and backups.'))
+      runPageTransition(() => {
+        setView('units')
+        routerNavigate('/units')
+      })
+    } catch (error) {
+      setAppState(previousState)
+      setRemoteSearchUnits((items) => items?.map((item) => item.id === unit.id ? unit : item) ?? null)
+      setFlash({ text: `Unit could not be archived: ${errorMessage(error)}`, messageKey: null, messageParams: null })
+    }
   }
 
   function saveSharedNote(unit: LeadraUnit, content: string) {
@@ -1041,6 +1104,8 @@ function LeadraApp() {
   }
 
   async function setUnitMediaPdfVisibility(unitId: number, mediaId: string, includeInPdf: boolean) {
+    const previousState = appState
+    const previousRemoteSearchUnits = remoteSearchUnits
     const unit = appState.units.find((item) => item.id === unitId)
     const media = unit?.media.find((file) => file.id === mediaId)
     setAppState((state) => ({
@@ -1101,7 +1166,10 @@ function LeadraApp() {
       }
     } catch (error) {
       console.error('Media PDF visibility update failed', error)
-      setFlash({ text: 'PDF visibility could not be saved remotely. Please try again.', messageKey: null, messageParams: null })
+      setAppState(previousState)
+      setRemoteSearchUnits(previousRemoteSearchUnits)
+      invalidateGeneratedPdf(unitId)
+      setFlash(mediaPdfVisibilityErrorFlash(error))
     }
   }
 
@@ -1286,12 +1354,14 @@ function LeadraApp() {
   function resetUnitFilters() {
     setUnitFilters({ status: 'all' })
     setRemoteSearchUnits(null)
+    setRemoteSearchView(null)
     setSelectedBatchUnitIds([])
   }
 
-  async function loadRemoteUnitSearch(nextFilters: UnitFilters, destinationId = activeSelectedDestinationId, projectId = activeSelectedProjectId) {
+  async function loadRemoteUnitSearch(nextFilters: UnitFilters, destinationId = routeDestinationId, projectId = routeProjectId) {
     if (!supabase || !isSupabaseConfigured) {
       setRemoteSearchUnits(null)
+      setRemoteSearchView(null)
       return
     }
     try {
@@ -1302,8 +1372,10 @@ function LeadraApp() {
         projectId: nextFilters.projectId || projectId || undefined,
       })
       setRemoteSearchUnits(units)
+      setRemoteSearchView(activeView === 'special' ? 'special' : 'inventory')
     } catch {
       setRemoteSearchUnits(null)
+      setRemoteSearchView(null)
     }
   }
 
@@ -1352,13 +1424,16 @@ function LeadraApp() {
         </Link>
         <NavButton active={activeView === 'dashboard'} label={t('nav.dashboard')} to={pathForView('dashboard')} onClick={closeNavigation} icon={<Home />} className="motion-stage" style={motionStyle(0)} />
         <NavButton active={activeView === 'units'} label={t('nav.units')} to={pathForView('units')} onClick={closeNavigation} icon={<Building2 />} className="motion-stage" style={motionStyle(1)} />
-        <NavButton active={activeView === 'create'} label={t('nav.create')} to={pathForView('create')} onClick={closeNavigation} icon={<Plus />} className="motion-stage" style={motionStyle(2)} />
-        <NavButton active={activeView === 'notifications'} label={t('nav.alerts', { count: unreadCount })} to={pathForView('notifications')} onClick={closeNavigation} icon={<Bell />} className="motion-stage" style={motionStyle(3)} />
+        {canUseAdmin && (
+          <NavButton active={activeView === 'special'} label={t('nav.special')} to={pathForView('special')} onClick={closeNavigation} icon={<Star />} className="motion-stage" style={motionStyle(2)} />
+        )}
+        <NavButton active={activeView === 'create'} label={t('nav.create')} to={pathForView('create')} onClick={closeNavigation} icon={<Plus />} className="motion-stage" style={motionStyle(3)} />
+        <NavButton active={activeView === 'notifications'} label={t('nav.alerts', { count: unreadCount })} to={pathForView('notifications')} onClick={closeNavigation} icon={<Bell />} className="motion-stage" style={motionStyle(4)} />
         {canUseAnalytics && (
-          <NavButton active={activeView === 'analytics'} label={t('nav.analytics')} to={pathForView('analytics')} onClick={closeNavigation} icon={<BarChart3 />} className="motion-stage" style={motionStyle(4)} />
+          <NavButton active={activeView === 'analytics'} label={t('nav.analytics')} to={pathForView('analytics')} onClick={closeNavigation} icon={<BarChart3 />} className="motion-stage" style={motionStyle(5)} />
         )}
         {canUseAdmin && (
-          <NavButton active={activeView === 'admin'} label={t('nav.admin')} to={pathForView('admin')} onClick={closeNavigation} icon={<Settings />} className="motion-stage" style={motionStyle(5)} />
+          <NavButton active={activeView === 'admin'} label={t('nav.admin')} to={pathForView('admin')} onClick={closeNavigation} icon={<Settings />} className="motion-stage" style={motionStyle(6)} />
         )}
       </aside>
 
@@ -1434,6 +1509,7 @@ function LeadraApp() {
                 setUnitFilters(nextFilters)
                 setSelectedBatchUnitIds([])
                 setRemoteSearchUnits(null)
+                setRemoteSearchView(null)
                 navigateToPath(destinationPath(id))
               }}
               onProjectSelect={(id) => {
@@ -1450,8 +1526,48 @@ function LeadraApp() {
               onBackToProjects={() => {
                 const destinationId = activeSelectedDestinationId
                 setRemoteSearchUnits(null)
+                setRemoteSearchView(null)
                 if (destinationId) navigateToPath(destinationPath(destinationId))
               }}
+              onFilterChange={updateUnitFilter}
+              onResetFilters={resetUnitFilters}
+              onToggleUnitSelection={toggleBatchUnitSelection}
+              onSelectVisibleUnits={selectVisibleBatchUnits}
+              onClearSelection={clearBatchUnitSelection}
+              onGenerateSelectedPdfs={() => void generateSelectedPdfs()}
+              onDownloadSelectedPdfs={() => void downloadSelectedPdfs()}
+              onShareSelectedPdfs={() => void shareSelectedPdfs()}
+              onOpenUnit={(id) => {
+                runPageTransition(() => {
+                  setSelectedBatchUnitIds([])
+                  setView('details')
+                  routerNavigate(unitDetailsPath(id))
+                })
+              }}
+            />
+          </div>
+        )}
+        {activeView === 'special' && canUseAdmin && (
+          <div className="page-transition-frame" key={activeView}>
+            <UnitsPage
+              mode="special"
+              user={user}
+              lookupValues={activeLookupValues}
+              destinations={[]}
+              projects={[]}
+              selectedDestinationId={null}
+              selectedProjectId={null}
+              stage="destinations"
+              currentDestination={null}
+              currentProject={null}
+              units={displayedSpecialUnits}
+              filters={unitFilters}
+              selectedUnitIds={selectedBatchUnitIds}
+              batchAction={batchPdfAction}
+              onDestinationSelect={() => undefined}
+              onProjectSelect={() => undefined}
+              onBackToDestinations={() => undefined}
+              onBackToProjects={() => undefined}
               onFilterChange={updateUnitFilter}
               onResetFilters={resetUnitFilters}
               onToggleUnitSelection={toggleBatchUnitSelection}
@@ -1488,7 +1604,8 @@ function LeadraApp() {
               user={user}
               unit={selectedUnit}
               lookupValues={activeLookupValues}
-              onArchive={() => archiveUnit(selectedUnit)}
+              onArchive={() => { void archiveUnit(selectedUnit) }}
+              onSpecialChange={(special) => { void setUnitSpecial(selectedUnit, special) }}
               onUpdateUnit={(event) => handleUpdateUnit(selectedUnit, event)}
               onStatusChange={(status) => updateUnitStatus(selectedUnit, status)}
               onGeneratePdf={() => generatePdf(selectedUnit)}
@@ -1499,6 +1616,7 @@ function LeadraApp() {
               pdfSharing={sharingPdfUnitId === selectedUnit.id}
               pdfReady={Boolean(generatedPdfs[selectedUnit.id])}
               statusUpdating={updatingStatusUnitId === selectedUnit.id}
+              specialUpdating={updatingSpecialUnitId === selectedUnit.id}
               statusActionFeedback={statusActionFeedback?.unitId === selectedUnit.id ? statusActionFeedback : null}
               onSaveNote={(content) => saveSharedNote(selectedUnit, content)}
               onDeleteNote={() => deleteSharedNote(selectedUnit)}
@@ -1515,7 +1633,7 @@ function LeadraApp() {
         {activeView === 'details' && !selectedUnit && (
           <div className="page-transition-frame" key="details-denied">
             <section className="content-card page-entrance">
-              <EmptyState title="Unit unavailable" body="This internal link only works for logged-in users with permission to view the unit." />
+              <EmptyState title={t('details.unavailableTitle')} body={t('details.unavailableBody')} />
             </section>
           </div>
         )}
@@ -1895,7 +2013,18 @@ function LeadraApp() {
                 setAppState(result.state)
                 try {
                   if (supabase && isSupabaseConfigured) {
-                    await new LeadraRepository(supabase).deleteManagedUser(managedUserId)
+                    const managedUser = appState.users.find((item) => item.id === managedUserId)
+                    if (!managedUser) throw new Error('User was not found.')
+                    await updateManagedUserProfile(supabase, managedUserId, {
+                      fullName: managedUser.fullName,
+                      email: managedUser.email,
+                      role: managedUser.role,
+                      jobTitle: managedUser.jobTitle,
+                      phoneNumber: managedUser.phoneNumber,
+                      teamId: managedUser.teamId,
+                      branchId: managedUser.branchId,
+                      status: 'inactive',
+                    })
                   }
                   setFlash(createFlashMessage('flash.userDeleted', 'User deactivated and audit history updated.'))
                 } catch (error) {
@@ -1948,9 +2077,12 @@ function LeadraApp() {
           {canUseAnalytics && (
             <NavButton active={activeView === 'analytics'} label={t('nav.analytics')} to={pathForView('analytics')} onClick={closeNavigation} icon={<BarChart3 />} className="motion-stage" style={motionStyle(1)} />
           )}
-          <NavButton active={activeView === 'profile'} label={t('nav.profile')} to={pathForView('profile')} onClick={closeNavigation} icon={<SlidersHorizontal />} className="motion-stage" style={motionStyle(2)} />
           {canUseAdmin && (
-            <NavButton active={activeView === 'admin'} label={t('nav.admin')} to={pathForView('admin')} onClick={closeNavigation} icon={<Settings />} className="motion-stage" style={motionStyle(3)} />
+            <NavButton active={activeView === 'special'} label={t('nav.special')} to={pathForView('special')} onClick={closeNavigation} icon={<Star />} className="motion-stage" style={motionStyle(2)} />
+          )}
+          <NavButton active={activeView === 'profile'} label={t('nav.profile')} to={pathForView('profile')} onClick={closeNavigation} icon={<SlidersHorizontal />} className="motion-stage" style={motionStyle(3)} />
+          {canUseAdmin && (
+            <NavButton active={activeView === 'admin'} label={t('nav.admin')} to={pathForView('admin')} onClick={closeNavigation} icon={<Settings />} className="motion-stage" style={motionStyle(4)} />
           )}
         </div>
       )}
@@ -1960,7 +2092,7 @@ function LeadraApp() {
         <NavButton active={activeView === 'units'} label={t('nav.units')} to={pathForView('units')} onClick={closeNavigation} icon={<Building2 />} className="motion-stage" style={motionStyle(1)} />
         <NavButton active={activeView === 'create'} label={t('nav.add')} to={pathForView('create')} onClick={closeNavigation} icon={<Plus />} className="motion-stage" style={motionStyle(2)} />
         <NavButton
-          active={mobileMenuOpen || activeView === 'notifications' || activeView === 'analytics' || activeView === 'profile' || activeView === 'admin'}
+          active={mobileMenuOpen || activeView === 'notifications' || activeView === 'analytics' || activeView === 'special' || activeView === 'profile' || activeView === 'admin'}
           label={t('nav.more')}
           onClick={() => setMobileMenuOpen((open) => !open)}
           icon={<MoreHorizontal />}
@@ -2153,14 +2285,14 @@ function PaletteSamplePage() {
   const { themePreference } = useTheme()
   const brandAssets = leadraBrandAssets[themePreference]
   const sampleStats = [
-    ['Active listings', '248', 'Champagne metrics on rich black'],
+    ['Active listings', '248', 'Ivory metrics on rich black'],
     ['Qualified buyers', '1,420', 'Ivory text on dark slate'],
-    ['Booked tours', '36', 'Gold accent states'],
+    ['Booked tours', '36', 'Copper accent states'],
   ]
   const sampleUnits = [
-    ['Seaview Villa', 'Charcoal card / Ivory copy', 'Gold accent'],
-    ['Ras El Hekma Chalet', 'Dark slate section / Champagne border', 'Navy CTA'],
-    ['North Coast Residence', 'Rich black surface / Champagne status', 'Deep navy'],
+    ['Seaview Villa', 'Charcoal card / Ivory copy', 'Copper accent'],
+    ['Ras El Hekma Chalet', 'Dark slate section / linen border', 'Graphite CTA'],
+    ['North Coast Residence', 'Rich black surface / linen status', 'Deep graphite'],
   ]
 
   return (
@@ -2169,7 +2301,7 @@ function PaletteSamplePage() {
         <div>
           <p className="eyebrow">Leadra color sample</p>
           <h2>Dark luxury workspace</h2>
-          <p>Sample page only. This version uses the primary dark identity from the reference: Onyx, Graphite, Charcoal, and Champagne Gold.</p>
+          <p>Sample page only. This version uses the primary dark identity from the reference: Onyx, Graphite, Charcoal, and Muted Copper.</p>
         </div>
         <img className="palette-sample-logo" src={brandAssets.mark} alt="" aria-hidden="true" />
       </div>
@@ -2177,11 +2309,11 @@ function PaletteSamplePage() {
       <div className="palette-swatch-grid motion-stage" style={motionStyle(1, 40)}>
         {[
           ['Rich Black', '#0D0D0F'],
-          ['Champagne Gold', '#D6B06F'],
+          ['Muted Copper', '#a76f4d'],
           ['Charcoal', '#17171A'],
           ['Dark Slate', '#1F1F23'],
           ['Warm Ivory', '#F6F1EA'],
-          ['Deep Navy', '#0F1B2D'],
+          ['Graphite', '#1f1f23'],
           ['Soft Linen', '#EFE7DD'],
           ['Taupe Grey', '#7D7468'],
         ].map(([name, value], index) => (
@@ -2680,7 +2812,10 @@ function NotificationsPage({ notifications, user }: { notifications: Notificatio
       ))}
       {visibleRows.length < visibleNotifications.length && (
         <button className="secondary-button list-load-more" type="button" onClick={() => setVisibleCount((count) => Math.min(count + notificationPageSize, visibleNotifications.length))}>
-          Show {formatCount(locale, Math.min(notificationPageSize, visibleNotifications.length - visibleRows.length))} more of {formatCount(locale, visibleNotifications.length)}
+          {t('common.showMoreOf', {
+            count: formatCount(locale, Math.min(notificationPageSize, visibleNotifications.length - visibleRows.length)),
+            total: formatCount(locale, visibleNotifications.length),
+          })}
         </button>
       )}
     </section>
@@ -2761,7 +2896,7 @@ function AnalyticsPage({
       } catch {
         if (!cancelled) {
           setRpcDashboard(null)
-          setAnalyticsError('Live analytics could not be refreshed. Showing the latest loaded workspace data.')
+          setAnalyticsError(t('analytics.refreshError'))
         }
       } finally {
         if (!cancelled) setAnalyticsLoading(false)
@@ -2772,7 +2907,7 @@ function AnalyticsPage({
     return () => {
       cancelled = true
     }
-  }, [filters])
+  }, [filters, t])
 
   function updateAnalyticsRoute(nextFilters: LeadraAnalyticsFilters, options: { replace?: boolean; filtersOpen?: boolean } = {}) {
     setFilterState({ routeKey: routeStateKey, filters: nextFilters })
@@ -2850,30 +2985,30 @@ function AnalyticsPage({
       <section className={`analytics-control-card motion-stage ${filterOpen ? 'is-open' : ''}`} style={motionStyle(1, 30)}>
         <div className="analytics-control-header">
           <div>
-            <p className="eyebrow">Filters</p>
-            <h2>Focus analytics</h2>
-            <p>{activeFilterCount === 0 ? 'Showing all aggregate activity.' : `${activeFilterCount} filter${activeFilterCount === 1 ? '' : 's'} active.`}</p>
+            <p className="eyebrow">{t('analytics.filters')}</p>
+            <h2>{t('analytics.focusHeading')}</h2>
+            <p>{activeFilterCount === 0 ? t('analytics.allActivity') : t('analytics.activeFilterCount', { count: activeFilterCount })}</p>
           </div>
           <div className="analytics-control-actions">
-            {analyticsLoading && <span className="analytics-chip">Refreshing</span>}
-            <button className="secondary-link" type="button" onClick={() => updateAnalyticsRoute(defaultAnalyticsFilters, { replace: true })}>Reset</button>
+            {analyticsLoading && <span className="analytics-chip">{t('analytics.refreshing')}</span>}
+            <button className="secondary-link" type="button" onClick={() => updateAnalyticsRoute(defaultAnalyticsFilters, { replace: true })}>{t('analytics.reset')}</button>
             <button className="ghost-button analytics-filter-toggle" type="button" aria-expanded={filterOpen} onClick={() => onRouteChange(analyticsRouteForFilters(filters, !filterOpen))}>
-              <SlidersHorizontal size={17} /> {filterOpen ? 'Close filters' : 'Filters'}
+              <SlidersHorizontal size={17} /> {filterOpen ? t('analytics.closeFilters') : t('analytics.filters')}
               {activeFilterCount > 0 && <span>{activeFilterCount}</span>}
             </button>
             <button className="primary-button compact-action" type="button" onClick={exportCsv}>
-              <Download size={17} /> CSV
+              <Download size={17} /> {t('analytics.csv')}
             </button>
           </div>
         </div>
         {filters.dateWindow === 'custom' && (
           <div className="analytics-custom-range">
             <label>
-              Start
+              {t('analytics.start')}
               <input type="date" value={filters.startDate ?? ''} onChange={(event) => updateAnalyticsRoute({ ...filters, startDate: event.target.value || undefined }, { replace: true })} />
             </label>
             <label>
-              End
+              {t('analytics.end')}
               <input type="date" value={filters.endDate ?? ''} onChange={(event) => updateAnalyticsRoute({ ...filters, endDate: event.target.value || undefined }, { replace: true })} />
             </label>
           </div>
@@ -2906,7 +3041,7 @@ function AnalyticsPage({
             </div>
           </div>
           {topSales.length === 0 && <EmptyState title={t('analytics.noSalesTitle')} body={t('analytics.noSalesBody')} />}
-          {topSales.length > 0 && <LeaderboardChart rows={topSales.map((row) => ({ label: row.userName, value: row.activityCount, suffix: ' events' }))} />}
+          {topSales.length > 0 && <LeaderboardChart rows={topSales.map((row) => ({ label: row.userName, value: row.activityCount, suffix: t('analytics.eventsSuffix') }))} />}
           {topSales.map((row, index) => (
             <div className="analytics-row motion-stage" key={row.userId} style={motionStyle(index, 160)}>
               <div>
@@ -2952,8 +3087,8 @@ function AnalyticsPage({
         />
       ) : (
         <section className="content-card motion-stage analytics-deferred-card" style={motionStyle(4, 140)}>
-          <p className="eyebrow">Preparing charts</p>
-          <h2>Loading detailed analytics</h2>
+          <p className="eyebrow">{t('analytics.preparingCharts')}</p>
+          <h2>{t('analytics.loadingDetailed')}</h2>
           <AnalyticsSkeleton />
         </section>
       )}
@@ -3003,7 +3138,7 @@ function AnalyticsDeepSections({
               <span className="analytics-chip">{t('analytics.availableChip', { count: formatCount(locale, project.availableUnits) })}</span>
               <span className="analytics-chip warning">{t('analytics.holdChip', { ratio: formatCount(locale, project.holdRatio) })}</span>
               <span className="analytics-chip success">{t('analytics.mediaChip', { ratio: formatCount(locale, project.mediaCompleteness) })}</span>
-              <span className="analytics-chip">{formatCurrency(project.averagePrice, locale)} avg</span>
+              <span className="analytics-chip">{t('analytics.averagePriceChip', { value: formatCurrency(project.averagePrice, locale) })}</span>
             </div>
           ))}
         </div>
@@ -3038,7 +3173,7 @@ function AnalyticsDeepSections({
               <h2>{t('analytics.timelineHeading')}</h2>
             </div>
           </div>
-          <LineChart title="Sold value trend" points={dashboard.soldValueTrend} currency locale={locale} />
+          <LineChart title={t('analytics.soldValueTrend')} points={dashboard.soldValueTrend} currency locale={locale} />
           <div className="timeline-chart" aria-label={t('analytics.timelineLabel')}>
             {latestTimeline.length === 0 && <EmptyState title={t('analytics.timelineEmptyTitle')} body={t('analytics.timelineEmptyBody')} />}
             {latestTimeline.slice(-30).map((point, index) => (
@@ -3048,7 +3183,7 @@ function AnalyticsDeepSections({
               </div>
             ))}
           </div>
-          <BarChart title="PDF export trend" points={dashboard.pdfExportTrend.slice(-30)} />
+          <BarChart title={t('analytics.pdfExportTrend')} points={dashboard.pdfExportTrend.slice(-30)} />
         </section>
       </div>
     </>
@@ -3068,30 +3203,31 @@ function AnalyticsFiltersPanel({
   managerMode: boolean
   onChange: (key: keyof LeadraAnalyticsFilters, value: string) => void
 }) {
+  const { locale, t } = useLocale()
   return (
     <div className={`analytics-filter-panel ${open ? 'open' : ''}`}>
-      <SelectFilter label="Team" value={filters.teamIds[0] ?? ''} disabled={managerMode} options={dashboard.filterOptions.teams} onChange={(value) => onChange('teamIds', value)} />
-      <SelectFilter label="User" value={filters.userIds[0] ?? ''} options={dashboard.filterOptions.users} onChange={(value) => onChange('userIds', value)} />
-      <SelectFilter label="Project" value={filters.projectIds[0] ?? ''} options={dashboard.filterOptions.projects} onChange={(value) => onChange('projectIds', value)} />
-      <SelectFilter label="Developer" value={filters.developerIds[0] ?? ''} options={dashboard.filterOptions.developers} onChange={(value) => onChange('developerIds', value)} />
-      <SelectFilter label="Destination" value={filters.destinationIds[0] ?? ''} options={dashboard.filterOptions.destinations} onChange={(value) => onChange('destinationIds', value)} />
+      <SelectFilter label={t('profile.team')} value={filters.teamIds[0] ?? ''} disabled={managerMode} options={dashboard.filterOptions.teams} onChange={(value) => onChange('teamIds', value)} />
+      <SelectFilter label={t('profile.name')} value={filters.userIds[0] ?? ''} options={dashboard.filterOptions.users} onChange={(value) => onChange('userIds', value)} />
+      <SelectFilter label={t('analytics.project')} value={filters.projectIds[0] ?? ''} options={dashboard.filterOptions.projects} onChange={(value) => onChange('projectIds', value)} />
+      <SelectFilter label={t('details.developer')} value={filters.developerIds[0] ?? ''} options={dashboard.filterOptions.developers} onChange={(value) => onChange('developerIds', value)} />
+      <SelectFilter label={t('details.destination')} value={filters.destinationIds[0] ?? ''} options={dashboard.filterOptions.destinations} onChange={(value) => onChange('destinationIds', value)} />
       <SelectFilter
-        label="Status"
+        label={t('details.status')}
         value={filters.statuses[0] ?? ''}
         options={[
-          { id: 'available', label: 'Available' },
-          { id: 'hold', label: 'Hold' },
-          { id: 'sold_by_us', label: 'Sold by Us' },
-          { id: 'sold_by_others', label: 'Sold by Others' },
+          { id: 'available', label: getStatusLabel(locale, 'available') },
+          { id: 'hold', label: getStatusLabel(locale, 'hold') },
+          { id: 'sold_by_us', label: getStatusLabel(locale, 'sold_by_us') },
+          { id: 'sold_by_others', label: getStatusLabel(locale, 'sold_by_others') },
         ]}
         onChange={(value) => onChange('statuses', value)}
       />
       <SelectFilter
-        label="Payment"
+        label={t('details.paymentMethod')}
         value={filters.paymentMethods[0] ?? ''}
         options={[
-          { id: 'cash', label: 'Cash' },
-          { id: 'installment', label: 'Installment' },
+          { id: 'cash', label: t('payment.cash') },
+          { id: 'installment', label: t('payment.installment') },
         ]}
         onChange={(value) => onChange('paymentMethods', value)}
       />
@@ -3126,6 +3262,7 @@ function SelectFilter({
 }
 
 function StatusDonutChart({ dashboard }: { dashboard: AnalyticsDashboard }) {
+  const { t } = useLocale()
   const total = Math.max(1, dashboard.overview.availableUnits + dashboard.overview.holdUnits + dashboard.overview.soldUnits)
   const available = Math.round((dashboard.overview.availableUnits / total) * 100)
   const hold = Math.round((dashboard.overview.holdUnits / total) * 100)
@@ -3133,16 +3270,17 @@ function StatusDonutChart({ dashboard }: { dashboard: AnalyticsDashboard }) {
     <div className="status-donut" style={{ '--available': `${available}%`, '--hold': `${hold}%` } as CSSProperties}>
       <div>
         <strong>{available}%</strong>
-        <span>available mix</span>
+        <span>{t('analytics.availableMix')}</span>
       </div>
     </div>
   )
 }
 
 function LeaderboardChart({ rows }: { rows: { label: string; value: number; suffix?: string }[] }) {
+  const { t } = useLocale()
   const max = Math.max(1, ...rows.map((row) => row.value))
   return (
-    <div className="leaderboard-chart" aria-label="Sales leaderboard chart">
+    <div className="leaderboard-chart" aria-label={t('analytics.leaderboardChart')}>
       {rows.map((row) => (
         <div key={row.label}>
           <span>{row.label}</span>
@@ -3174,8 +3312,8 @@ function LineChart({ title, points, currency = false, locale }: { title: string;
       </div>
       <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label={title}>
         <path className="chart-grid" d={`M0 ${height - 8} H${width} M0 ${height / 2} H${width} M0 8 H${width}`} />
-        <path className="line-chart-area" d={`${path} L ${width} ${height - 8} L 0 ${height - 8} Z`} />
-        <path className="line-chart-line" d={path} />
+        {path && <path className="line-chart-area" d={`${path} L ${width} ${height - 8} L 0 ${height - 8} Z`} />}
+        {path && <path className="line-chart-line" d={path} />}
         {coordinates.map((point) => (
           <circle key={point.date} cx={point.x} cy={point.y} r="3.5">
             <title>{point.label}: {currency ? formatCurrency(point.value, locale) : point.value}</title>
@@ -3187,12 +3325,13 @@ function LineChart({ title, points, currency = false, locale }: { title: string;
 }
 
 function BarChart({ title, points }: { title: string; points: AnalyticsChartPoint[] }) {
+  const { t } = useLocale()
   const max = Math.max(1, ...points.map((point) => point.value))
   return (
     <div className="bar-chart-card" aria-label={title}>
       <div className="chart-title">
         <strong>{title}</strong>
-        <span>{max} max</span>
+        <span>{t('analytics.maxLabel', { value: max })}</span>
       </div>
       <div className="bar-chart-grid">
         {points.map((point) => (
@@ -3308,6 +3447,7 @@ function dashboardDescription(role: LeadraUser['role'], locale: LocaleCode) {
 function getViewTitle(view: View, user: LeadraUser, locale: LocaleCode): string {
   if (view === 'dashboard') return user.role === 'admin' ? translateForLocale(locale, 'viewTitle.adminCommand') : translateForLocale(locale, 'viewTitle.userCommand', { firstName: user.fullName.split(/\s+/)[0] })
   if (view === 'units' || view === 'details') return translateForLocale(locale, 'viewTitle.unitDesk')
+  if (view === 'special') return translateForLocale(locale, 'viewTitle.special')
   if (view === 'create') return translateForLocale(locale, 'viewTitle.newResale')
   if (view === 'notifications') return translateForLocale(locale, 'viewTitle.alerts')
   if (view === 'profile') return translateForLocale(locale, 'viewTitle.profile')
@@ -3322,6 +3462,7 @@ function canAccessAdmin(user: LeadraUser): boolean {
 
 function isViewAllowedForUser(view: View, user: LeadraUser): boolean {
   if (view === 'admin') return canAccessAdmin(user)
+  if (view === 'special') return canAccessAdmin(user)
   if (view === 'analytics') return canAccessAnalytics(user)
   return true
 }
@@ -3349,4 +3490,3 @@ function toBranchDirectoryItem(row: Record<string, unknown>): BranchDirectoryIte
 function translateForLocale(locale: LocaleCode, key: string, params?: MessageParams) {
   return translate(locale, key, params)
 }
-

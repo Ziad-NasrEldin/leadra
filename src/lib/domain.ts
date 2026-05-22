@@ -55,6 +55,7 @@ export const PRD_UNIT_TYPE_SPECS: PrdUnitTypeSpec[] = PRD_UNIT_TYPES.map((unitTy
 export const PRD_FLOOR_OPTIONS = ['Ground', 'Last Floor', ...Array.from({ length: 40 }, (_, index) => formatOrdinalFloor(index + 1))] as const
 
 const paymentsPerYear = {
+  monthly: 12,
   quarterly: 4,
   semi_annual: 2,
   annual: 1,
@@ -62,6 +63,7 @@ const paymentsPerYear = {
 } as const
 
 const installmentStepMonths = {
+  monthly: 1,
   quarterly: 3,
   semi_annual: 6,
   annual: 12,
@@ -341,6 +343,11 @@ export function canArchiveUnit(user: LeadraUser, unit: LeadraUnit): boolean {
   return user.role === 'admin' || user.role === 'sub_admin'
 }
 
+export function canManageUnitSpecialStatus(user: LeadraUser, unit: LeadraUnit): boolean {
+  if (unit.archived) return false
+  return user.role === 'admin' || user.role === 'sub_admin'
+}
+
 export function isSoldStatus(status: UnitStatus | string | null | undefined): boolean {
   return status === 'sold' || status === 'sold_by_us' || status === 'sold_by_others'
 }
@@ -398,6 +405,16 @@ export interface PaymentTimetableRow extends InstallmentScheduleRow {
   paidByName: string | null
 }
 
+export interface DisplayedPaymentTotals {
+  originalDownPayment: number
+  paidInstallmentsTotal: number
+  unpaidInstallmentsTotal: number
+  paidMaintenanceAmount: number
+  unpaidMaintenanceAmount: number
+  displayedPaidAmount: number
+  displayedRemainingAmount: number
+}
+
 export function buildInstallmentSchedule(unit: LeadraUnit, locale: LocaleCode = 'en'): InstallmentScheduleRow[] {
   const frequency = getInstallmentPaymentsPerYear(unit.installmentType)
   if (unit.paymentMethod !== 'installment' || !frequency || !unit.installmentAmount) return []
@@ -432,7 +449,9 @@ export function buildInstallmentSchedule(unit: LeadraUnit, locale: LocaleCode = 
       yearNumber,
       dueMonth: null,
       periodLabel:
-        unit.installmentType === 'quarterly'
+        unit.installmentType === 'monthly'
+          ? `${locale === 'ar' ? 'شهر' : 'Month'} ${formatter.format(paymentNumber)}`
+          : unit.installmentType === 'quarterly'
           ? `Q${periodInYear}`
           : unit.installmentType === 'semi_annual'
             ? `${locale === 'ar' ? 'نصف' : 'Half'} ${formatter.format(periodInYear)}`
@@ -489,6 +508,39 @@ export function calculateRemainingFromPaymentSchedule(schedule: PaymentScheduleR
   )
 }
 
+export function calculateDisplayedPaymentTotals(unit: LeadraUnit): DisplayedPaymentTotals {
+  const schedule = unit.paymentMethod === 'installment'
+    ? (unit.paymentSchedule?.length ? unit.paymentSchedule : createInitialPaymentSchedule(unit))
+    : []
+  const originalDownPayment = unit.paymentMethod === 'installment' ? unit.downPayment ?? 0 : unit.totalAmount
+  const paidInstallmentsTotal = schedule.reduce((total, row) => total + (row.paid ? row.amount : 0), 0)
+  const unpaidInstallmentsTotal = schedule.length > 0
+    ? schedule.reduce((total, row) => total + (row.paid ? 0 : row.amount), 0)
+    : unit.paymentMethod === 'installment'
+      ? Math.max(0, (unit.totalAmount ?? 0) - originalDownPayment - paidInstallmentsTotal)
+      : 0
+  const maintenanceAmount = unit.maintenanceCost ?? 0
+  const paidMaintenanceAmount = unit.maintenancePaid ? maintenanceAmount : 0
+  const unpaidMaintenanceAmount = unit.maintenancePaid ? 0 : maintenanceAmount
+
+  return {
+    originalDownPayment,
+    paidInstallmentsTotal,
+    unpaidInstallmentsTotal,
+    paidMaintenanceAmount,
+    unpaidMaintenanceAmount,
+    displayedPaidAmount: roundMoney(originalDownPayment + paidInstallmentsTotal + paidMaintenanceAmount),
+    displayedRemainingAmount: roundMoney(unpaidInstallmentsTotal + unpaidMaintenanceAmount),
+  }
+}
+
+export function calculateDisplayedRemainingPayment(unit: LeadraUnit): number | null {
+  if (unit.paymentMethod === 'cash') {
+    return null
+  }
+  return calculateDisplayedPaymentTotals(unit).displayedRemainingAmount
+}
+
 export function applyPaymentScheduleAction(
   unit: LeadraUnit,
   actor: LeadraUser,
@@ -500,7 +552,7 @@ export function applyPaymentScheduleAction(
   const target = currentSchedule.find((row) => row.id === scheduleId)
   if (!target || target.paid === paid) return null
 
-  const previousRemainingValue = unit.remainingPayment ?? calculateRemainingFromPaymentSchedule(currentSchedule)
+  const previousRemainingValue = unit.remainingPayment ?? calculateDisplayedPaymentTotals(unit).displayedRemainingAmount
   const nextSchedule = currentSchedule.map((row) =>
     row.id === scheduleId
       ? {
@@ -512,7 +564,8 @@ export function applyPaymentScheduleAction(
         }
       : row,
   )
-  const newRemainingValue = calculateRemainingFromPaymentSchedule(nextSchedule)
+  const nextUnitForTotals = { ...unit, paymentSchedule: nextSchedule }
+  const newRemainingValue = calculateDisplayedPaymentTotals(nextUnitForTotals).displayedRemainingAmount
   const history: PaymentHistoryRow = {
     id: `payment-history-${unit.id}-${Date.now()}`,
     unitId: unit.id,

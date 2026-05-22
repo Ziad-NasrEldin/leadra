@@ -1,0 +1,279 @@
+{
+  "schemaVersion": 2,
+  "generatedAt": "2026-05-18T16:29:39+03:00",
+  "title": "Design System: Leadra",
+  "extensions": {
+    "colorMeta": {
+      "brand-ivory": {
+        "role": "neutral",
+        "displayName": "Ivory Paper",
+        "canonical": "#f6f1ea",
+        "tonalRamp": [
+          "oklch(15% 0.01 75)",
+          "oklch(25% 0.01 75)",
+          "oklch(35% 0.012 75)",
+          "oklch(48% 0.012 75)",
+          "oklch(62% 0.012 75)",
+          "oklch(76% 0.012 75)",
+          "oklch(88% 0.012 75)",
+          "oklch(96% 0.012 75)"
+        ]
+      },
+      "brand-copper": {
+        "role": "primary",
+        "displayName": "Muted Copper",
+        "canonical": "#a76f4d",
+        "tonalRamp": [
+          "oklch(18% 0.06 78)",
+          "oklch(28% 0.08 78)",
+          "oklch(38% 0.1 78)",
+          "oklch(50% 0.12 78)",
+          "oklch(62% 0.13 78)",
+          "oklch(74% 0.12 78)",
+          "oklch(86% 0.08 78)",
+          "oklch(94% 0.04 78)"
+        ]
+      },
+      "brand-black": {
+        "role": "primary",
+        "displayName": "Boardroom Black",
+        "canonical": "#0d0d0f",
+        "tonalRamp": [
+          "#0d0d0f",
+          "#17171a",
+          "#1f1f23",
+          "#2a2623",
+          "#514b44",
+          "#7d7468",
+          "#b8b0a4",
+          "#fffaf0"
+        ]
+      },
+      "brand-graphite": {
+        "role": "secondary",
+        "displayName": "Graphite",
+        "canonical": "#1f1f23",
+        "tonalRamp": [
+          "oklch(15% 0.05 255)",
+          "oklch(25% 0.06 255)",
+          "oklch(35% 0.07 255)",
+          "oklch(48% 0.08 255)",
+          "oklch(62% 0.07 255)",
+          "oklch(74% 0.05 255)",
+          "oklch(86% 0.03 255)",
+          "oklch(95% 0.015 255)"
+        ]
+      },
+      "danger": {
+        "role": "tertiary",
+        "displayName": "Danger Red",
+        "canonical": "#9e3c31",
+        "tonalRamp": [
+          "oklch(16% 0.06 30)",
+          "oklch(26% 0.08 30)",
+          "oklch(36% 0.1 30)",
+          "oklch(48% 0.12 30)",
+          "oklch(62% 0.11 30)",
+          "oklch(74% 0.08 30)",
+          "oklch(86% 0.04 30)",
+          "oklch(95% 0.02 30)"
+        ]
+      }
+    },
+    "typographyMeta": {
+      "display": {
+        "displayName": "Display",
+        "purpose": "Login and rare brand-scale hero headings only."
+      },
+      "headline": {
+        "displayName": "Headline",
+        "purpose": "Page titles and major dashboard headings."
+      },
+      "title": {
+        "displayName": "Title",
+        "purpose": "Section headings, detail panels, compact hero titles, and card-level hierarchy."
+      },
+      "body": {
+        "displayName": "Body",
+        "purpose": "Main reading text and operational copy."
+      },
+      "label": {
+        "displayName": "Label",
+        "purpose": "Form labels, controls, buttons, and dense interface labels."
+      }
+    },
+    "elevation": {
+      "shadows": [
+        {
+          "name": "soft-surface",
+          "value": "0 18px 45px rgba(42, 38, 35, 0.08)",
+          "purpose": "Default card, metric, hero, and details panel shadow in light mode."
+        },
+        {
+          "name": "strong-surface",
+          "value": "0 30px 90px rgba(42, 38, 35, 0.16)",
+          "purpose": "Login shell and high-emphasis panels."
+        },
+        {
+          "name": "hover-lift",
+          "value": "0 20px 55px color-mix(in oklch, var(--ink), transparent 88%)",
+          "purpose": "Interactive cards and rows on hover."
+        },
+        {
+          "name": "field-focus",
+          "value": "0 0 0 4px rgba(167, 111, 77, 0.12), 0 12px 30px rgba(13, 13, 15, 0.08)",
+          "purpose": "Inputs and select triggers on focus."
+        }
+      ]
+    },
+    "motion": {
+      "durations": [
+        {
+          "name": "feedback",
+          "value": "150ms",
+          "purpose": "Immediate control feedback."
+        },
+        {
+          "name": "state",
+          "value": "220ms",
+          "purpose": "Toggles and color shifts."
+        },
+        {
+          "name": "layout",
+          "value": "320ms",
+          "purpose": "Page and component settling."
+        },
+        {
+          "name": "entrance",
+          "value": "520ms",
+          "purpose": "Staged content entry."
+        }
+      ],
+      "easing": [
+        {
+          "name": "ease-out",
+          "value": "cubic-bezier(0.16, 1, 0.3, 1)",
+          "purpose": "Default quick exit and feedback curve."
+        },
+        {
+          "name": "ease-soft",
+          "value": "cubic-bezier(0.22, 1, 0.36, 1)",
+          "purpose": "Softer layout and entrance curve."
+        }
+      ]
+    },
+    "components": [
+      {
+        "name": "Primary Button",
+        "html": "<button class=\"ds-btn-primary\" type=\"button\">Create unit</button>",
+        "css": ".ds-btn-primary{min-height:46px;border-radius:999px;border:1px solid color-mix(in oklch,#a76f4d,#0d0d0f 18%);padding:.62rem .95rem;display:inline-flex;align-items:center;justify-content:center;gap:.45rem;background:linear-gradient(135deg,#0d0d0f,#1f1f23);color:#fffaf0;font:900 .82rem/1.1 Manrope,sans-serif;white-space:nowrap;transition:transform 150ms cubic-bezier(.16,1,.3,1),box-shadow 150ms cubic-bezier(.16,1,.3,1)}.ds-btn-primary:hover{box-shadow:0 12px 28px color-mix(in oklch,#2a2623,transparent 88%);transform:translateY(-2px) scale(1.01)}.ds-btn-primary:focus-visible{outline:3px solid color-mix(in oklch,#a76f4d,white 30%);outline-offset:3px}"
+      },
+      {
+        "name": "Secondary Button",
+        "html": "<button class=\"ds-btn-secondary\" type=\"button\">Filter</button>",
+        "css": ".ds-btn-secondary{min-height:46px;border-radius:999px;border:1px solid rgba(42,38,35,.14);padding:.62rem .95rem;display:inline-flex;align-items:center;justify-content:center;gap:.45rem;background:rgba(255,252,246,.9);color:#2a2623;font:900 .82rem/1.1 Manrope,sans-serif;white-space:nowrap;transition:transform 150ms cubic-bezier(.16,1,.3,1),box-shadow 150ms cubic-bezier(.16,1,.3,1)}.ds-btn-secondary:hover{box-shadow:0 12px 28px color-mix(in oklch,#2a2623,transparent 88%);transform:translateY(-2px) scale(1.01)}.ds-btn-secondary:focus-visible{outline:3px solid color-mix(in oklch,#a76f4d,white 30%);outline-offset:3px}"
+      },
+      {
+        "name": "Input Field",
+        "html": "<label class=\"ds-field\"><span>Owner phone</span><input placeholder=\"0100 000 0000\" /></label>",
+        "css": ".ds-field{display:grid;gap:.35rem;color:#7d7468;font:800 .82rem/1.2 Manrope,sans-serif}.ds-field input{width:100%;min-height:52px;border:1px solid rgba(42,38,35,.14);border-radius:.9rem;background:rgba(255,252,246,.9);color:#2a2623;padding:.82rem;font:400 1rem/1.5 Manrope,sans-serif;transition:border-color 150ms cubic-bezier(.16,1,.3,1),box-shadow 150ms cubic-bezier(.16,1,.3,1),transform 150ms cubic-bezier(.16,1,.3,1)}.ds-field input:focus{border-color:#a76f4d;background:rgba(255,252,246,.98);box-shadow:0 0 0 4px rgba(167,111,77,.12),0 12px 30px rgba(13,13,15,.08);outline:0;transform:translateY(-1px)}"
+      },
+      {
+        "name": "Branded Select",
+        "html": "<button class=\"ds-select\" type=\"button\"><span>New Cairo</span><svg viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"m6 9 6 6 6-6\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/></svg></button>",
+        "css": ".ds-select{width:100%;min-height:52px;border:1px solid rgba(42,38,35,.14);border-radius:.9rem;background:linear-gradient(180deg,rgba(255,252,246,.98),rgba(239,231,221,.7));color:#2a2623;padding:.82rem .95rem;display:flex;align-items:center;justify-content:space-between;gap:.8rem;text-align:start;font:700 1rem/1.2 Manrope,sans-serif;box-shadow:inset 0 1px 0 rgba(255,255,255,.45),0 10px 24px color-mix(in oklch,#2a2623,transparent 94%);transition:border-color 150ms cubic-bezier(.16,1,.3,1),box-shadow 150ms cubic-bezier(.16,1,.3,1),transform 150ms cubic-bezier(.16,1,.3,1)}.ds-select svg{width:18px;height:18px;color:#a76f4d}.ds-select:hover,.ds-select:focus-visible{border-color:#a76f4d;box-shadow:0 0 0 4px rgba(167,111,77,.12),0 18px 34px rgba(13,13,15,.1);outline:0;transform:translateY(-1px)}"
+      },
+      {
+        "name": "Content Card",
+        "html": "<section class=\"ds-card\"><p class=\"ds-eyebrow\">Inventory</p><h2>Available units</h2><p>Track resale stock, reservations, and visibility by role.</p></section>",
+        "css": ".ds-card{border:1px solid rgba(42,38,35,.14);border-radius:1.4rem;background:rgba(255,252,246,.9);box-shadow:0 18px 45px rgba(42,38,35,.08);padding:1rem;color:#2a2623;display:grid;gap:.6rem}.ds-card h2{margin:0;font:700 1.35rem/1.02 Fraunces,Georgia,serif;letter-spacing:-.04em}.ds-card p{margin:0;color:#7d7468;font:400 1rem/1.5 Manrope,sans-serif}.ds-eyebrow{color:#a76f4d!important;text-transform:uppercase;letter-spacing:.14em;font:900 .72rem/1.35 Manrope,sans-serif}"
+      },
+      {
+        "name": "Unit Row",
+        "html": "<button class=\"ds-unit-row\" type=\"button\"><span class=\"ds-thumb\"></span><span><strong>NC3BR-10</strong><small>New Cairo, 3BR resale</small></span><em>Available</em></button>",
+        "css": ".ds-unit-row{width:100%;border:1px solid rgba(42,38,35,.14);border-radius:1.2rem;background:rgba(255,252,244,.88);padding:.75rem;display:grid;grid-template-columns:74px minmax(0,1fr) auto;gap:.85rem;text-align:start;align-items:center;color:#2a2623;font-family:Manrope,sans-serif;transition:border-color 150ms cubic-bezier(.16,1,.3,1),box-shadow 150ms cubic-bezier(.16,1,.3,1),transform 150ms cubic-bezier(.16,1,.3,1)}.ds-unit-row:hover{border-color:color-mix(in oklch,#a76f4d,transparent 35%);box-shadow:0 20px 55px color-mix(in oklch,#2a2623,transparent 88%);transform:translateY(-2px) scale(1.01)}.ds-thumb{width:74px;height:74px;border-radius:1rem;background:#efe7dd}.ds-unit-row strong{display:block;font-weight:900}.ds-unit-row small{color:#7d7468}.ds-unit-row em{border-radius:999px;padding:.35rem .65rem;background:#efe7dd;color:#1f1f23;font-style:normal;font-weight:900;font-size:.75rem}"
+      },
+      {
+        "name": "Navigation Button",
+        "html": "<button class=\"ds-nav-button active\" type=\"button\"><svg viewBox=\"0 0 24 24\" aria-hidden=\"true\"><path d=\"M3 10.5 12 3l9 7.5V21h-6v-6H9v6H3z\" fill=\"none\" stroke=\"currentColor\" stroke-width=\"2\" stroke-linejoin=\"round\"/></svg><span>Home</span></button>",
+        "css": ".ds-nav-button{width:100%;min-height:64px;border:0;border-radius:1.05rem;padding:.65rem .35rem;display:grid;place-items:center;gap:.25rem;background:transparent;color:rgba(255,250,240,.62);font:900 .64rem/1 Manrope,sans-serif;text-align:center;transition:background-color 150ms cubic-bezier(.16,1,.3,1),color 150ms cubic-bezier(.16,1,.3,1),transform 150ms cubic-bezier(.16,1,.3,1)}.ds-nav-button svg{width:19px;height:19px}.ds-nav-button.active,.ds-nav-button:hover{background:rgba(216,192,173,.18);color:#fffaf0;transform:translateY(-2px)}.ds-nav-button span{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}"
+      },
+      {
+        "name": "Status Pill",
+        "html": "<span class=\"ds-status-pill hold\">On hold</span>",
+        "css": ".ds-status-pill{display:inline-flex;align-items:center;justify-content:center;border-radius:999px;padding:.35rem .65rem;font:900 .75rem/1.2 Manrope,sans-serif;background:#efe7dd;color:#1f1f23;box-shadow:inset 0 1px 0 rgba(255,255,255,.34)}.ds-status-pill.hold{background:color-mix(in oklch,#efe7dd,#a76f4d 20%);color:#1f1f23}.ds-status-pill.sold{background:#ead0ca;color:#9e3c31}"
+      },
+      {
+        "name": "Empty State",
+        "html": "<div class=\"ds-empty\"><strong>No units found</strong><p>Adjust filters or create a new resale unit.</p></div>",
+        "css": ".ds-empty{display:grid;gap:.5rem;border:1px dashed color-mix(in oklch,#a76f4d,transparent 45%);border-radius:1rem;padding:1rem;background:rgba(239,231,221,.72);color:#1f1f23;font-family:Manrope,sans-serif}.ds-empty strong{font-weight:900}.ds-empty p{margin:0;color:#7d7468;line-height:1.5}"
+      }
+    ],
+    "narrative": {
+      "northStar": "The Quiet Resale Ledger",
+      "overview": "Leadra is an operational tool for real estate resale teams, so the interface should feel like a calm private office: dense enough for repeated daily work, warm enough to avoid sterile admin software, and restrained enough to keep inventory, permissions, prices, and owner data in focus.",
+      "keyCharacteristics": [
+        "Warm ivory paper surfaces with charcoal ink and muted taupe supporting text.",
+        "Black or deep slate anchors for primary action, login hero, and desktop rail.",
+        "Copper as a rare operational accent, not a decorative wash.",
+        "Serif headings only where hierarchy needs a strong identity cue.",
+        "Pill controls, soft cards, tactile selects, and compact mobile stacks.",
+        "Motion is short, directional, and reduced-motion aware."
+      ],
+      "rules": [
+        {
+          "section": "Colors",
+          "name": "The Copper Rarity Rule",
+          "body": "Copper should mark state, focus, selection, or brand identity. If more than roughly 10 percent of a working screen is copper, the interface is becoming ornamental."
+        },
+        {
+          "section": "Colors",
+          "name": "The Warm Neutral Rule",
+          "body": "Do not introduce plain white, pure black, or cold gray as default UI colors. Every neutral should remain connected to ivory, linen, charcoal, taupe, or slate."
+        },
+        {
+          "section": "Colors",
+          "name": "The Status Separation Rule",
+          "body": "Availability, hold, sold, destructive, and permission states must remain visually distinct. Never reuse danger red for a neutral warning or sold wash for an error."
+        },
+        {
+          "section": "Typography",
+          "name": "The Serif Reserve Rule",
+          "body": "Use Fraunces for h1 and h2-level identity only. Dense tools, rows, buttons, labels, filters, and data stay in Manrope."
+        },
+        {
+          "section": "Typography",
+          "name": "The Dense Label Rule",
+          "body": "Operational labels are small but heavy. Prefer weight and color contrast over extra size."
+        },
+        {
+          "section": "Elevation",
+          "name": "The State Creates Lift Rule",
+          "body": "Resting surfaces use soft depth. Stronger shadows appear because the user hovered, focused, opened, or selected something."
+        },
+        {
+          "section": "Elevation",
+          "name": "The No Heavy Drop Rule",
+          "body": "Avoid hard black shadows. If a shadow reads as a dark outline, it is too heavy for this product."
+        }
+      ],
+      "dos": [
+        "Do keep Leadra mobile-first. At 860px and below, collapse the shell, hide the side rail, tighten title scale, and keep touch targets around 44px to 48px.",
+        "Do use the existing root CSS variables before adding new visual tokens.",
+        "Do use copper for focus, selected state, icon tint, and small identifiers.",
+        "Do preserve role-aware density: dashboards, filters, and details pages should be scannable without marketing-style hero padding.",
+        "Do keep text legible in English and Arabic. Respect dir=\"rtl\" patterns already present in the CSS.",
+        "Do use Lucide icons inside controls when an icon clarifies an action."
+      ],
+      "donts": [
+        "Don't use pure #000 or #fff for new UI surfaces or text. Use brand-black, brand-slate, or on-dark.",
+        "Don't use gradient text, glassmorphism as decoration, oversized SaaS metric heroes, or repeated icon-card grids.",
+        "Don't add colored side-stripe borders wider than 1px; use full borders, background tints, icons, or status pills.",
+        "Don't nest cards inside cards. Use rows, lists, or unframed spacing inside an existing panel.",
+        "Don't flood screens with copper, graphite, or beige variations. The palette works because black, ivory, taupe, graphite, and copper have separate jobs.",
+        "Don't animate layout properties. Animate opacity, transform, color, border, and shadow only.",
+        "Don't hide permission-sensitive state in color alone. Owner data visibility, destructive actions, archive/delete states, and role permissions need text labels."
+      ]
+    }
+  }
+}

@@ -1,5 +1,6 @@
 import {
   calculatePaymentSummary,
+  calculateDisplayedRemainingPayment,
   applyPaymentScheduleAction,
   canAddAdminManagerNote,
   canArchiveUnit,
@@ -8,6 +9,7 @@ import {
   canEditOwnerFields,
   canEditUnitCommission,
   canEditUnitPricing,
+  canManageUnitSpecialStatus,
   canViewUnit,
   generateUnitCode,
   createInitialPaymentSchedule,
@@ -251,6 +253,11 @@ export function createUnitWorkflow(
     return { ok: false, state, error: 'Unit Type must use the fixed PRD list.', errorKey: null, errorParams: null }
   }
 
+  const formValidationError = validateCreateUnitInput(input)
+  if (formValidationError) {
+    return { ok: false, state, error: formValidationError, errorKey: null, errorParams: null }
+  }
+
   const ownerPhoneValidation = validateOwnerPhoneForCountry(input.originalOwnerPhone, input.countryCode)
   if (!ownerPhoneValidation.ok) {
     return {
@@ -330,7 +337,7 @@ export function createUnitWorkflow(
     remainingPayment: payment.remainingPayment,
     transferFees: input.transferFees ?? null,
     maintenancePaid: input.maintenancePaid ?? false,
-    maintenanceCost: input.maintenancePaid ? input.maintenanceCost ?? null : null,
+    maintenanceCost: input.maintenanceCost ?? null,
     maintenanceDueDate: input.maintenancePaid ? input.maintenanceDueDate ?? null : null,
     commissionPercentage: state.settings.commissionPercentage,
     commissionAmount: payment.commissionAmount,
@@ -348,6 +355,9 @@ export function createUnitWorkflow(
     salesNotes: input.salesNotes,
     status: 'available',
     archived: false,
+    isSpecial: false,
+    specialMarkedAt: null,
+    specialMarkedBy: null,
     createdBy: actor.id,
     createdByName: actor.fullName,
     teamId: actor.teamId,
@@ -360,6 +370,7 @@ export function createUnitWorkflow(
     paymentHistory: [],
   }
   candidate.paymentSchedule = createInitialPaymentSchedule(candidate)
+  candidate.remainingPayment = calculateDisplayedRemainingPayment(candidate)
 
   if (unitHasSameProjectPhoneDuplicate(candidate, state.units)) {
     const nextState = withAnalyticsEvent(
@@ -438,6 +449,66 @@ export function createUnitWorkflow(
   }
 }
 
+function validateCreateUnitInput(input: CreateUnitInput): string | null {
+  if (!input.developerId || !input.projectId || !input.destinationId || !input.viewId) {
+    return 'Developer, project, destination, and view are required.'
+  }
+  if (!input.finish.trim()) {
+    return 'Finishing is required.'
+  }
+  if (input.paymentMethod !== 'cash' && input.paymentMethod !== 'installment') {
+    return 'Select a valid payment method.'
+  }
+  if (!isPositiveFinite(input.bua)) {
+    return 'BUA must be greater than zero.'
+  }
+  if (!isNonNegativeInteger(input.bedrooms) || !isNonNegativeInteger(input.bathrooms)) {
+    return 'Bedrooms and bathrooms must be valid whole numbers.'
+  }
+  if (!isPositiveFinite(input.totalAmount)) {
+    return 'Total amount must be greater than zero.'
+  }
+  if (input.paymentMethod === 'installment' && !isNonNegativeFinite(input.downPayment ?? 0)) {
+    return 'Down payment must be zero or greater.'
+  }
+  if (!isValidDeliveryExpectancy(input.deliveryExpectancy)) {
+    return 'Delivery expectancy must include a valid year.'
+  }
+
+  const optionalAmounts = [
+    input.roofGardenArea,
+    input.gardenArea,
+    input.terraceArea,
+    input.landArea,
+    input.transferFees,
+    input.maintenanceCost,
+  ]
+  if (optionalAmounts.some((value) => value != null && !isNonNegativeFinite(value))) {
+    return 'Area, transfer fee, and maintenance values must be zero or greater.'
+  }
+
+  return null
+}
+
+function isPositiveFinite(value: number) {
+  return Number.isFinite(value) && value > 0
+}
+
+function isNonNegativeFinite(value: number) {
+  return Number.isFinite(value) && value >= 0
+}
+
+function isNonNegativeInteger(value: number) {
+  return Number.isInteger(value) && value >= 0
+}
+
+function isValidDeliveryExpectancy(value: CreateUnitInput['deliveryExpectancy']) {
+  if (!Number.isInteger(value.year) || value.year < 1900 || value.year > 2200) return false
+  if (value.mode === 'year') return true
+  const month = value.month
+  return Number.isInteger(month) && month !== undefined && month >= 1 && month <= 12
+}
+
 export function archiveUnitWorkflow(state: AppDataState, actor: LeadraUser, unitId: number): WorkflowResult {
   const unit = state.units.find((item) => item.id === unitId)
   if (!unit) return { ok: false, state, ...createErrorMessage('error.unitNotFound', 'Unit not found.') }
@@ -467,6 +538,37 @@ export function archiveUnitWorkflow(state: AppDataState, actor: LeadraUser, unit
       { unit, metadata: { unitCode: unit.unitCode } },
     ),
   }
+}
+
+export function setUnitSpecialWorkflow(
+  state: AppDataState,
+  actor: LeadraUser,
+  unitId: number,
+  special: boolean,
+): WorkflowResult {
+  const unit = state.units.find((item) => item.id === unitId)
+  if (!unit) return { ok: false, state, ...createErrorMessage('error.unitNotFound', 'Unit not found.') }
+  if (!canManageUnitSpecialStatus(actor, unit)) {
+    return { ok: false, state, ...createErrorMessage('error.specialNotAllowed', 'Only admins can manage special units.') }
+  }
+
+  const now = new Date().toISOString()
+  const nextState = {
+    ...state,
+    units: state.units.map((item) =>
+      item.id === unitId
+        ? {
+            ...item,
+            isSpecial: special,
+            specialMarkedAt: special ? now : null,
+            specialMarkedBy: special ? actor.id : null,
+            updatedAt: now,
+          }
+        : item,
+    ),
+  }
+
+  return { ok: true, state: nextState }
 }
 
 export function updateUnitStatusWorkflow(
@@ -636,10 +738,14 @@ export function updateUnitWorkflow(
   if (canEditPricing && nextPaymentMethod === 'installment' && nextDownPayment != null && nextDownPayment > nextTotalAmount) {
     return { ok: false, state, error: 'Down payment cannot be greater than total amount.', errorKey: null, errorParams: null }
   }
-  let nextMaintenanceCost: number | null = null
+  let nextMaintenanceCost: number | null
   let nextMaintenanceDueDate: string | null = null
+  if (canEditPricing) {
+    nextMaintenanceCost = input.maintenanceCost ?? null
+  } else {
+    nextMaintenanceCost = unit.maintenanceCost ?? null
+  }
   if (nextMaintenancePaid) {
-    nextMaintenanceCost = canEditPricing ? input.maintenanceCost ?? null : unit.maintenanceCost ?? null
     nextMaintenanceDueDate = canEditPricing ? input.maintenanceDueDate ?? null : unit.maintenanceDueDate ?? null
   }
   const nextInstallmentFields = resolveUnitEditInstallmentFields(unit, input, canEditPricing)
@@ -718,6 +824,7 @@ export function updateUnitWorkflow(
     updatedUnit.paymentSchedule = createInitialPaymentSchedule(updatedUnit)
     updatedUnit.paymentHistory = unit.paymentHistory
   }
+  updatedUnit.remainingPayment = calculateDisplayedRemainingPayment(updatedUnit)
 
   if (unitHasSameProjectPhoneDuplicate(updatedUnit, state.units)) {
     const auditMessage = createAuditMessage('duplicate_phone_blocked')

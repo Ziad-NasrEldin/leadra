@@ -1,4 +1,5 @@
 import type { SupabaseClient } from '@supabase/supabase-js'
+import { validateMediaUpload } from './domain'
 import {
   toPaymentHistoryViewModel,
   toPaymentScheduleViewModel,
@@ -15,6 +16,26 @@ import {
 import type { AnalyticsEventType, CreateUnitInput, LeadraUnit, LeadraUser, MessageParams, UnitEditInput, UnitFilters, UnitStatus, UserRole } from './types'
 
 type FunctionErrorBody = { error?: string; message?: string }
+type SupabaseErrorLike = { code?: string; message?: string; details?: string; hint?: string } | null | undefined
+type CreateUnitPhase = 'unit' | 'media' | 'reload'
+
+function createUnitRemoteError(phase: CreateUnitPhase, error: unknown, rollbackError: unknown = null) {
+  const message = phase === 'media'
+    ? 'Unit media attachments could not be saved.'
+    : phase === 'reload'
+      ? 'Unit was created but could not be loaded.'
+      : 'Unit could not be created.'
+  const wrapped = new Error(message)
+  Object.assign(wrapped, {
+    code: typeof error === 'object' && error && 'code' in error ? error.code : undefined,
+    details: typeof error === 'object' && error && 'details' in error ? error.details : undefined,
+    hint: typeof error === 'object' && error && 'hint' in error ? error.hint : undefined,
+    phase,
+    cause: error,
+    rollbackError,
+  })
+  return wrapped
+}
 
 const unitSelect = `
   *,
@@ -68,30 +89,80 @@ export class LeadraRepository {
   }
 
   async createUnit(actor: LeadraUser, input: CreateUnitInput): Promise<LeadraUnit> {
-    const { data, error } = await this.client
+    const mediaValidation = validateMediaUpload(input.media)
+    if (!mediaValidation.ok) {
+      throw new Error(mediaValidation.message ?? 'Upload failed. Invalid media upload.')
+    }
+    const media = input.media.filter((file) => file.type === 'image' || file.type === 'pdf')
+    const { data: createdUnitId, error } = await this.client.rpc('create_unit_with_media', {
+      unit_payload: toUnitInsertPayload(input, actor),
+      media_payload: media.map(toMediaInsertPayload),
+    })
+
+    if (isMissingAtomicCreateRpc(error)) {
+      return this.createUnitWithoutAtomicRpc(actor, input, media)
+    }
+    if (error) throw error
+    try {
+      return await this.loadUnit(createdUnitId as number)
+    } catch (loadError) {
+      throw createUnitRemoteError('reload', loadError)
+    }
+  }
+
+  private async createUnitWithoutAtomicRpc(actor: LeadraUser, input: CreateUnitInput, media: CreateUnitInput['media']): Promise<LeadraUnit> {
+    const { data: createdUnit, error: createError } = await this.client
       .from('units')
       .insert(toUnitInsertPayload(input, actor))
-      .select(unitSelect)
+      .select('id')
       .single()
 
-    if (error) throw error
-    const unit = toUnitViewModel(data as unknown as SupabaseUnitRow)
-    const media = input.media.filter((file) => file.type === 'image' || file.type === 'pdf')
-    if (media.length === 0) return unit
+    if (createError) throw createError
+    const createdUnitId = (createdUnit as { id: number }).id
 
-    const { error: mediaError } = await this.client
-      .from('unit_media')
-      .insert(media.map((file) => toMediaInsertPayload(unit.id, file)))
-    if (mediaError) throw mediaError
+    if (media.length > 0) {
+      const mediaPayload = media.map((file) => {
+        const mediaInsert = toMediaInsertPayload(file)
+        const payload = {
+          type: mediaInsert.type,
+          storage_path: mediaInsert.storage_path,
+          file_name: mediaInsert.file_name,
+          size_bytes: mediaInsert.size_bytes,
+        }
+        return { ...payload, unit_id: createdUnitId }
+      })
+      const { error: mediaError } = await this.client.from('unit_media').insert(mediaPayload)
+      if (mediaError) {
+        const rollbackError = await this.deleteCreatedUnitAfterMediaFailure(createdUnitId)
+        throw createUnitRemoteError('media', mediaError, rollbackError)
+      }
+    }
 
-    const { data: mediaData, error: reloadError } = await this.client
+    try {
+      return await this.loadUnit(createdUnitId)
+    } catch (error) {
+      throw createUnitRemoteError('reload', error)
+    }
+  }
+
+  private async deleteCreatedUnitAfterMediaFailure(unitId: number): Promise<unknown> {
+    try {
+      const { error } = await this.client.from('units').delete().eq('id', unitId)
+      return error ?? null
+    } catch (error) {
+      return error
+    }
+  }
+
+  private async loadUnit(unitId: number): Promise<LeadraUnit> {
+    const { data: unitData, error: reloadError } = await this.client
       .from('units')
       .select(unitSelect)
-      .eq('id', unit.id)
+      .eq('id', unitId)
       .single()
 
     if (reloadError) throw reloadError
-    return toUnitViewModel(mediaData as unknown as SupabaseUnitRow)
+    return toUnitViewModel(unitData as unknown as SupabaseUnitRow)
   }
 
   async updateUnitDetails(
@@ -113,13 +184,22 @@ export class LeadraRepository {
   }
 
   async archiveUnit(unitId: number): Promise<void> {
-    const { error } = await this.client.from('units').update({ archived: true }).eq('id', unitId)
+    const { error } = await this.client.from('units').update({ archived: true }).eq('id', unitId).select('id').single()
     if (error) throw error
   }
 
   async updateUnitStatus(unitId: number, status: UnitStatus): Promise<void> {
     const { error } = await this.client.from('units').update({ status }).eq('id', unitId)
     if (error) throw error
+  }
+
+  async setUnitSpecial(unitId: number, special: boolean): Promise<LeadraUnit> {
+    const { error } = await this.client.rpc('set_unit_special', {
+      target_unit_id: unitId,
+      mark_special: special,
+    })
+    if (error) throw error
+    return this.loadUnit(unitId)
   }
 
   async updatePaymentSchedule(unitId: number, scheduleId: string, paid: boolean): Promise<LeadraUnit> {
@@ -136,6 +216,11 @@ export class LeadraRepository {
       .single()
     if (loadError) throw loadError
     return toUnitViewModel(data as unknown as SupabaseUnitRow)
+  }
+
+  async reconcileDueUnitPayments(): Promise<void> {
+    const { error } = await this.client.rpc('reconcile_due_unit_payments')
+    if (error) throw error
   }
 
   async deleteUnitMedia(mediaId: string): Promise<void> {
@@ -296,6 +381,12 @@ function compactUnitFilters(filters: UnitFilters): Record<string, unknown> {
   return Object.fromEntries(
     Object.entries(filters).filter(([, value]) => value !== undefined && value !== '' && value !== 'all'),
   )
+}
+
+function isMissingAtomicCreateRpc(error: SupabaseErrorLike): boolean {
+  if (!error) return false
+  const text = `${error.code ?? ''} ${error.message ?? ''} ${error.details ?? ''} ${error.hint ?? ''}`.toLowerCase()
+  return text.includes('pgrst202') || text.includes('create_unit_with_media') || text.includes('include_in_pdf')
 }
 
 function matchesUnitFilters(unit: LeadraUnit, filters: UnitFilters): boolean {

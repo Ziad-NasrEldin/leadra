@@ -83,6 +83,8 @@ export function AdminPage({
   const [visibleAuditCount, setVisibleAuditCount] = useState(auditLogPageSize)
   const [logoPathDraft, setLogoPathDraft] = useState(settings.logoPath)
   const [logoUploadError, setLogoUploadError] = useState('')
+  const [createUserPending, setCreateUserPending] = useState(false)
+  const [settingsPending, setSettingsPending] = useState(false)
   const deferredUserQuery = useDeferredValue(userQuery)
   const userListStateKey = `${deferredUserQuery}-${roleFilter}-${statusFilter}-${teamFilter}-${sortUsersBy}`
   const teamOptions = useMemo(() => {
@@ -257,11 +259,14 @@ export function AdminPage({
                 }
 
                 try {
+                  setCreateUserPending(true)
                   await onCreateUser(formData)
                   form.reset()
                   setCreateUserOpen(false)
                 } catch {
                   // The parent renders the error flash; keep the form open so the admin can retry.
+                } finally {
+                  setCreateUserPending(false)
                 }
               }}
             >
@@ -321,7 +326,9 @@ export function AdminPage({
                 </label>
               )}
               {createUserError && <p className="form-error">{createUserError}</p>}
-              <button className="secondary-button" type="submit">{t('admin.createUser')}</button>
+              <button className="secondary-button" type="submit" disabled={createUserPending}>
+                {createUserPending ? t('common.saving') : t('admin.createUser')}
+              </button>
             </form>
           )}
 
@@ -438,18 +445,23 @@ export function AdminPage({
           <p>{t('admin.settingsCopy')}</p>
           <form
             className="settings-form"
-            onSubmit={(event) => {
+            onSubmit={async (event) => {
               event.preventDefault()
               const formData = new FormData(event.currentTarget)
-              void onSettingsUpdate({
-                companyName: String(formData.get('companyName') ?? '').trim() || 'Leadra',
-                commissionPercentage: Number(formData.get('commissionPercentage')),
-                footerText: String(formData.get('footerText') ?? '').trim(),
-                contactDetails: String(formData.get('contactDetails') ?? '').trim(),
-                logoPath: logoPathDraft,
-                pdfLayout: String(formData.get('pdfLayout')) === 'compact' ? 'compact' : 'classic',
-                mediaLimitMb: Number(formData.get('mediaLimitMb')),
-              })
+              setSettingsPending(true)
+              try {
+                await onSettingsUpdate({
+                  companyName: String(formData.get('companyName') ?? '').trim() || 'Leadra',
+                  commissionPercentage: Number(formData.get('commissionPercentage')),
+                  footerText: String(formData.get('footerText') ?? '').trim(),
+                  contactDetails: String(formData.get('contactDetails') ?? '').trim(),
+                  logoPath: logoPathDraft,
+                  pdfLayout: String(formData.get('pdfLayout')) === 'compact' ? 'compact' : 'classic',
+                  mediaLimitMb: Number(formData.get('mediaLimitMb')),
+                })
+              } finally {
+                setSettingsPending(false)
+              }
             }}
           >
             <label>
@@ -507,7 +519,9 @@ export function AdminPage({
               {t('admin.contactDetails')}
               <input name="contactDetails" defaultValue={settings.contactDetails} dir="auto" />
             </label>
-            <button className="secondary-button" type="submit">{t('admin.saveSettings')}</button>
+            <button className="secondary-button" type="submit" disabled={settingsPending}>
+              {settingsPending ? t('common.saving') : t('admin.saveSettings')}
+            </button>
           </form>
         </section>
       )}

@@ -22,7 +22,7 @@ export function CreateUnitPage({
   lookupValues: LookupValue[]
   activeStep: CreateUnitStep
   onStepChange: (step: CreateUnitStep) => void
-  onSubmit: (event: FormEvent<HTMLFormElement>, uploadedMedia: LeadraMediaFile[]) => void
+  onSubmit: (event: FormEvent<HTMLFormElement>, uploadedMedia: LeadraMediaFile[]) => void | Promise<void>
   settings: AppSettings
 }) {
   const { locale, t } = useLocale()
@@ -35,14 +35,20 @@ export function CreateUnitPage({
   const [installmentStartMonth, setInstallmentStartMonth] = useState('2026-03')
   const [installmentEndMonth, setInstallmentEndMonth] = useState('2030-03')
   const [maintenancePaid, setMaintenancePaid] = useState(false)
+  const [maintenanceCost, setMaintenanceCost] = useState(0)
   const [ownerCountryCode, setOwnerCountryCode] = useState('+20')
   const [ownerPhone, setOwnerPhone] = useState('01012345678')
   const [selectedUnitType, setSelectedUnitType] = useState('Apartment')
   const [selectedFloor, setSelectedFloor] = useState('2nd')
+  const [submitting, setSubmitting] = useState(false)
   const activeStepIndex = createUnitSteps.indexOf(activeStep)
   const mediaValidation = validateMediaUpload(selectedMedia)
+  const hasSelectedImage = selectedMedia.some((file) => file.type === 'image')
+  const isCreateBlocked = submitting || !hasSelectedImage || !mediaValidation.ok
   const totalMediaMb = selectedMedia.reduce((total, file) => total + file.sizeBytes, 0) / (1024 * 1024)
   const remainingPayment = Math.max(0, totalAmount - downPayment)
+  const displayedPaidAmount = paymentMethod === 'installment' ? downPayment + (maintenancePaid ? maintenanceCost : 0) : totalAmount + (maintenancePaid ? maintenanceCost : 0)
+  const displayedRemainingPayment = paymentMethod === 'installment' ? remainingPayment + (maintenancePaid ? 0 : maintenanceCost) : maintenancePaid ? 0 : maintenanceCost
   const calculatedInstallment =
     paymentMethod === 'installment' && isAutomaticInstallmentType(installmentType)
       ? calculateInstallmentAmountForPeriod(remainingPayment, installmentType, installmentStartMonth, installmentEndMonth)
@@ -86,7 +92,19 @@ export function CreateUnitPage({
       </div>
       <form
         className="wizard-shell"
-        onSubmit={(event) => {
+        onSubmit={async (event) => {
+          if (submitting) {
+            event.preventDefault()
+            return
+          }
+          if (!hasSelectedImage) {
+            event.preventDefault()
+            setMediaError({
+              message: t('error.imageRequired'),
+              messageKey: 'error.imageRequired',
+            })
+            return
+          }
           const validation = validateMediaUpload(selectedMedia)
           if (!validation.ok) {
             event.preventDefault()
@@ -99,7 +117,12 @@ export function CreateUnitPage({
           }
 
           setMediaError(null)
-          onSubmit(event, selectedMedia)
+          setSubmitting(true)
+          try {
+            await onSubmit(event, selectedMedia)
+          } finally {
+            setSubmitting(false)
+          }
         }}
       >
         <div className="wizard-steps motion-stage" aria-label={t('create.steps')} style={motionStyle(1, 90)}>
@@ -109,6 +132,7 @@ export function CreateUnitPage({
               className={`wizard-step ${step === activeStep ? 'active' : ''}`}
               type="button"
               aria-current={step === activeStep ? 'step' : undefined}
+              disabled={submitting}
               onClick={() => onStepChange(step)}
             >
               <span>{formatCount(locale, index + 1)}</span>
@@ -204,12 +228,12 @@ export function CreateUnitPage({
             />{' '}
             {t('create.maintenancePaid')}
           </label>
+          <label>
+            <RequiredLabel label={t('create.maintenanceCost')} required />
+            <input name="maintenanceCost" type="number" min={0} step="0.01" required value={maintenanceCost} onChange={(event) => setMaintenanceCost(Number(event.target.value))} />
+          </label>
           {maintenancePaid && (
             <>
-              <label>
-                <RequiredLabel label={t('create.maintenanceCost')} required />
-                <input name="maintenanceCost" type="number" min={0} step="0.01" required />
-              </label>
               <label>
                 <RequiredLabel label={t('create.maintenanceDueDate')} required />
                 <input name="maintenanceDueDate" type="date" required />
@@ -224,12 +248,17 @@ export function CreateUnitPage({
               </label>
               <label>
                 {t('details.remainingPayment')}
-                <input readOnly value={formatCurrency(remainingPayment, locale)} />
+                <input readOnly value={formatCurrency(displayedRemainingPayment, locale)} />
+              </label>
+              <label>
+                {t('details.paidAmount')}
+                <input readOnly value={formatCurrency(displayedPaidAmount, locale)} />
               </label>
               <input name="installmentType" type="hidden" value={installmentType} />
               <ControlledSelectField
                 label={t('details.installmentType')}
                 options={[
+                  { value: 'monthly', label: t('create.monthly') },
                   { value: 'quarterly', label: t('create.quarterly') },
                   { value: 'semi_annual', label: t('create.semiAnnual') },
                   { value: 'annual', label: t('create.annual') },
@@ -320,7 +349,7 @@ export function CreateUnitPage({
             </div>
             {mediaError && <p className="form-error motion-feedback">{renderError(locale, { message: mediaError.message, messageKey: mediaError.messageKey, messageParams: mediaError.messageParams })}</p>}
             {!mediaValidation.ok && !mediaError && <p className="form-error motion-feedback">{renderError(locale, { message: mediaValidation.message ?? t('error.invalidMediaUpload'), messageKey: mediaValidation.messageKey ?? 'error.invalidMediaUpload', messageParams: mediaValidation.messageParams ?? null })}</p>}
-            {selectedMedia.length === 0 && <p className="media-empty-note motion-stage" style={motionStyle(1, 150)}>{t('create.noImages')}</p>}
+            {!hasSelectedImage && mediaValidation.ok && !mediaError && <p className="form-error motion-feedback">{t('error.imageRequired')}</p>}
             <div className="upload-preview-grid">
               {selectedMedia.map((file, index) => (
                 <div className="upload-preview-card motion-stage" key={file.id} style={motionStyle(index, 170)}>
@@ -372,17 +401,17 @@ export function CreateUnitPage({
               ))}
             </div>
           </div>
-          <button className="primary-button" type="submit">
-            {t('create.createAndNotify')}
+          <button className="primary-button" type="submit" disabled={isCreateBlocked}>
+            {submitting ? t('common.saving') : t('create.createAndNotify')}
           </button>
         </section>
 
         <div className="wizard-actions motion-stage" style={motionStyle(3, 140)}>
-          <button className="secondary-button" type="button" disabled={activeStepIndex === 0} onClick={() => goToRelativeStep(-1)}>
+          <button className="secondary-button" type="button" disabled={submitting || activeStepIndex === 0} onClick={() => goToRelativeStep(-1)}>
             {t('common.back')}
           </button>
           {activeStep !== 'Review' && (
-            <button className="primary-button" type="button" onClick={() => goToRelativeStep(1)}>
+            <button className="primary-button" type="button" disabled={submitting} onClick={() => goToRelativeStep(1)}>
               {t('common.next')}
             </button>
           )}

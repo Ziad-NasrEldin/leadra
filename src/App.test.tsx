@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import App from './App'
 import { CreateUnitPage } from './features/create/CreateUnitPage'
 import { initialAppState, lookupValues } from './data/seed'
+import { createUnitRemoteErrorFlash, mediaPdfVisibilityErrorFlash } from './lib/createUnitErrors'
 import { LocaleProvider } from './lib/i18n'
 import { ThemeProvider } from './lib/theme'
 
@@ -93,7 +94,50 @@ describe('Leadra app shell', () => {
     Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: originalRevokeObjectURL })
   })
 
-  it('lets a demo user enter the destination-first unit browser', async () => {
+  it('renders a friendly create-unit schema-cache error instead of raw Supabase text', () => {
+    expect(createUnitRemoteErrorFlash({
+      code: 'PGRST204',
+      message: "Could not find the 'include_in_pdf' column of 'unit_media' in the schema cache",
+    }).text).toMatch(/latest Supabase migrations/i)
+  })
+
+  it('renders targeted create-unit duplicate owner phone guidance', () => {
+    expect(createUnitRemoteErrorFlash({
+      code: '23505',
+      message: 'duplicate key value violates unique constraint "units_project_owner_phone_unique"',
+    }).text).toMatch(/owner phone already exists/i)
+  })
+
+  it('renders targeted create-unit stale Master Data guidance', () => {
+    expect(createUnitRemoteErrorFlash({
+      code: '23503',
+      message: 'insert or update on table "units" violates foreign key constraint "units_project_id_fkey"',
+    }).text).toMatch(/Master Data/i)
+  })
+
+  it('renders targeted create-unit payment constraint guidance', () => {
+    expect(createUnitRemoteErrorFlash({
+      code: '23514',
+      message: 'new row for relation "units" violates check constraint "units_maintenance_paid_requires_details"',
+    }).text).toMatch(/payment or maintenance/i)
+  })
+
+  it('renders targeted create-unit media attachment guidance', () => {
+    expect(createUnitRemoteErrorFlash({
+      code: '22023',
+      message: 'Unit media attachments could not be saved.',
+      details: 'Only image and PDF media can be attached to unit_media',
+    }).text).toMatch(/media attachment is invalid/i)
+  })
+
+  it('renders a friendly PDF visibility schema-cache error', () => {
+    expect(mediaPdfVisibilityErrorFlash({
+      code: 'PGRST204',
+      message: "Could not find the 'include_in_pdf' column of 'unit_media' in the schema cache",
+    }).text).toMatch(/PDF visibility could not be saved/i)
+  })
+
+  it('lets a demo user enter global unit search and keep browsing by destination', async () => {
     renderApp()
     const user = userEvent.setup()
 
@@ -108,7 +152,9 @@ describe('Leadra app shell', () => {
     expect(screen.getByRole('heading', { name: /projects by inventory/i })).toBeInTheDocument()
     await user.click(screen.getByRole('link', { name: /view all units/i }))
 
-    expect(await screen.findByRole('heading', { name: /choose a destination/i })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: /search all units/i })).toBeInTheDocument()
+    expect(await screen.findByText(/NC3BR/i)).toBeInTheDocument()
+    expect(await screen.findByText(/ZE4BR/i)).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: /^new cairo/i }))
     expect(window.location.pathname).toBe('/units/destinations/dest-new-cairo')
     expect(await screen.findByRole('button', { name: /new cairo estates/i })).toBeInTheDocument()
@@ -118,6 +164,63 @@ describe('Leadra app shell', () => {
     expect(window.location.pathname).toBe('/units/destinations/dest-new-cairo/projects/project-new-cairo')
     expect(await screen.findByText(/NC3BR/i)).toBeInTheDocument()
     expect(screen.queryByText(/ZE4BR/i)).not.toBeInTheDocument()
+  })
+
+  it('filters units globally without navigating into destination or project routes', async () => {
+    renderApp()
+    const user = userEvent.setup()
+
+    await openLoginPage(user)
+    await signInAs(user, /continue as admin/i)
+    await user.click(screen.getByRole('link', { name: /view all units/i }))
+
+    expect(await screen.findByRole('heading', { name: /search all units/i })).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: /show filters/i }))
+    await chooseFromSelect(user, /project/i, /new cairo estates/i)
+
+    expect(window.location.pathname).toBe('/units')
+    expect(await screen.findByText(/NC3BR/i)).toBeInTheDocument()
+    expect(screen.queryByText(/ZE4BR/i)).not.toBeInTheDocument()
+
+    await user.click(screen.getAllByRole('button', { name: /^reset$/i })[0])
+    await chooseFromSelect(user, /destination/i, /sheikh zayed/i)
+
+    expect(window.location.pathname).toBe('/units')
+    expect(await screen.findByText(/ZE4BR/i)).toBeInTheDocument()
+    expect(screen.queryByText(/NC3BR/i)).not.toBeInTheDocument()
+  })
+
+  it('lets admins mark units special and browse the shared special page', async () => {
+    renderApp()
+    const user = userEvent.setup()
+
+    await openSeedUnitDetails(user)
+    await user.click(screen.getByRole('button', { name: /mark special/i }))
+    expect(await screen.findByRole('button', { name: /remove special/i })).toBeInTheDocument()
+
+    await user.click(screen.getAllByRole('link', { name: /^special$/i })[0])
+    expect(window.location.pathname).toBe('/special')
+    expect((await screen.findAllByRole('heading', { name: /special units/i })).length).toBeGreaterThan(0)
+    expect(await screen.findByText(/NC3BR/i)).toBeInTheDocument()
+    expect(screen.queryByText(/ZE4BR/i)).not.toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: /open NC3BR/i }))
+    await user.click(await screen.findByRole('button', { name: /remove special/i }))
+    await user.click(screen.getAllByRole('link', { name: /^special$/i })[0])
+    expect((await screen.findAllByRole('heading', { name: /special units/i })).length).toBeGreaterThan(0)
+    expect(screen.queryByText(/NC3BR/i)).not.toBeInTheDocument()
+  })
+
+  it('hides the shared special page from sales users', async () => {
+    renderApp()
+    const user = userEvent.setup()
+
+    await openLoginPage(user)
+    await signInAs(user, /continue as sara/i)
+
+    expect(screen.queryByRole('link', { name: /^special$/i })).not.toBeInTheDocument()
+    navigateTestPath('/special')
+    await waitFor(() => expect(window.location.pathname).toBe('/dashboard'))
   })
 
   it('selects units for batch pdf generation and preserves row navigation', async () => {
@@ -213,7 +316,7 @@ describe('Leadra app shell', () => {
     await openLoginPage(user)
     await signInAs(user, /continue as admin/i)
 
-    expect(await screen.findByRole('heading', { name: /choose a destination/i })).toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: /search all units/i })).toBeInTheDocument()
     expect(window.location.pathname).toBe('/units')
     expect(window.location.hash).toBe('')
     await user.click(screen.getByRole('link', { name: /^create$/i }))
@@ -479,6 +582,36 @@ describe('Leadra app shell', () => {
     expect(screen.queryByRole('spinbutton', { name: /transfer fees/i })).not.toBeInTheDocument()
   })
 
+  it('blocks create-unit submission until at least one image is uploaded', async () => {
+    const user = userEvent.setup()
+
+    render(
+      <LocaleProvider>
+        <CreateUnitPage
+          activeStep="Review"
+          lookupValues={lookupValues}
+          settings={initialAppState.settings}
+          onStepChange={vi.fn()}
+          onSubmit={vi.fn()}
+        />
+      </LocaleProvider>,
+    )
+
+    const createButton = screen.getByRole('button', { name: /create unit and notify team/i })
+    expect(screen.getByText(/upload at least one unit image before creating the unit/i)).toBeInTheDocument()
+    expect(createButton).toBeDisabled()
+
+    const image = new File(
+      [Uint8Array.from(atob('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAFgwJ/lZrD9wAAAABJRU5ErkJggg=='), (char) => char.charCodeAt(0))],
+      'living-room.png',
+      { type: 'image/png' },
+    )
+    await user.upload(screen.getByLabelText(/unit images/i), image)
+
+    expect(await screen.findByText(/living-room.png/i)).toBeInTheDocument()
+    expect(createButton).toBeEnabled()
+  })
+
   it('lets admins edit property, owner, and PRD pricing fields inline from unit details', async () => {
     renderApp()
     const user = userEvent.setup()
@@ -660,7 +793,7 @@ describe('Leadra app shell', () => {
     await waitFor(() => expect(window.location.pathname).toContain('/admin/master-data/destinations'))
     await user.type(screen.getByRole('textbox', { name: /value label/i }), 'North Coast')
     const destinationThumb = new File(['destination'], 'north-coast.png', { type: 'image/png' })
-    await user.upload(screen.getByLabelText(/thumbnail image/i), destinationThumb)
+    await user.upload(await screen.findByLabelText(/thumbnail image/i), destinationThumb)
     await user.click(screen.getByRole('button', { name: /add value/i }))
     expect(await screen.findByText(/north coast/i, undefined, { timeout: 3000 })).toBeInTheDocument()
 
@@ -669,7 +802,7 @@ describe('Leadra app shell', () => {
     await user.type(screen.getByRole('textbox', { name: /value label/i }), 'Zim')
     expect(screen.queryByRole('textbox', { name: /thumbnail url/i })).not.toBeInTheDocument()
     const projectThumb = new File(['project'], 'zim.png', { type: 'image/png' })
-    await user.upload(screen.getByLabelText(/thumbnail image/i), projectThumb)
+    await user.upload(await screen.findByLabelText(/thumbnail image/i), projectThumb)
     await user.click(screen.getByRole('button', { name: /add value/i }))
     expect(await screen.findByText(/zim/i, undefined, { timeout: 3000 })).toBeInTheDocument()
 
@@ -773,6 +906,24 @@ describe('Leadra app shell', () => {
 
     await openLoginPage(user)
     await signInAs(user, /continue as admin/i)
+    await user.click((await screen.findAllByRole('link', { name: /^admin$/i }))[0])
+
+    await chooseFromSelect(user, /^role$/i, /manager/i)
+    const managedUsers = screen.getByLabelText(/managed users/i)
+    await user.click(within(managedUsers).getByRole('button', { name: /deactivate mona hafez/i }))
+    expect(screen.queryByLabelText(/replacement sales representative/i)).not.toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: /^deactivate user$/i }))
+
+    expect(await screen.findByText(/user deactivated and audit history updated/i)).toBeInTheDocument()
+    expect(screen.queryByText(/mona hafez/i)).not.toBeInTheDocument()
+  })
+
+  it('lets a sub admin deactivate a non-sales user', async () => {
+    renderApp()
+    const user = userEvent.setup()
+
+    await openLoginPage(user)
+    await signInAs(user, /continue as laila mansour/i)
     await user.click((await screen.findAllByRole('link', { name: /^admin$/i }))[0])
 
     await chooseFromSelect(user, /^role$/i, /manager/i)

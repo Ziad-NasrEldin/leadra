@@ -56,10 +56,11 @@ export function getUnitCustomInstallmentText(unit: LeadraUnit): string | null {
 }
 
 export function isAutomaticInstallmentType(type: InstallmentType | null | undefined): type is Exclude<InstallmentType, 'custom'> {
-  return type === 'quarterly' || type === 'semi_annual' || type === 'annual'
+  return type === 'monthly' || type === 'quarterly' || type === 'semi_annual' || type === 'annual'
 }
 
 export function installmentFrequencyMonths(type: InstallmentType | null | undefined): number | null {
+  if (type === 'monthly') return 1
   if (type === 'quarterly') return 3
   if (type === 'semi_annual') return 6
   if (type === 'annual') return 12
@@ -99,6 +100,7 @@ export function formatMonthYear(locale: LocaleCode, value?: string | null): stri
 }
 
 export function getInstallmentTypeLabel(type: InstallmentType | null | undefined, t: (key: string) => string): string {
+  if (type === 'monthly') return t('create.monthly')
   if (type === 'quarterly') return t('create.quarterly')
   if (type === 'semi_annual') return t('create.semiAnnual')
   if (type === 'annual') return t('create.annual')

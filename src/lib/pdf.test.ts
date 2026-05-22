@@ -140,7 +140,8 @@ describe('pdf generation', () => {
     expect(text).toContain('Finishing Status *: White Box')
     expect(text).toContain('Total Amount: EGP\u00a05,000,000')
     expect(text).toContain('Down Payment: EGP\u00a01,000,000')
-    expect(text).toContain('Remaining Value: EGP\u00a04,000,000')
+    expect(text).toContain('Paid Amount: EGP\u00a01,123,456')
+    expect(text).toContain('Remaining Value: EGP\u00a0345,678')
     expect(text).toContain('Installments: Sep 2026: EGP\u00a0345,678')
     expect(text).not.toContain('Installment 1:')
     expect(text).not.toContain('Installment 2:')
@@ -227,16 +228,15 @@ describe('pdf generation', () => {
     expect(withLogo.size).toBeGreaterThan(withoutLogo.size)
   })
 
-  it('names generated pdf files with the export timestamp so repeated downloads are visible', async () => {
+  it('names generated pdf files with the unit code and export month day', async () => {
     const user = demoUsers[0]
     const unit = { ...seedUnits[0], media: [] }
 
     const first = await generateUnitPdfFile(user, unit, initialAppState.settings, 'en', new Date('2026-05-15T09:30:01Z'))
     const second = await generateUnitPdfFile(user, unit, initialAppState.settings, 'en', new Date('2026-05-15T09:31:02Z'))
 
-    expect(first.fileName).toBe('leadra-NC3BR-20260515-093001.pdf')
-    expect(second.fileName).toBe('leadra-NC3BR-20260515-093102.pdf')
-    expect(second.fileName).not.toBe(first.fileName)
+    expect(first.fileName).toBe('NC3BR-May15.pdf')
+    expect(second.fileName).toBe('NC3BR-May15.pdf')
   })
 
   it('includes visible and legacy unmarked images while excluding hidden images and videos', async () => {

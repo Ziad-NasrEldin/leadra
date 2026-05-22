@@ -2,7 +2,7 @@ import { Check, ChevronDown, Eye, EyeOff } from 'lucide-react'
 import { useEffect, useId, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { Link } from 'react-router-dom'
-import { formatCount, useLocale } from '../lib/i18n'
+import { formatCount, translate, useLocale, type LocaleCode } from '../lib/i18n'
 
 export type BrandedSelectOption = {
   value: string
@@ -26,6 +26,8 @@ export function BrandedSelect({
   disabled?: boolean
   onValueChange?: (value: string) => void
 }) {
+  const locale: LocaleCode = typeof document !== 'undefined' && document.documentElement.dir === 'rtl' ? 'ar' : 'en'
+  const t = (key: string) => translate(locale, key)
   const menuId = useId()
   const rootRef = useRef<HTMLDivElement | null>(null)
   const menuRef = useRef<HTMLDivElement | null>(null)
@@ -69,9 +71,12 @@ export function BrandedSelect({
       const menuWidth = Math.min(maxMenuWidth, Math.max(rect.width, shouldFitContent ? contentWidth : rect.width))
       const estimatedHeight = Math.min(360, Math.max(116, filteredOptions.length * 50 + 76))
       const availableBelow = window.innerHeight - rect.bottom - viewportPadding
-      const maxHeight = Math.max(120, Math.min(estimatedHeight, availableBelow - gap))
+      const availableAbove = rect.top - viewportPadding
+      const openAbove = availableBelow < estimatedHeight && availableAbove > availableBelow
+      const availableSpace = Math.max(96, (openAbove ? availableAbove : availableBelow) - gap)
+      const maxHeight = Math.min(estimatedHeight, availableSpace)
       const left = Math.min(Math.max(viewportPadding, rect.left), window.innerWidth - menuWidth - viewportPadding)
-      const top = rect.bottom + gap
+      const top = openAbove ? Math.max(viewportPadding, rect.top - gap - maxHeight) : rect.bottom + gap
 
       setMenuStyle({
         position: 'fixed',
@@ -93,7 +98,9 @@ export function BrandedSelect({
       const viewportPadding = 12
       const estimatedHeight = Math.min(360, Math.max(116, filteredOptions.length * 50 + 76))
       const availableBelow = window.innerHeight - rect.bottom - viewportPadding
-      const neededSpace = Math.max(0, estimatedHeight - availableBelow + gap)
+      const availableAbove = rect.top - viewportPadding
+      const canOpenAbove = availableBelow < estimatedHeight && availableAbove > availableBelow
+      const neededSpace = canOpenAbove ? 0 : Math.max(0, estimatedHeight - availableBelow + gap)
 
       rootElement.style.setProperty('--brand-select-page-bottom-space', `${neededSpace + 24}px`)
 
@@ -246,9 +253,9 @@ export function BrandedSelect({
             style={menuStyle}
           >
             <input
-              aria-label="Search options"
+              aria-label={t('common.searchOptions')}
               className="brand-select-search"
-              placeholder="Search..."
+              placeholder={t('common.searchPlaceholder')}
               value={searchText}
               onChange={(event) => {
                 const nextSearch = event.target.value
@@ -266,7 +273,7 @@ export function BrandedSelect({
                 }
               }}
             />
-            {filteredOptions.length === 0 && <div className="brand-select-empty">No matches</div>}
+            {filteredOptions.length === 0 && <div className="brand-select-empty">{t('common.noMatches')}</div>}
             {filteredOptions.map((option, index) => {
               const active = option.value === selectedValue
               const highlighted = option.value === menuHighlightedValue

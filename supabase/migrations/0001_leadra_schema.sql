@@ -6,7 +6,7 @@ create type public.unit_status as enum ('available', 'hold', 'sold');
 create type public.payment_method as enum ('cash', 'installment');
 create type public.installment_type as enum ('quarterly', 'semi_annual', 'annual', 'custom');
 create type public.lookup_kind as enum ('developer', 'project', 'destination', 'view', 'unit_type', 'finish');
-create type public.media_type as enum ('image', 'video');
+create type public.media_type as enum ('image', 'pdf', 'video');
 create type public.notification_channel as enum ('in_app', 'email');
 create type public.analytics_event_type as enum (
   'unit_created',
@@ -138,6 +138,7 @@ create table public.unit_media (
   storage_path text not null,
   file_name text not null,
   size_bytes bigint not null check (size_bytes > 0),
+  include_in_pdf boolean not null default true,
   sort_order integer not null default 0,
   created_at timestamptz not null default now()
 );

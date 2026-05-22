@@ -17,6 +17,7 @@ describe('routes', () => {
   it('builds top-level view paths', () => {
     expect(pathForView('dashboard')).toBe('/dashboard')
     expect(pathForView('units')).toBe('/units')
+    expect(pathForView('special')).toBe('/special')
     expect(pathForView('create')).toBe('/create')
     expect(pathForView('notifications')).toBe('/notifications')
     expect(pathForView('profile')).toBe('/profile')
@@ -39,6 +40,10 @@ describe('routes', () => {
       projectId: 'phase/1',
     })
     expect(parseAppRoute(unitDetailsPath(123))).toMatchObject({ view: 'details', unitId: 123 })
+  })
+
+  it('parses the shared special units route', () => {
+    expect(parseAppRoute('/special')).toMatchObject({ view: 'special' })
   })
 
   it('parses create steps and defaults invalid create slugs safely', () => {

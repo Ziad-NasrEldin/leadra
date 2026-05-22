@@ -1,23 +1,45 @@
 import { expect, test, type Page } from '@playwright/test'
 
-const roles = ['admin', 'manager', 'sales'] as const
+const roles = ['admin', 'sub_admin', 'manager', 'sales'] as const
 const routes = [
   'dashboard',
   'units',
+  'units/destinations/not-a-real-destination',
+  'units/destinations/not-a-real-destination/projects/not-a-real-project',
+  'units/details/999999',
   'create',
+  'create/property',
+  'create/specs',
   'create/payment',
+  'create/owner',
+  'create/review',
   'notifications',
+  'special',
   'profile',
   'analytics',
+  'analytics/live',
+  'analytics/30d',
   'analytics/90d?filters=open',
+  'analytics/custom',
   'admin',
+  'admin/users',
+  'admin/master-data',
+  'admin/settings',
+  'admin/metrics',
   'admin/audit',
+  'admin/master-data/developers',
+  'admin/master-data/destinations',
+  'admin/master-data/projects',
+  'admin/master-data/views',
+  'admin/master-data/finishes',
   'admin/master-data/branches',
+  'admin/master-data/teams',
   'palette',
 ] as const
 const createSteps = ['Property', 'Specs', 'Payment', 'Owner', 'Review'] as const
 const adminSections = ['Users', 'Master Data', 'Settings', 'Metrics', 'Audit'] as const
 const masterDataDirectories = ['Developers', 'Destinations', 'Projects', 'Views', 'Finishes', 'Branch Management', 'Team Management'] as const
+const escapeRegExp = (value: string) => value.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
 
 async function completeSignIn(page: Page, role: (typeof roles)[number]) {
   const intro = page.getByRole('button', { name: /continue to sign in/i })
@@ -25,7 +47,13 @@ async function completeSignIn(page: Page, role: (typeof roles)[number]) {
     await intro.first().click()
   }
 
-  const demoName = role === 'admin' ? /continue as admin/i : role === 'manager' ? /continue as mona hafez/i : /continue as sara amin/i
+  const demoName = role === 'admin'
+    ? /continue as admin/i
+    : role === 'sub_admin'
+      ? /continue as laila mansour/i
+      : role === 'manager'
+        ? /continue as mona hafez/i
+        : /continue as sara amin/i
   const demo = page.getByRole('button', { name: demoName })
   if (await demo.first().isVisible({ timeout: 2_000 }).catch(() => false)) {
     await demo.first().click()
@@ -70,15 +98,42 @@ async function assertPageHealth(page: Page) {
         return rect.width < 44 || rect.height < 44
       })
       .map((element) => (element.getAttribute('aria-label') || element.textContent || element.getAttribute('name') || '').trim().replace(/\s+/g, ' ').slice(0, 80))
+    const unnamedControls = [...document.querySelectorAll('button, a, input, textarea, select, [role="combobox"]')]
+      .filter(visible)
+      .filter((element) => !(element as HTMLButtonElement | HTMLInputElement).disabled)
+      .filter((element) => {
+        const id = element.getAttribute('id')
+        const labelText = id ? document.querySelector(`label[for="${CSS.escape(id)}"]`)?.textContent : ''
+        const wrappedLabel = element.closest('label')?.textContent
+        const name = element.getAttribute('aria-label') || element.getAttribute('title') || element.textContent || labelText || wrappedLabel || element.getAttribute('placeholder') || element.getAttribute('name')
+        return !name?.trim()
+      })
+      .map((element) => element.outerHTML.slice(0, 120))
     return {
       overflow: document.documentElement.scrollWidth > document.documentElement.clientWidth + 2,
       blank: document.body.innerText.trim().length < 20,
       smallTargets,
+      unnamedControls,
     }
   })
   expect(health.blank, 'page should not be blank').toBe(false)
   expect(health.overflow, 'page should not have horizontal overflow').toBe(false)
   expect(health.smallTargets, `small targets: ${health.smallTargets.join(', ')}`).toHaveLength(0)
+  expect(health.unnamedControls, `unnamed controls: ${health.unnamedControls.join(', ')}`).toHaveLength(0)
+
+  await page.keyboard.press('Tab')
+  const focusHealth = await page.evaluate(() => {
+    const active = document.activeElement
+    if (!active || active === document.body) return { ok: true, label: 'body' }
+    const style = getComputedStyle(active)
+    const outlineWidth = Number.parseFloat(style.outlineWidth || '0')
+    const hasFocusIndicator = outlineWidth >= 2 || style.boxShadow !== 'none'
+    return {
+      ok: hasFocusIndicator,
+      label: (active.getAttribute('aria-label') || active.textContent || active.getAttribute('name') || active.tagName).trim().replace(/\s+/g, ' ').slice(0, 80),
+    }
+  })
+  expect(focusHealth.ok, `focused control should show a visible focus indicator: ${focusHealth.label}`).toBe(true)
 }
 
 async function assertCurrentChecklistItem(page: Page, label: string) {
@@ -90,6 +145,11 @@ async function navigateRoute(page: Page, route: string, role: (typeof roles)[num
   await page.goto(`/${route}`)
   if (await page.locator('.login-screen').isVisible().catch(() => false)) await completeSignIn(page, role)
   await page.waitForLoadState('networkidle')
+}
+
+async function chooseFromSelect(page: Page, label: RegExp, option: RegExp) {
+  await page.getByRole('combobox', { name: label }).click()
+  await page.getByRole('option', { name: option }).click()
 }
 
 test.describe('production preview route and role sweep', () => {
@@ -114,7 +174,7 @@ test.describe('production preview route and role sweep', () => {
         if (role === 'sales' && route.startsWith('analytics')) {
           await expect(page.getByRole('heading', { name: /analytics/i })).toHaveCount(0)
         }
-        if (role === 'sales' && route.startsWith('admin')) {
+        if ((role === 'sales' || role === 'manager') && route.startsWith('admin')) {
           await expect(page.getByRole('heading', { name: /user management/i })).toHaveCount(0)
         }
       }
@@ -205,6 +265,59 @@ test.describe('production preview route and role sweep', () => {
     await expect(page).toHaveURL(/filters=open/)
     await page.getByRole('combobox', { name: /status/i }).click()
     await expect(page.getByRole('option', { name: /available/i })).toBeVisible()
+    await assertPageHealth(page)
+  })
+
+  test('special units stay visible after the remote save settles', async ({ page }) => {
+    await signIn(page, 'admin')
+    await navigateRoute(page, 'units')
+
+    const firstOpenButton = page.getByRole('button', { name: /^open /i }).nth(1)
+    const openLabel = await firstOpenButton.getAttribute('aria-label')
+    const unitCode = openLabel?.replace(/^open\s+/i, '').trim()
+    expect(unitCode, 'unit code should be present in the row open label').toBeTruthy()
+    const openUnit = page.getByRole('button', { name: new RegExp(`^open ${escapeRegExp(unitCode!)}$`, 'i') })
+
+    await firstOpenButton.click()
+    await expect(page.getByText(/unit details/i).first()).toBeVisible()
+    const removeSpecial = page.getByRole('button', { name: /remove special/i })
+    if (await removeSpecial.isVisible({ timeout: 1_000 }).catch(() => false)) await removeSpecial.click()
+
+    await page.getByRole('button', { name: /mark special/i }).click()
+    await expect(page.getByRole('button', { name: /remove special/i })).toBeVisible()
+    await page.waitForTimeout(1_500)
+    await expect(page.getByRole('button', { name: /remove special/i })).toBeVisible()
+
+    await page.evaluate(() => {
+      window.history.pushState(null, '', '/special')
+      window.dispatchEvent(new PopStateEvent('popstate'))
+    })
+    await expect(page).toHaveURL(/\/special$/)
+    await expect(page.getByRole('heading', { name: /special units/i }).first()).toBeVisible()
+    await expect(openUnit).toBeVisible()
+
+    await openUnit.click()
+    await page.getByRole('button', { name: /remove special/i }).click()
+    await expect(page.getByRole('button', { name: /mark special/i })).toBeVisible()
+  })
+
+  test('sub admin can deactivate a non-sales user in demo mode', async ({ page }) => {
+    await page.goto('/dashboard')
+    const intro = page.getByRole('button', { name: /continue to sign in/i })
+    if (await intro.first().isVisible({ timeout: 1_000 }).catch(() => false)) await intro.first().click()
+    const demoSubAdmin = page.getByRole('button', { name: /continue as laila mansour/i })
+    test.skip(!await demoSubAdmin.first().isVisible({ timeout: 1_000 }).catch(() => false), 'demo sign-in is disabled for this deployment')
+    await demoSubAdmin.click()
+    await expect(page.locator('.app-shell')).toBeVisible()
+
+    await navigateRoute(page, 'admin/users', 'sub_admin')
+    await chooseFromSelect(page, /^role$/i, /manager/i)
+    await page.getByLabel(/managed users/i).getByRole('button', { name: /deactivate mona hafez/i }).click()
+    await expect(page.getByLabel(/replacement sales representative/i)).toHaveCount(0)
+    await page.getByRole('button', { name: /^deactivate user$/i }).click()
+
+    await expect(page.getByText(/user deactivated and audit history updated/i)).toBeVisible()
+    await expect(page.getByText(/mona hafez/i)).toHaveCount(0)
     await assertPageHealth(page)
   })
 })
