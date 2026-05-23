@@ -3,6 +3,7 @@ import { useEffect, useId, useRef, useState, type CSSProperties, type KeyboardEv
 import { createPortal } from 'react-dom'
 import { Link } from 'react-router-dom'
 import { formatCount, translate, useLocale, type LocaleCode } from '../lib/i18n'
+import { formatInputNumber } from '../lib/numberFormat'
 
 export type BrandedSelectOption = {
   value: string
@@ -442,10 +443,11 @@ export function OwnerPhoneField({
 }
 
 export function NumberField({ name, label, defaultValue, min, max, required = false }: { name: string; label: string; defaultValue: number; min?: number; max?: number; required?: boolean }) {
+  const { locale } = useLocale()
   return (
     <label>
       <RequiredLabel label={label} required={required} />
-      <input name={name} type="number" defaultValue={defaultValue} min={min} max={max} required={required} />
+      <input name={name} type="text" role="spinbutton" inputMode="decimal" defaultValue={formatInputNumber(defaultValue, locale)} data-min={min} data-max={max} required={required} />
     </label>
   )
 }

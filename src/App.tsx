@@ -3,6 +3,7 @@ import {
   BarChart3,
   Bell,
   Building2,
+  ChevronLeft,
   Download,
   FileText,
   Home,
@@ -19,7 +20,7 @@ import {
 import type { User as SupabaseUser } from '@supabase/supabase-js'
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent, type ReactNode } from 'react'
 import { flushSync } from 'react-dom'
-import { BrowserRouter, Link, useLocation, useNavigate } from 'react-router-dom'
+import { BrowserRouter, Link, useLocation, useNavigate, useNavigationType } from 'react-router-dom'
 import leadraLogoDark from './assets/brand/leadra-logo-dark.jpeg'
 import leadraLogoLight from './assets/brand/leadra-logo-light.jpeg'
 import leadraMarkDark from './assets/brand/leadra-mark-dark.png'
@@ -66,9 +67,10 @@ import { authPasswordCandidates, createManagedUserProfile, updateManagedUserPass
 import { createUnitRemoteErrorFlash, mediaPdfVisibilityErrorFlash } from './lib/createUnitErrors'
 import { buildPdfActionRecords, getOrGenerateUnitPdf, getOrGenerateUnitPdfs, pdfAnalyticsEventType, type GeneratedPdfCache, type PdfActionKind } from './lib/pdfWorkflow'
 import { LeadraRepository } from './lib/repository'
+import { buildSpecialUnitSocialCopy } from './lib/unitCopy'
 import { canUseDemoMode, isPerformanceDemoMode, isProductionMissingSupabaseConfig, isSupabaseConfigured, supabase } from './lib/supabase'
 import { loadSupabaseAnalyticsDashboard, loadSupabaseAppState, loadSupabaseProfile, markSupabaseLogin, setSupabaseThemePreference } from './lib/supabaseState'
-import { useTheme } from './lib/theme'
+import { useTheme, type ThemePreferenceOptions } from './lib/theme'
 import {
   addAnalyticsEventWorkflow,
   archiveUnitWorkflow,
@@ -80,8 +82,6 @@ import {
   removeUnitMediaWorkflow,
   saveUnitAdminNoteWorkflow,
   setUnitSpecialWorkflow,
-  updatePaymentScheduleAmountWorkflow,
-  updatePaymentScheduleWorkflow,
   updateSettingsWorkflow,
   updateUnitStatusWorkflow,
   updateUnitWorkflow,
@@ -344,11 +344,15 @@ function LeadraApp() {
   const { locale, t } = useLocale()
   const { themePreference, setThemePreference } = useTheme()
   const location = useLocation()
+  const navigationType = useNavigationType()
   const routerNavigate = useNavigate()
+  const currentRoutePath = `${location.pathname}${location.search}${location.hash}`
   const route = parseAppRoute(location.pathname, location.search, location.hash)
   const [initialWorkspace] = useState(getInitialWorkspace)
   const initialWorkspaceRef = useRef(initialWorkspace)
   const [currentUser, setCurrentUser] = useState<LeadraUser | null>(null)
+  const routeStackRef = useRef<string[]>([currentRoutePath])
+  const [routeStack, setRouteStack] = useState<string[]>([currentRoutePath])
   const [, setView] = useState<View>(() => route.view)
   const [appState, setAppState] = useState(initialWorkspace.state)
   const [activeLookupValues, setActiveLookupValues] = useState<LookupValue[]>(initialWorkspace.lookupValues)
@@ -365,8 +369,6 @@ function LeadraApp() {
   const [selectedBatchUnitIds, setSelectedBatchUnitIds] = useState<number[]>([])
   const [updatingStatusUnitId, setUpdatingStatusUnitId] = useState<number | null>(null)
   const [updatingSpecialUnitId, setUpdatingSpecialUnitId] = useState<number | null>(null)
-  const [updatingPaymentScheduleId, setUpdatingPaymentScheduleId] = useState<string | null>(null)
-  const [updatingPaymentScheduleAmountId, setUpdatingPaymentScheduleAmountId] = useState<string | null>(null)
   const [statusActionFeedback, setStatusActionFeedback] = useState<{
     unitId: number
     status: UnitStatus
@@ -376,9 +378,38 @@ function LeadraApp() {
   const [downloadingMediaId, setDownloadingMediaId] = useState<string | null>(null)
   const [generatedPdfs, setGeneratedPdfs] = useState<GeneratedPdfCache>({})
   const completingAuthUserRef = useRef<string | null>(null)
+  const explicitSignOutRef = useRef(false)
   const emailDeliveryReadyRef = useRef(false)
   const emailedNotificationIdsRef = useRef<Set<string>>(new Set())
   const brandAssets = leadraBrandAssets[themePreference]
+
+  useEffect(() => {
+    const syncRouteStack = (nextStack: string[]) => {
+      routeStackRef.current = nextStack
+      // Route history is mirrored in a ref and state so the back button can render immediately after navigation.
+      setRouteStack(nextStack)
+    }
+
+    if (!currentUser) {
+      syncRouteStack([currentRoutePath])
+      return
+    }
+
+    const stack = routeStackRef.current
+    if (stack[stack.length - 1] === currentRoutePath) return
+
+    let nextStack: string[]
+    if (navigationType === 'REPLACE') {
+      nextStack = [...stack.slice(0, -1), currentRoutePath]
+    } else if (navigationType === 'POP') {
+      const existingIndex = stack.lastIndexOf(currentRoutePath)
+      nextStack = existingIndex >= 0 ? stack.slice(0, existingIndex + 1) : [currentRoutePath]
+    } else {
+      nextStack = [...stack, currentRoutePath]
+    }
+
+    syncRouteStack(nextStack)
+  }, [currentRoutePath, currentUser, navigationType])
 
   function invalidateGeneratedPdf(unitId: number) {
     setGeneratedPdfs((items) => {
@@ -424,6 +455,7 @@ function LeadraApp() {
 
   const completeSupabaseLogin = useCallback(async (authUser: SupabaseUser) => {
     if (!supabase) return
+    if (explicitSignOutRef.current) return
     if (completingAuthUserRef.current === authUser.id) return
     completingAuthUserRef.current = authUser.id
     try {
@@ -464,6 +496,7 @@ function LeadraApp() {
 
   async function handleSupabasePasswordLogin(email: string, password: string) {
     if (!supabase) return
+    explicitSignOutRef.current = false
     setLoginError(null)
     setAuthLoading(true)
     let lastError: Error | null = null
@@ -501,7 +534,11 @@ function LeadraApp() {
 
     syncRouteFromLocation()
     window.addEventListener('hashchange', syncRouteFromLocation)
-    return () => window.removeEventListener('hashchange', syncRouteFromLocation)
+    window.addEventListener('popstate', syncRouteFromLocation)
+    return () => {
+      window.removeEventListener('hashchange', syncRouteFromLocation)
+      window.removeEventListener('popstate', syncRouteFromLocation)
+    }
   }, [currentUser, location.pathname, location.hash, routerNavigate])
 
   useEffect(() => {
@@ -530,7 +567,7 @@ function LeadraApp() {
         setActiveLookupValues(initialWorkspaceRef.current.lookupValues)
         setAuthLoading(false)
       }
-      if (session?.user && (event === 'SIGNED_IN' || event === 'TOKEN_REFRESHED')) {
+      if (session?.user && event === 'SIGNED_IN') {
         void completeSupabaseLogin(session.user)
       }
     })
@@ -544,8 +581,74 @@ function LeadraApp() {
   }, [completeSupabaseLogin])
 
   useEffect(() => {
-    if (currentUser?.themePreference) setThemePreference(currentUser.themePreference)
+    if (currentUser?.themePreference) setThemePreference(currentUser.themePreference, { animate: false })
   }, [currentUser?.id, currentUser?.themePreference, setThemePreference])
+
+  const currentUserId = currentUser?.id
+
+  useEffect(() => {
+    if (!currentUserId || !supabase || !isSupabaseConfigured) return undefined
+    const client = supabase
+
+    let cancelled = false
+    let refreshTimeout: number | null = null
+    let refreshing = false
+    let refreshQueued = false
+
+    async function refreshWorkspace() {
+      if (refreshing) {
+        refreshQueued = true
+        return
+      }
+
+      refreshing = true
+      try {
+        const remote = await loadSupabaseAppState(client)
+        if (cancelled) return
+        setAppState(remote.state)
+        setActiveLookupValues(remote.lookupValues.length > 0 ? remote.lookupValues : lookupValues)
+        setRemoteSearchUnits(null)
+        setRemoteSearchView(null)
+      } catch (error) {
+        console.warn('Supabase workspace refresh failed:', error)
+      } finally {
+        refreshing = false
+        if (refreshQueued && !cancelled) {
+          refreshQueued = false
+          void refreshWorkspace()
+        }
+      }
+    }
+
+    function scheduleRefresh() {
+      if (refreshTimeout !== null) window.clearTimeout(refreshTimeout)
+      refreshTimeout = window.setTimeout(() => {
+        refreshTimeout = null
+        void refreshWorkspace()
+      }, 400)
+    }
+
+    function refreshWhenVisible() {
+      if (document.visibilityState === 'visible') void refreshWorkspace()
+    }
+
+    window.addEventListener('focus', refreshWhenVisible)
+    document.addEventListener('visibilitychange', refreshWhenVisible)
+
+    const channel = client
+      .channel(`leadra-workspace-${currentUserId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'units' }, scheduleRefresh)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'unit_media' }, scheduleRefresh)
+      .subscribe()
+
+    return () => {
+      cancelled = true
+      if (refreshTimeout !== null) window.clearTimeout(refreshTimeout)
+      window.removeEventListener('focus', refreshWhenVisible)
+      document.removeEventListener('visibilitychange', refreshWhenVisible)
+      void client.removeChannel(channel)
+    }
+  }, [currentUserId])
 
   useEffect(() => {
     if (!currentUser) return
@@ -635,6 +738,7 @@ function LeadraApp() {
       !notification.read &&
       (notification.userId === user.id || notification.audienceRole === user.role || (!notification.userId && !notification.audienceRole)),
   ).length
+  const canNavigateBack = routeStack.length > 1 || activeView !== 'dashboard'
 
   function navigate(nextView: View) {
     runPageTransition(() => {
@@ -652,6 +756,26 @@ function LeadraApp() {
       setMobileMenuOpen(false)
       setSelectedBatchUnitIds([])
     })
+  }
+
+  function handleBack() {
+    const stack = routeStackRef.current
+    setFlash(null)
+    setMobileMenuOpen(false)
+    setSelectedBatchUnitIds([])
+
+    if (stack.length > 1) {
+      runPageTransition(() => {
+        routerNavigate(-1)
+      })
+      return
+    }
+
+    if (route.view !== 'dashboard') {
+      runPageTransition(() => {
+        routerNavigate('/dashboard', { replace: true })
+      })
+    }
   }
 
   function closeNavigation() {
@@ -743,6 +867,7 @@ function LeadraApp() {
       installmentType,
       installmentStartMonth,
       installmentEndMonth,
+      installmentDueDay: paymentMethod === 'installment' ? readFormNumber(formData, 'installmentDueDay', 1) : 1,
       customInstallmentText: paymentMethod === 'installment' && installmentType === 'custom' ? parseOptionalFormText(formData, 'customInstallmentText') : null,
       installmentYears: null,
       deliveryExpectancy: {
@@ -769,6 +894,7 @@ function LeadraApp() {
 
     let nextState = result.state
     let newUnit = result.state.units[0]
+    setAppState(nextState)
     try {
       if (supabase && isSupabaseConfigured) {
         const remoteUnit = await new LeadraRepository(supabase).createUnit(user, input)
@@ -779,6 +905,7 @@ function LeadraApp() {
         newUnit = remoteUnit
       }
     } catch (error) {
+      setAppState(appState)
       setFlash(createUnitRemoteErrorFlash(error))
       return
     }
@@ -877,6 +1004,7 @@ function LeadraApp() {
             installmentType: submittedInstallmentType,
             installmentStartMonth,
             installmentEndMonth,
+            installmentDueDay: parseOptionalFormNumber(formData, 'installmentDueDay') ?? unit.installmentDueDay ?? 1,
           }
         : {}),
       commissionPercentage: readFormNumber(formData, 'commissionPercentage'),
@@ -954,78 +1082,6 @@ function LeadraApp() {
       setFlash({ text: `Status could not be saved: ${errorMessage(error)}`, messageKey: null, messageParams: null })
     } finally {
       setUpdatingStatusUnitId(null)
-    }
-  }
-
-  async function updatePaymentSchedule(unit: LeadraUnit, scheduleId: string, paid: boolean) {
-    if (updatingPaymentScheduleId || updatingPaymentScheduleAmountId) return
-    const result = updatePaymentScheduleWorkflow(appState, user, unit.id, scheduleId, paid)
-    if (!result.ok) {
-      setFlash({ text: result.error, messageKey: result.errorKey ?? null, messageParams: result.errorParams ?? null })
-      return
-    }
-
-    const previousState = appState
-    const updatedUnit = result.state.units.find((item) => item.id === unit.id) ?? unit
-    setUpdatingPaymentScheduleId(scheduleId)
-    setAppState(result.state)
-    setRemoteSearchUnits((items) => items?.map((item) => item.id === unit.id ? updatedUnit : item) ?? null)
-
-    try {
-      if (supabase && isSupabaseConfigured) {
-        const remoteUnit = await new LeadraRepository(supabase).updatePaymentSchedule(unit.id, scheduleId, paid)
-        setAppState((state) => ({
-          ...state,
-          units: state.units.map((item) => item.id === unit.id ? remoteUnit : item),
-        }))
-        setRemoteSearchUnits((items) => items?.map((item) => item.id === unit.id ? remoteUnit : item) ?? null)
-      }
-      invalidateGeneratedPdf(unit.id)
-      setFlash({
-        text: paid ? 'Payment marked paid and Remaining Value recalculated.' : 'Payment marked unpaid and Remaining Value recalculated.',
-        messageKey: null,
-        messageParams: null,
-      })
-    } catch (error) {
-      setAppState(previousState)
-      setRemoteSearchUnits((items) => items?.map((item) => item.id === unit.id ? unit : item) ?? null)
-      setFlash({ text: `Payment timetable could not be saved: ${errorMessage(error)}`, messageKey: null, messageParams: null })
-    } finally {
-      setUpdatingPaymentScheduleId(null)
-    }
-  }
-
-  async function updatePaymentScheduleAmount(unit: LeadraUnit, scheduleId: string, amount: number) {
-    if (updatingPaymentScheduleId || updatingPaymentScheduleAmountId) return
-    const result = updatePaymentScheduleAmountWorkflow(appState, user, unit.id, scheduleId, amount)
-    if (!result.ok) {
-      setFlash({ text: result.error, messageKey: result.errorKey ?? null, messageParams: result.errorParams ?? null })
-      return
-    }
-
-    const previousState = appState
-    const updatedUnit = result.state.units.find((item) => item.id === unit.id) ?? unit
-    setUpdatingPaymentScheduleAmountId(scheduleId)
-    setAppState(result.state)
-    setRemoteSearchUnits((items) => items?.map((item) => item.id === unit.id ? updatedUnit : item) ?? null)
-
-    try {
-      if (supabase && isSupabaseConfigured) {
-        const remoteUnit = await new LeadraRepository(supabase).updatePaymentScheduleAmount(unit.id, scheduleId, amount)
-        setAppState((state) => ({
-          ...state,
-          units: state.units.map((item) => item.id === unit.id ? remoteUnit : item),
-        }))
-        setRemoteSearchUnits((items) => items?.map((item) => item.id === unit.id ? remoteUnit : item) ?? null)
-      }
-      invalidateGeneratedPdf(unit.id)
-      setFlash({ text: 'Installment amount updated and Remaining Value recalculated.', messageKey: null, messageParams: null })
-    } catch (error) {
-      setAppState(previousState)
-      setRemoteSearchUnits((items) => items?.map((item) => item.id === unit.id ? unit : item) ?? null)
-      setFlash({ text: `Installment amount could not be saved: ${errorMessage(error)}`, messageKey: null, messageParams: null })
-    } finally {
-      setUpdatingPaymentScheduleAmountId(null)
     }
   }
 
@@ -1395,6 +1451,16 @@ function LeadraApp() {
     }
   }
 
+  async function copySpecialUnitSocialCopy(unit: LeadraUnit) {
+    const copy = buildSpecialUnitSocialCopy(unit, locale)
+    try {
+      await navigator.clipboard.writeText(copy)
+      setFlash({ text: 'Social media copy copied.', messageKey: null, messageParams: null })
+    } catch {
+      setFlash({ text: copy, messageKey: null, messageParams: null })
+    }
+  }
+
   function updateUnitFilter<K extends keyof UnitFilters>(key: K, value: UnitFilters[K]) {
     const nextFilters = normalizeReactiveUnitFilters({ ...unitFilters, [key]: value })
     setUnitFilters(nextFilters)
@@ -1431,11 +1497,11 @@ function LeadraApp() {
     }
   }
 
-  async function handleThemePreferenceChange(nextThemePreference: ThemePreference) {
+  async function handleThemePreferenceChange(nextThemePreference: ThemePreference, options?: ThemePreferenceOptions) {
     const previousThemePreference = themePreference
     const previousUser = currentUser
 
-    setThemePreference(nextThemePreference)
+    setThemePreference(nextThemePreference, options)
     if (previousUser) {
       setCurrentUser({ ...previousUser, themePreference: nextThemePreference })
       setAppState((state) => ({
@@ -1476,9 +1542,7 @@ function LeadraApp() {
         </Link>
         <NavButton active={activeView === 'dashboard'} label={t('nav.dashboard')} to={pathForView('dashboard')} onClick={closeNavigation} icon={<Home />} className="motion-stage" style={motionStyle(0)} />
         <NavButton active={activeView === 'units'} label={t('nav.units')} to={pathForView('units')} onClick={closeNavigation} icon={<Building2 />} className="motion-stage" style={motionStyle(1)} />
-        {canUseAdmin && (
-          <NavButton active={activeView === 'special'} label={t('nav.special')} to={pathForView('special')} onClick={closeNavigation} icon={<Star />} className="motion-stage" style={motionStyle(2)} />
-        )}
+        <NavButton active={activeView === 'special'} label={t('nav.special')} to={pathForView('special')} onClick={closeNavigation} icon={<Star />} className="motion-stage" style={motionStyle(2)} />
         <NavButton active={activeView === 'create'} label={t('nav.create')} to={pathForView('create')} onClick={closeNavigation} icon={<Plus />} className="motion-stage" style={motionStyle(3)} />
         <NavButton active={activeView === 'notifications'} label={t('nav.alerts', { count: unreadCount })} to={pathForView('notifications')} onClick={closeNavigation} icon={<Bell />} className="motion-stage" style={motionStyle(4)} />
         {canUseAnalytics && (
@@ -1491,9 +1555,21 @@ function LeadraApp() {
 
       <main className="main-panel">
         <header className={`topbar ${activeView === 'dashboard' ? 'dashboard-topbar' : 'compact-topbar'}`}>
-          <div>
-            <p className="eyebrow">{t('topbar.eyebrow')}</p>
-            <h1>{getViewTitle(activeView, user, locale)}</h1>
+          <div className="topbar-leading">
+            <button
+              className="topbar-back-button"
+              type="button"
+              aria-label={t('common.back')}
+              disabled={!canNavigateBack}
+              onClick={handleBack}
+            >
+              <ChevronLeft size={18} aria-hidden="true" />
+              <span className="topbar-back-label">{t('common.back')}</span>
+            </button>
+            <div className="topbar-heading">
+              <p className="eyebrow">{t('topbar.eyebrow')}</p>
+              <h1>{getViewTitle(activeView, user, locale)}</h1>
+            </div>
           </div>
           <div className="topbar-actions">
             <ThemeToggle compact onThemeChange={(theme) => void handleThemePreferenceChange(theme)} />
@@ -1505,9 +1581,16 @@ function LeadraApp() {
               className="ghost-button"
               type="button"
               aria-label={t('topbar.signOut')}
-              onClick={() => {
-                if (supabase) void supabase.auth.signOut()
+              onClick={async () => {
+                explicitSignOutRef.current = true
+                completingAuthUserRef.current = null
+                if (supabase) await supabase.auth.signOut().catch(() => null)
+                for (const key of Object.keys(window.localStorage)) {
+                  if (key.startsWith('sb-') && key.endsWith('-auth-token')) window.localStorage.removeItem(key)
+                }
                 setCurrentUser(null)
+                setAppState(initialWorkspaceRef.current.state)
+                setActiveLookupValues(initialWorkspaceRef.current.lookupValues)
                 setView('dashboard')
                 routerNavigate('/dashboard', { replace: true })
                 setFlash(null)
@@ -1599,7 +1682,7 @@ function LeadraApp() {
             />
           </div>
         )}
-        {activeView === 'special' && canUseAdmin && (
+        {activeView === 'special' && (
           <div className="page-transition-frame" key={activeView}>
             <UnitsPage
               mode="special"
@@ -1664,6 +1747,7 @@ function LeadraApp() {
               onDownloadPdf={() => downloadPdf(selectedUnit)}
               onSharePdf={() => sharePdf(selectedUnit)}
               onCopyShareLink={() => copyUnitShareLink(selectedUnit)}
+              onCopySocialCopy={() => copySpecialUnitSocialCopy(selectedUnit)}
               pdfGenerating={generatingPdfUnitId === selectedUnit.id}
               pdfSharing={sharingPdfUnitId === selectedUnit.id}
               pdfReady={Boolean(generatedPdfs[selectedUnit.id])}
@@ -1673,14 +1757,10 @@ function LeadraApp() {
               onSaveNote={(content) => saveSharedNote(selectedUnit, content)}
               onDeleteNote={() => deleteSharedNote(selectedUnit)}
               onRemoveMedia={(mediaId) => removeUnitMedia(selectedUnit, mediaId)}
-              onPaymentScheduleChange={(scheduleId, paid) => updatePaymentSchedule(selectedUnit, scheduleId, paid)}
-              onPaymentScheduleAmountChange={(scheduleId, amount) => updatePaymentScheduleAmount(selectedUnit, scheduleId, amount)}
               onMediaPdfVisibilityChange={(mediaId, includeInPdf) => setUnitMediaPdfVisibility(selectedUnit.id, mediaId, includeInPdf)}
               onMediaDownload={downloadUnitMedia}
               removingMediaId={removingMediaId}
               downloadingMediaId={downloadingMediaId}
-              updatingPaymentScheduleId={updatingPaymentScheduleId}
-              updatingPaymentScheduleAmountId={updatingPaymentScheduleAmountId}
             />
           </div>
         )}
@@ -2131,9 +2211,7 @@ function LeadraApp() {
           {canUseAnalytics && (
             <NavButton active={activeView === 'analytics'} label={t('nav.analytics')} to={pathForView('analytics')} onClick={closeNavigation} icon={<BarChart3 />} className="motion-stage" style={motionStyle(1)} />
           )}
-          {canUseAdmin && (
-            <NavButton active={activeView === 'special'} label={t('nav.special')} to={pathForView('special')} onClick={closeNavigation} icon={<Star />} className="motion-stage" style={motionStyle(2)} />
-          )}
+          <NavButton active={activeView === 'special'} label={t('nav.special')} to={pathForView('special')} onClick={closeNavigation} icon={<Star />} className="motion-stage" style={motionStyle(2)} />
           <NavButton active={activeView === 'profile'} label={t('nav.profile')} to={pathForView('profile')} onClick={closeNavigation} icon={<SlidersHorizontal />} className="motion-stage" style={motionStyle(3)} />
           {canUseAdmin && (
             <NavButton active={activeView === 'admin'} label={t('nav.admin')} to={pathForView('admin')} onClick={closeNavigation} icon={<Settings />} className="motion-stage" style={motionStyle(4)} />
@@ -3306,7 +3384,7 @@ function BarChart({ title, points }: { title: string; points: AnalyticsChartPoin
   )
 }
 
-function ProfilePage({ user, onThemePreferenceChange }: { user: LeadraUser; onThemePreferenceChange: (theme: ThemePreference) => void | Promise<void> }) {
+function ProfilePage({ user, onThemePreferenceChange }: { user: LeadraUser; onThemePreferenceChange: (theme: ThemePreference, options?: ThemePreferenceOptions) => void | Promise<void> }) {
   const { locale, t } = useLocale()
   return (
     <section className="page-stack page-entrance profile-page">
@@ -3369,7 +3447,7 @@ function ThemeToggle({
   onThemeChange,
 }: {
   compact?: boolean
-  onThemeChange?: (theme: ThemePreference) => void | Promise<void>
+  onThemeChange?: (theme: ThemePreference, options?: ThemePreferenceOptions) => void | Promise<void>
 }) {
   const { themePreference, setThemePreference } = useTheme()
   const { t } = useLocale()
@@ -3381,9 +3459,19 @@ function ThemeToggle({
       type="button"
       aria-label={themePreference === 'dark' ? t('theme.switchToLight') : t('theme.switchToDark')}
       aria-pressed={themePreference === 'dark'}
-      onClick={() => {
-        setThemePreference(nextThemePreference)
-        void onThemeChange?.(nextThemePreference)
+      onClick={(event) => {
+        const rect = event.currentTarget.getBoundingClientRect()
+        const transitionOptions: ThemePreferenceOptions = {
+          origin: {
+            x: rect.left + rect.width / 2,
+            y: rect.top + rect.height / 2,
+          },
+        }
+        if (onThemeChange) {
+          void onThemeChange(nextThemePreference, transitionOptions)
+        } else {
+          setThemePreference(nextThemePreference, transitionOptions)
+        }
       }}
     >
       <span className="theme-toggle-track" aria-hidden="true">
@@ -3424,7 +3512,6 @@ function canAccessAdmin(user: LeadraUser): boolean {
 
 function isViewAllowedForUser(view: View, user: LeadraUser): boolean {
   if (view === 'admin') return canAccessAdmin(user)
-  if (view === 'special') return canAccessAdmin(user)
   if (view === 'analytics') return canAccessAnalytics(user)
   return true
 }

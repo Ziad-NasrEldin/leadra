@@ -2,10 +2,12 @@ import { useState, type FormEvent } from 'react'
 import { getApplicableUnitAreaFields, getOwnerPhoneCountryMeta, getOwnerPhoneCountryOptions, PRD_FLOOR_OPTIONS, PRD_UNIT_TYPES, validateMediaUpload, formatCurrency } from '../../lib/domain'
 import { formatCount, useLocale } from '../../lib/i18n'
 import { renderError } from '../../lib/messageRendering'
+import { formatInputNumber, parseFormattedNumber } from '../../lib/numberFormat'
+import { parseSmartUnitDetails } from '../../lib/smartUnitParser'
 import type { AppSettings, InstallmentType, LeadraMediaFile, LookupValue, MessageParams, PaymentMethod } from '../../lib/types'
-import { ControlledSelectField, NamedSelectField, NumberField, OwnerPhoneField, RequiredLabel, SelectField } from '../../components/LeadraUi'
+import { ControlledSelectField, NamedSelectField, NumberField, OwnerPhoneField, RequiredLabel } from '../../components/LeadraUi'
 import { createUnitSteps, type CreateUnitStep } from '../shared/constants'
-import { calculateInstallmentAmountForPeriod, isAutomaticInstallmentType } from '../shared/formUtils'
+import { countInstallmentsBetweenMonths } from '../shared/formUtils'
 import { fileToMedia } from '../shared/media'
 import { motionStyle } from '../shared/motion'
 import { translateCreateStep } from '../shared/labels'
@@ -31,29 +33,45 @@ export function CreateUnitPage({
   const [selectedMedia, setSelectedMedia] = useState<LeadraMediaFile[]>([])
   const [mediaError, setMediaError] = useState<UiMessage | null>(null)
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('installment')
-  const [totalAmount, setTotalAmount] = useState(4_500_000)
+  const [cashAmount, setCashAmount] = useState(4_500_000)
   const [downPayment, setDownPayment] = useState(900_000)
+  const [installmentAmount, setInstallmentAmount] = useState(225_000)
   const [installmentType, setInstallmentType] = useState<InstallmentType>('quarterly')
   const [installmentStartMonth, setInstallmentStartMonth] = useState('2026-03')
   const [installmentEndMonth, setInstallmentEndMonth] = useState('2030-03')
+  const [installmentDueDay, setInstallmentDueDay] = useState(1)
   const [maintenancePaid, setMaintenancePaid] = useState(false)
   const [maintenanceCost, setMaintenanceCost] = useState(0)
   const [ownerCountryCode, setOwnerCountryCode] = useState('+20')
   const [ownerPhone, setOwnerPhone] = useState('01012345678')
+  const [ownerName, setOwnerName] = useState('New Owner')
+  const [salesNotes, setSalesNotes] = useState('Owner is responsive on WhatsApp.')
+  const [smartDetails, setSmartDetails] = useState('')
+  const [smartFeedback, setSmartFeedback] = useState('')
+  const [destinationId, setDestinationId] = useState('')
+  const [developerId, setDeveloperId] = useState('')
+  const [projectId, setProjectId] = useState('')
+  const [viewId, setViewId] = useState('')
+  const [finish, setFinish] = useState('')
   const [selectedUnitType, setSelectedUnitType] = useState('Apartment')
   const [selectedFloor, setSelectedFloor] = useState('2nd')
+  const [bua, setBua] = useState(145)
+  const [landArea, setLandArea] = useState(0)
+  const [gardenArea, setGardenArea] = useState(0)
+  const [terraceArea, setTerraceArea] = useState(0)
+  const [bedrooms, setBedrooms] = useState(3)
+  const [bathrooms, setBathrooms] = useState(2)
   const [submitting, setSubmitting] = useState(false)
   const activeStepIndex = createUnitSteps.indexOf(activeStep)
   const mediaValidation = validateMediaUpload(selectedMedia)
   const hasSelectedImage = selectedMedia.some((file) => file.type === 'image')
   const isCreateBlocked = submitting || !hasSelectedImage || !mediaValidation.ok
   const totalMediaMb = selectedMedia.reduce((total, file) => total + file.sizeBytes, 0) / (1024 * 1024)
-  const remainingPayment = Math.max(0, totalAmount - downPayment)
+  const installmentCount = countInstallmentsBetweenMonths(installmentType, installmentStartMonth, installmentEndMonth) ?? 0
+  const usesCalculatedInstallmentTotal = paymentMethod === 'installment' && installmentType !== 'custom'
+  const totalAmount = usesCalculatedInstallmentTotal ? downPayment + installmentAmount * installmentCount : cashAmount
+  const remainingPayment = paymentMethod === 'installment' ? Math.max(0, totalAmount - downPayment) : 0
   const displayedRemainingPayment = paymentMethod === 'installment' ? remainingPayment + (maintenancePaid ? 0 : maintenanceCost) : maintenancePaid ? 0 : maintenanceCost
-  const calculatedInstallment =
-    paymentMethod === 'installment' && isAutomaticInstallmentType(installmentType)
-      ? calculateInstallmentAmountForPeriod(remainingPayment, installmentType, installmentStartMonth, installmentEndMonth)
-      : null
 
   const unitTypeOptions = PRD_UNIT_TYPES.map((unitType) => ({ value: unitType, label: unitType }))
   const lookupViewOptions = lookupValues
@@ -77,6 +95,33 @@ export function CreateUnitPage({
   })
   const ownerPhoneCountryOptions = getOwnerPhoneCountryOptions(locale)
   const selectedOwnerPhoneCountry = getOwnerPhoneCountryMeta(ownerCountryCode, locale)
+
+  function applySmartDetails() {
+    const { patch, matched } = parseSmartUnitDetails(smartDetails, lookupValues)
+    if (typeof patch.destinationId === 'string') setDestinationId(patch.destinationId)
+    if (typeof patch.developerId === 'string') setDeveloperId(patch.developerId)
+    if (typeof patch.projectId === 'string') setProjectId(patch.projectId)
+    if (typeof patch.viewId === 'string') setViewId(patch.viewId)
+    if (typeof patch.finish === 'string') setFinish(patch.finish)
+    if (typeof patch.unitType === 'string') setSelectedUnitType(patch.unitType)
+    if (typeof patch.floor === 'string') setSelectedFloor(patch.floor)
+    if (typeof patch.bua === 'number') setBua(patch.bua)
+    if (typeof patch.landArea === 'number') setLandArea(patch.landArea)
+    if (typeof patch.gardenArea === 'number') setGardenArea(patch.gardenArea)
+    if (typeof patch.terraceArea === 'number') setTerraceArea(patch.terraceArea)
+    if (typeof patch.bedrooms === 'number') setBedrooms(patch.bedrooms)
+    if (typeof patch.bathrooms === 'number') setBathrooms(patch.bathrooms)
+    if (typeof patch.paymentMethod === 'string') setPaymentMethod(patch.paymentMethod as PaymentMethod)
+    if (typeof patch.totalAmount === 'number') setCashAmount(patch.totalAmount)
+    if (typeof patch.downPayment === 'number') setDownPayment(patch.downPayment)
+    if (typeof patch.installmentType === 'string') setInstallmentType(patch.installmentType as InstallmentType)
+    if (typeof patch.installmentStartMonth === 'string') setInstallmentStartMonth(patch.installmentStartMonth)
+    if (typeof patch.installmentEndMonth === 'string') setInstallmentEndMonth(patch.installmentEndMonth)
+    if (typeof patch.ownerName === 'string') setOwnerName(patch.ownerName)
+    if (typeof patch.ownerPhone === 'string') setOwnerPhone(patch.ownerPhone)
+    if (typeof patch.salesNotes === 'string') setSalesNotes(patch.salesNotes)
+    setSmartFeedback(matched.length > 0 ? `Filled ${matched.length} field${matched.length === 1 ? '' : 's'}. Review before creating.` : 'No clear fields found. Add labels like project, price, BUA, owner phone.')
+  }
 
   function goToRelativeStep(offset: number) {
     const nextIndex = Math.min(createUnitSteps.length - 1, Math.max(0, activeStepIndex + offset))
@@ -130,9 +175,19 @@ export function CreateUnitPage({
 
         <fieldset className="unit-form wizard-panel" data-active={activeStep === 'Property'} aria-hidden={activeStep !== 'Property'}>
           <legend>{t('create.legend.property')}</legend>
-          <SelectField name="destinationId" label={t('create.destination')} values={lookupValues.filter((item) => item.kind === 'destination')} required />
-          <SelectField name="developerId" label={t('create.developer')} values={lookupValues.filter((item) => item.kind === 'developer')} required />
-          <SelectField name="projectId" label={t('create.project')} values={lookupValues.filter((item) => item.kind === 'project')} required />
+          {activeStep === 'Property' && (
+            <div className="smart-unit-panel">
+              <label>
+                Paste unit details
+                <textarea value={smartDetails} onChange={(event) => setSmartDetails(event.target.value)} placeholder="Paste broker text, WhatsApp details, or listing copy" dir="auto" />
+              </label>
+              <button className="secondary-button" type="button" onClick={applySmartDetails} disabled={!smartDetails.trim()}>Auto-fill fields</button>
+              {smartFeedback && <p className="media-empty-note" role="status">{smartFeedback}</p>}
+            </div>
+          )}
+          <NamedSelectField name="destinationId" label={t('create.destination')} options={lookupValues.filter((item) => item.kind === 'destination').map((item) => ({ value: item.id, label: item.label }))} value={destinationId || (lookupValues.find((item) => item.kind === 'destination')?.id ?? '')} onValueChange={setDestinationId} required />
+          <NamedSelectField name="developerId" label={t('create.developer')} options={lookupValues.filter((item) => item.kind === 'developer').map((item) => ({ value: item.id, label: item.label }))} value={developerId || (lookupValues.find((item) => item.kind === 'developer')?.id ?? '')} onValueChange={setDeveloperId} required />
+          <NamedSelectField name="projectId" label={t('create.project')} options={lookupValues.filter((item) => item.kind === 'project').map((item) => ({ value: item.id, label: item.label }))} value={projectId || (lookupValues.find((item) => item.kind === 'project')?.id ?? '')} onValueChange={setProjectId} required />
           <NamedSelectField
             defaultValue="Apartment"
             label={t('create.unitType')}
@@ -145,8 +200,8 @@ export function CreateUnitPage({
               if (!getApplicableUnitAreaFields(value, selectedFloor).showFloor) setSelectedFloor('Ground')
             }}
           />
-          <NumberField name="bua" label={t('create.bua')} defaultValue={145} min={1} required />
-          {areaFields.showLandArea && <NumberField name="landArea" label={t('create.landArea')} defaultValue={0} min={0} required />}
+          <NumberField key={`bua-${bua}`} name="bua" label={t('create.bua')} defaultValue={bua} min={1} required />
+          {areaFields.showLandArea && <NumberField key={`land-${landArea}`} name="landArea" label={t('create.landArea')} defaultValue={landArea} min={0} required />}
           {areaFields.showFloor && (
             <NamedSelectField
               label={t('create.floor')}
@@ -157,8 +212,8 @@ export function CreateUnitPage({
               onValueChange={setSelectedFloor}
             />
           )}
-          {areaFields.showGardenArea && <NumberField name="gardenArea" label={t('create.gardenArea')} defaultValue={0} min={0} />}
-          {areaFields.showTerraceArea && <NumberField name="terraceArea" label={t('create.terraceArea')} defaultValue={0} min={0} required />}
+          {areaFields.showGardenArea && <NumberField key={`garden-${gardenArea}`} name="gardenArea" label={t('create.gardenArea')} defaultValue={gardenArea} min={0} />}
+          {areaFields.showTerraceArea && <NumberField key={`terrace-${terraceArea}`} name="terraceArea" label={t('create.terraceArea')} defaultValue={terraceArea} min={0} required />}
         </fieldset>
 
         <fieldset className="unit-form wizard-panel" data-active={activeStep === 'Specs'} aria-hidden={activeStep !== 'Specs'}>
@@ -167,10 +222,12 @@ export function CreateUnitPage({
             label={t('create.view')}
             name="viewId"
             options={viewOptions}
+            value={viewId}
+            onValueChange={setViewId}
             required
           />
-          <NumberField name="bedrooms" label={t('create.bedrooms')} defaultValue={3} min={1} max={10} required />
-          <NumberField name="bathrooms" label={t('create.bathrooms')} defaultValue={2} min={1} max={10} required />
+          <NumberField key={`bedrooms-${bedrooms}`} name="bedrooms" label={t('create.bedrooms')} defaultValue={bedrooms} min={1} max={10} required />
+          <NumberField key={`bathrooms-${bathrooms}`} name="bathrooms" label={t('create.bathrooms')} defaultValue={bathrooms} min={1} max={10} required />
           <label className="toggle-line"><input name="elevator" type="checkbox" defaultChecked /> {t('create.elevator')}</label>
           <NamedSelectField
             defaultValue="false"
@@ -186,6 +243,8 @@ export function CreateUnitPage({
             name="finish"
             required
             options={finishOptions}
+            value={finish}
+            onValueChange={setFinish}
           />
         </fieldset>
 
@@ -204,7 +263,9 @@ export function CreateUnitPage({
           />
           <label>
             <RequiredLabel label={t('create.totalAmount')} required />
-            <input name="totalAmount" type="number" min={0} required value={totalAmount} onChange={(event) => setTotalAmount(Number(event.target.value))} />
+            {usesCalculatedInstallmentTotal
+              ? <input name="totalAmount" role="spinbutton" readOnly required value={formatCurrency(totalAmount, locale)} />
+              : <input name="totalAmount" type="text" role="spinbutton" inputMode="decimal" required value={formatInputNumber(cashAmount, locale)} onChange={(event) => setCashAmount(parseFormattedNumber(event.target.value))} />}
           </label>
           <label className="toggle-line">
             <input
@@ -219,7 +280,7 @@ export function CreateUnitPage({
             <>
               <label>
                 <RequiredLabel label={t('create.maintenanceCost')} required />
-                <input name="maintenanceCost" type="number" min={0} step="0.01" required value={maintenanceCost} onChange={(event) => setMaintenanceCost(Number(event.target.value))} />
+                <input name="maintenanceCost" type="text" role="spinbutton" inputMode="decimal" required value={formatInputNumber(maintenanceCost, locale)} onChange={(event) => setMaintenanceCost(parseFormattedNumber(event.target.value))} />
               </label>
               <label>
                 {t('create.maintenanceDueDate')}
@@ -231,7 +292,7 @@ export function CreateUnitPage({
             <>
               <label>
                 <RequiredLabel label={t('create.downPayment')} required />
-                <input name="downPayment" type="number" min={0} max={totalAmount} required value={downPayment} onChange={(event) => setDownPayment(Number(event.target.value))} />
+                <input name="downPayment" type="text" role="spinbutton" inputMode="decimal" required value={formatInputNumber(downPayment, locale)} onChange={(event) => setDownPayment(parseFormattedNumber(event.target.value))} />
               </label>
               <label>
                 {t('details.remainingPayment')}
@@ -263,7 +324,11 @@ export function CreateUnitPage({
                   </label>
                   <label>
                     {t('details.installmentAmount')}
-                    <input readOnly value={formatCurrency(calculatedInstallment, locale)} />
+                    <input name="installmentAmountSeed" type="text" role="spinbutton" inputMode="decimal" required value={formatInputNumber(installmentAmount, locale)} onChange={(event) => setInstallmentAmount(parseFormattedNumber(event.target.value))} />
+                  </label>
+                  <label>
+                    Installment due day
+                    <input name="installmentDueDay" type="number" min={1} max={31} required value={installmentDueDay} onChange={(event) => setInstallmentDueDay(Number(event.target.value))} />
                   </label>
                 </>
               ) : (
@@ -280,7 +345,7 @@ export function CreateUnitPage({
           <legend>{t('create.legend.owner')}</legend>
           <label>
             <RequiredLabel label={t('create.ownerName')} required />
-            <input name="ownerName" defaultValue="New Owner" required dir="auto" />
+            <input name="ownerName" value={ownerName} required dir="auto" onChange={(event) => setOwnerName(event.target.value)} />
           </label>
           <OwnerPhoneField
             countryCode={ownerCountryCode}
@@ -294,7 +359,7 @@ export function CreateUnitPage({
           <NamedSelectField defaultValue="2028" label={t('create.deliveryDate')} name="deliveryYear" options={deliveryYearOptions} required />
           <label className="wide-field">
             {t('create.salesNotes')}
-            <textarea name="salesNotes" defaultValue="Owner is responsive on WhatsApp." dir="auto" />
+            <textarea name="salesNotes" value={salesNotes} dir="auto" onChange={(event) => setSalesNotes(event.target.value)} />
           </label>
         </fieldset>
 

@@ -154,6 +154,7 @@ export interface LeadraUnit {
   installmentEndMonth?: string | null
   customInstallmentText?: string | null
   installmentAmount: number | null
+  installmentDueDay?: number
   deliveryExpectancy: DeliveryExpectancy
   originalOwnerName: string | null
   countryCode: string | null
@@ -496,6 +497,7 @@ export interface CreateUnitInput {
   installmentStartMonth?: string | null
   installmentEndMonth?: string | null
   customInstallmentText?: string | null
+  installmentDueDay?: number | null
   deliveryExpectancy: DeliveryExpectancy
   originalOwnerName: string
   countryCode: string
@@ -541,6 +543,7 @@ export interface UnitEditInput {
   installmentStartMonth?: string | null
   installmentEndMonth?: string | null
   customInstallmentText?: string | null
+  installmentDueDay?: number | null
   commissionPercentage: number
 }
 

@@ -1,8 +1,8 @@
 import {
+  calculateInstallmentTotalAmount,
   calculatePaymentSummary,
   calculateDisplayedRemainingPayment,
   applyPaymentScheduleAction,
-  applyPaymentScheduleAmountAction,
   canAddAdminManagerNote,
   canArchiveUnit,
   canEditAnyUnitDetails,
@@ -11,6 +11,7 @@ import {
   canEditUnitCommission,
   canEditUnitPricing,
   canManageUnitSpecialStatus,
+  canUseUnitOperationalActions,
   canViewUnit,
   generateUnitCode,
   createInitialPaymentSchedule,
@@ -349,6 +350,7 @@ export function createUnitWorkflow(
     installmentEndMonth: installmentFields.fields.installmentEndMonth,
     customInstallmentText: installmentFields.fields.customInstallmentText,
     installmentAmount: payment.installmentAmount,
+    installmentDueDay: input.installmentDueDay ?? 1,
     deliveryExpectancy: input.deliveryExpectancy,
     originalOwnerName: input.originalOwnerName,
     countryCode: input.countryCode,
@@ -372,6 +374,10 @@ export function createUnitWorkflow(
     paymentHistory: [],
   }
   candidate.paymentSchedule = createInitialPaymentSchedule(candidate)
+  if (candidate.paymentMethod === 'installment') {
+    candidate.totalAmount = calculateInstallmentTotalAmount(candidate)
+    candidate.commissionAmount = Math.round((candidate.totalAmount * candidate.commissionPercentage) / 100)
+  }
   candidate.remainingPayment = calculateDisplayedRemainingPayment(candidate)
 
   if (unitHasSameProjectPhoneDuplicate(candidate, state.units)) {
@@ -472,6 +478,9 @@ function validateCreateUnitInput(input: CreateUnitInput): string | null {
   }
   if (input.paymentMethod === 'installment' && !isNonNegativeFinite(input.downPayment ?? 0)) {
     return 'Down payment must be zero or greater.'
+  }
+  if (input.installmentDueDay != null && (!Number.isInteger(input.installmentDueDay) || input.installmentDueDay < 1 || input.installmentDueDay > 31)) {
+    return 'Installment due day must be between 1 and 31.'
   }
   if (!isValidDeliveryExpectancy(input.deliveryExpectancy)) {
     return 'Delivery expectancy must include a valid year.'
@@ -582,6 +591,7 @@ export function updateUnitStatusWorkflow(
   const unit = state.units.find((item) => item.id === unitId)
   if (!unit) return { ok: false, state, ...createErrorMessage('error.unitNotFound', 'Unit not found.') }
   if (!canViewUnit(actor, unit)) return { ok: false, state, ...createErrorMessage('error.unitOutsideVisibility', 'Unit is outside your visibility scope.') }
+  if (!canUseUnitOperationalActions(actor, unit)) return { ok: false, state, error: 'Sales representatives can only change status on their own units.', errorKey: null, errorParams: null }
 
   const nextState = {
     ...state,
@@ -630,6 +640,7 @@ export function updatePaymentScheduleWorkflow(
   const unit = state.units.find((item) => item.id === unitId)
   if (!unit) return { ok: false, state, ...createErrorMessage('error.unitNotFound', 'Unit not found.') }
   if (!canViewUnit(actor, unit)) return { ok: false, state, ...createErrorMessage('error.unitOutsideVisibility', 'Unit is outside your visibility scope.') }
+  if (!canUseUnitOperationalActions(actor, unit)) return { ok: false, state, error: 'Payment timetable is read-only for this unit.', errorKey: null, errorParams: null }
   if (unit.paymentMethod !== 'installment' || unit.installmentType === 'custom') {
     return { ok: false, state, error: 'Payment timetable is only available for automatic installment units.', errorKey: null, errorParams: null }
   }
@@ -669,61 +680,6 @@ export function updatePaymentScheduleWorkflow(
           action: applied.history.action,
           previousRemainingValue: applied.history.previousRemainingValue,
           newRemainingValue: applied.history.newRemainingValue,
-        },
-      },
-    ),
-  }
-}
-
-export function updatePaymentScheduleAmountWorkflow(
-  state: AppDataState,
-  actor: LeadraUser,
-  unitId: number,
-  scheduleId: string,
-  amount: number,
-): WorkflowResult {
-  const unit = state.units.find((item) => item.id === unitId)
-  if (!unit) return { ok: false, state, ...createErrorMessage('error.unitNotFound', 'Unit not found.') }
-  if (!canViewUnit(actor, unit)) return { ok: false, state, ...createErrorMessage('error.unitOutsideVisibility', 'Unit is outside your visibility scope.') }
-  if (!canEditUnitPricing(actor, unit)) return { ok: false, state, error: 'You cannot edit this payment timetable.', errorKey: null, errorParams: null }
-  if (unit.paymentMethod !== 'installment' || unit.installmentType === 'custom') {
-    return { ok: false, state, error: 'Payment timetable is only available for automatic installment units.', errorKey: null, errorParams: null }
-  }
-
-  const appliedUnit = applyPaymentScheduleAmountAction(unit, scheduleId, amount)
-  if (!appliedUnit) return { ok: false, state, error: 'Payment timetable row was not changed.', errorKey: null, errorParams: null }
-  const previousRow = (unit.paymentSchedule ?? createInitialPaymentSchedule(unit)).find((row) => row.id === scheduleId)
-  const nextRow = appliedUnit.paymentSchedule?.find((row) => row.id === scheduleId)
-
-  const nextState = {
-    ...state,
-    units: state.units.map((item) => item.id === unitId ? appliedUnit : item),
-  }
-
-  return {
-    ok: true,
-    state: withAnalyticsEvent(
-      withAudit(
-        nextState,
-        actor,
-        'Installment amount updated',
-        unit.unitCode,
-        { remainingPayment: unit.remainingPayment, amount: previousRow?.amount ?? null },
-        { remainingPayment: appliedUnit.remainingPayment, amount: nextRow?.amount ?? null, scheduleId },
-      ),
-      actor,
-      'installment_updated',
-      {
-        unit: appliedUnit,
-        amountValue: nextRow?.amount ?? amount,
-        metadata: {
-          unitCode: unit.unitCode,
-          scheduleId,
-          action: 'amount_updated',
-          previousAmount: previousRow?.amount ?? null,
-          newAmount: nextRow?.amount ?? amount,
-          previousRemainingValue: unit.remainingPayment,
-          newRemainingValue: appliedUnit.remainingPayment,
         },
       },
     ),
@@ -864,6 +820,7 @@ export function updateUnitWorkflow(
     installmentEndMonth: nextInstallmentFields.fields.installmentEndMonth,
     customInstallmentText: nextInstallmentFields.fields.customInstallmentText,
     installmentAmount,
+    installmentDueDay: canEditPricing ? input.installmentDueDay ?? unit.installmentDueDay ?? 1 : unit.installmentDueDay ?? 1,
     originalOwnerName: canEditOwner ? input.originalOwnerName : unit.originalOwnerName,
     countryCode: canEditOwner ? input.countryCode : unit.countryCode,
     originalOwnerPhone: canEditOwner ? ownerPhoneValidation?.localPhone ?? input.originalOwnerPhone : unit.originalOwnerPhone,
@@ -880,6 +837,10 @@ export function updateUnitWorkflow(
   ) {
     updatedUnit.paymentSchedule = createInitialPaymentSchedule(updatedUnit)
     updatedUnit.paymentHistory = unit.paymentHistory
+  }
+  if (updatedUnit.paymentMethod === 'installment') {
+    updatedUnit.totalAmount = calculateInstallmentTotalAmount(updatedUnit)
+    updatedUnit.commissionAmount = Math.round((updatedUnit.totalAmount * updatedUnit.commissionPercentage) / 100)
   }
   updatedUnit.remainingPayment = calculateDisplayedRemainingPayment(updatedUnit)
 

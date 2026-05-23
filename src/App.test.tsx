@@ -1,10 +1,11 @@
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
-import { act, render, screen, waitFor, within } from '@testing-library/react'
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import App from './App'
 import { CreateUnitPage } from './features/create/CreateUnitPage'
-import { initialAppState, lookupValues } from './data/seed'
+import { UnitDetailsPage } from './features/details/UnitDetailsPage'
+import { demoUsers, initialAppState, lookupValues, seedUnits } from './data/seed'
 import { createUnitRemoteErrorFlash, mediaPdfVisibilityErrorFlash } from './lib/createUnitErrors'
 import { LocaleProvider } from './lib/i18n'
 import { ThemeProvider } from './lib/theme'
@@ -70,6 +71,10 @@ function navigateTestPath(path: string) {
   })
 }
 
+function getTopbarBackButton() {
+  return screen.getAllByRole('button', { name: /^back$/i })[0]
+}
+
 async function openSeedUnitDetails(user: ReturnType<typeof userEvent.setup>) {
   await openLoginPage(user)
   await signInAs(user, /continue as admin/i)
@@ -85,6 +90,7 @@ describe('Leadra app shell', () => {
     window.history.replaceState(null, '', '/')
     window.localStorage.clear()
     delete document.documentElement.dataset.theme
+    vi.useRealTimers()
     vi.restoreAllMocks()
     mockGenerateUnitPdfFile.mockClear()
     mockShareGeneratedPdfs.mockClear()
@@ -135,6 +141,57 @@ describe('Leadra app shell', () => {
       code: 'PGRST204',
       message: "Could not find the 'include_in_pdf' column of 'unit_media' in the schema cache",
     }).text).toMatch(/PDF visibility could not be saved/i)
+  })
+
+  it('shows paid installments inside down payment on unit details', async () => {
+    vi.useFakeTimers()
+    const unit = {
+      ...seedUnits[0],
+      paymentSchedule: [
+        { id: 'paid-1', unitId: seedUnits[0].id, paymentNumber: 1, dueMonth: '2026-06-01', amount: 123_456, paid: true, paidAt: null, paidBy: null, paidByName: null },
+        { id: 'due-2', unitId: seedUnits[0].id, paymentNumber: 2, dueMonth: '2026-09-01', amount: 345_678, paid: false, paidAt: null, paidBy: null, paidByName: null },
+      ],
+    }
+
+    render(
+      <ThemeProvider>
+        <LocaleProvider>
+          <UnitDetailsPage
+            user={demoUsers[0]}
+            unit={unit}
+            lookupValues={lookupValues}
+            onArchive={vi.fn()}
+            onSpecialChange={vi.fn()}
+            onUpdateUnit={vi.fn(async () => true)}
+            onStatusChange={vi.fn()}
+            onGeneratePdf={vi.fn()}
+            onDownloadPdf={vi.fn()}
+            onSharePdf={vi.fn()}
+            onCopyShareLink={vi.fn()}
+            onCopySocialCopy={vi.fn()}
+            pdfGenerating={false}
+            pdfSharing={false}
+            pdfReady={false}
+            statusUpdating={false}
+            specialUpdating={false}
+            statusActionFeedback={null}
+            onSaveNote={vi.fn()}
+            onDeleteNote={vi.fn()}
+            onRemoveMedia={vi.fn()}
+            onMediaPdfVisibilityChange={vi.fn()}
+            onMediaDownload={vi.fn()}
+            removingMediaId={null}
+            downloadingMediaId={null}
+          />
+        </LocaleProvider>
+      </ThemeProvider>,
+    )
+
+    act(() => vi.advanceTimersByTime(1800))
+
+    const downPaymentRow = screen.getByText('Down Payment').closest('div')
+    expect(downPaymentRow).toHaveTextContent(/EGP\s*1,123,456/)
+    expect(screen.queryByText('Paid Amount')).not.toBeInTheDocument()
   })
 
   it('lets a demo user enter global unit search and keep browsing by destination', async () => {
@@ -211,16 +268,17 @@ describe('Leadra app shell', () => {
     expect(screen.queryByText(/NC3BR/i)).not.toBeInTheDocument()
   })
 
-  it('hides the shared special page from sales users', async () => {
+  it('shows the shared special page to sales users without edit controls', async () => {
     renderApp()
     const user = userEvent.setup()
 
     await openLoginPage(user)
     await signInAs(user, /continue as sara/i)
 
-    expect(screen.queryByRole('link', { name: /^special$/i })).not.toBeInTheDocument()
+    expect(screen.getAllByRole('link', { name: /^special$/i }).length).toBeGreaterThan(0)
     navigateTestPath('/special')
-    await waitFor(() => expect(window.location.pathname).toBe('/dashboard'))
+    await waitFor(() => expect(window.location.pathname).toBe('/special'))
+    expect(screen.queryByRole('button', { name: /mark special/i })).not.toBeInTheDocument()
   })
 
   it('selects units for batch pdf generation and preserves row navigation', async () => {
@@ -346,6 +404,66 @@ describe('Leadra app shell', () => {
     expect(screen.getByLabelText(/start/i)).toHaveValue('2026-01-01')
     expect(screen.getAllByLabelText(/end/i)[0]).toHaveValue('2026-01-31')
     expect(screen.getByRole('combobox', { name: /status/i })).toHaveTextContent(/available/i)
+  })
+
+  it('moves back through nested app routes one step at a time', async () => {
+    renderApp()
+    const user = userEvent.setup()
+
+    await openLoginPage(user)
+    await signInAs(user, /continue as admin/i)
+    expect(getTopbarBackButton()).toBeDisabled()
+
+    await user.click(screen.getByRole('link', { name: /view all units/i }))
+    await openNewCairoProject(user)
+    const projectPathname = window.location.pathname
+    expect(projectPathname).toMatch(/^\/units\/destinations\/.+\/projects\/.+/)
+
+    await user.click(await screen.findByRole('button', { name: /open nc3br/i }))
+    expect(await screen.findByRole('heading', { name: /NC3BR/i })).toBeInTheDocument()
+
+    await user.click(getTopbarBackButton())
+    await waitFor(() => expect(window.location.pathname).toBe(projectPathname))
+
+    await user.click(getTopbarBackButton())
+    await waitFor(() => expect(window.location.pathname).toMatch(/^\/units\/destinations\/[^/]+$/))
+  })
+
+  it('falls back to the dashboard when a direct deep link has no previous app route', async () => {
+    navigateTestPath('/units/details/106')
+    renderApp()
+    const user = userEvent.setup()
+
+    await openLoginPage(user)
+    await signInAs(user, /continue as sara amin/i)
+
+    expect(await screen.findByRole('heading', { name: /ZE4BR/i })).toBeInTheDocument()
+    await user.click(getTopbarBackButton())
+
+    await waitFor(() => expect(window.location.pathname).toBe('/dashboard'))
+    expect(await screen.findByRole('heading', { name: /sara command/i })).toBeInTheDocument()
+  })
+
+  it('moves back one step from create and admin subroutes', async () => {
+    renderApp()
+    const user = userEvent.setup()
+
+    await openLoginPage(user)
+    await signInAs(user, /continue as admin/i)
+
+    await user.click(screen.getByRole('link', { name: /^create$/i }))
+    await user.click(screen.getByRole('button', { name: /owner/i }))
+    expect(window.location.pathname).toBe('/create/owner')
+
+    await user.click(getTopbarBackButton())
+    await waitFor(() => expect(window.location.pathname).toBe('/create'))
+
+    await user.click(screen.getByRole('link', { name: /^admin$/i }))
+    await user.click(await screen.findByRole('button', { name: /audit/i }))
+    expect(window.location.pathname).toBe('/admin/audit')
+
+    await user.click(getTopbarBackButton())
+    await waitFor(() => expect(window.location.pathname).toBe('/admin'))
   })
 
   it('keeps unauthorized sales users out of deep admin routes', async () => {
@@ -658,6 +776,54 @@ describe('Leadra app shell', () => {
     expect(screen.queryByRole('spinbutton', { name: /transfer fees/i })).not.toBeInTheDocument()
   })
 
+  it('keeps smart unit details on the property step while applying parsed values across steps', async () => {
+    const onStepChange = vi.fn()
+    const { rerender } = render(
+      <LocaleProvider>
+        <CreateUnitPage
+          activeStep="Property"
+          lookupValues={lookupValues}
+          settings={initialAppState.settings}
+          onStepChange={onStepChange}
+          onSubmit={vi.fn()}
+        />
+      </LocaleProvider>,
+    )
+
+    fireEvent.change(screen.getByLabelText(/paste unit details/i), {
+      target: { value: 'price 6,000,000 down payment 1,200,000 bedrooms 4' },
+    })
+    fireEvent.click(screen.getByRole('button', { name: /auto-fill fields/i }))
+
+    rerender(
+      <LocaleProvider>
+        <CreateUnitPage
+          activeStep="Specs"
+          lookupValues={lookupValues}
+          settings={initialAppState.settings}
+          onStepChange={onStepChange}
+          onSubmit={vi.fn()}
+        />
+      </LocaleProvider>,
+    )
+    expect(screen.queryByLabelText(/paste unit details/i)).not.toBeInTheDocument()
+    expect(screen.getByRole('spinbutton', { name: /bedrooms/i })).toHaveValue('4')
+
+    rerender(
+      <LocaleProvider>
+        <CreateUnitPage
+          activeStep="Payment"
+          lookupValues={lookupValues}
+          settings={initialAppState.settings}
+          onStepChange={onStepChange}
+          onSubmit={vi.fn()}
+        />
+      </LocaleProvider>,
+    )
+    expect(screen.queryByLabelText(/paste unit details/i)).not.toBeInTheDocument()
+    expect(screen.getByRole('spinbutton', { name: /down payment/i })).toHaveValue('1,200,000')
+  })
+
   it('hides maintenance cost and due date when maintenance is paid', async () => {
     const user = userEvent.setup()
     render(
@@ -719,8 +885,7 @@ describe('Leadra app shell', () => {
     await user.click(screen.getByRole('button', { name: /edit unit/i }))
     await user.clear(screen.getByRole('spinbutton', { name: /bua/i }))
     await user.type(screen.getByRole('spinbutton', { name: /bua/i }), '188')
-    await user.clear(screen.getByRole('spinbutton', { name: /total amount/i }))
-    await user.type(screen.getByRole('spinbutton', { name: /total amount/i }), '5500000')
+    expect(screen.getByRole('spinbutton', { name: /total amount/i })).toHaveAttribute('readonly')
     await user.clear(screen.getByRole('textbox', { name: /original owner name/i }))
     await user.type(screen.getByRole('textbox', { name: /original owner name/i }), 'Updated Owner')
     await user.clear(screen.getByRole('textbox', { name: /original owner phone/i }))
@@ -745,7 +910,7 @@ describe('Leadra app shell', () => {
     expect(await screen.findByRole('heading', { name: /NC3BR/i })).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: /edit unit/i }))
 
-    expect(screen.getByRole('spinbutton', { name: /total amount/i })).toBeDisabled()
+    expect(screen.getByRole('spinbutton', { name: /total amount/i })).toHaveAttribute('readonly')
     expect(screen.getByRole('textbox', { name: /original owner name/i })).toBeDisabled()
     await user.clear(screen.getByRole('spinbutton', { name: /bua/i }))
     await user.type(screen.getByRole('spinbutton', { name: /bua/i }), '172')
@@ -765,6 +930,56 @@ describe('Leadra app shell', () => {
 
     expect(await screen.findByRole('heading', { name: /ZE4BR/i })).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /edit unit/i })).not.toBeInTheDocument()
+  })
+
+  it('only shows social copy for admin and sub-admin users', () => {
+    const specialUnit = seedUnits.find((unit) => unit.id === 107)!
+    const renderDetailsFor = (fullName: string) => render(
+      <LocaleProvider>
+        <UnitDetailsPage
+          user={demoUsers.find((user) => user.fullName === fullName)!}
+          unit={specialUnit}
+          lookupValues={lookupValues}
+          onArchive={vi.fn()}
+          onSpecialChange={vi.fn()}
+          onUpdateUnit={vi.fn(async () => true)}
+          onStatusChange={vi.fn()}
+          onGeneratePdf={vi.fn()}
+          onDownloadPdf={vi.fn()}
+          onSharePdf={vi.fn()}
+          onCopyShareLink={vi.fn()}
+          onCopySocialCopy={vi.fn()}
+          pdfGenerating={false}
+          pdfSharing={false}
+          pdfReady={false}
+          statusUpdating={false}
+          specialUpdating={false}
+          statusActionFeedback={null}
+          onSaveNote={vi.fn()}
+          onDeleteNote={vi.fn()}
+          onRemoveMedia={vi.fn()}
+          onMediaPdfVisibilityChange={vi.fn()}
+          onMediaDownload={vi.fn()}
+          removingMediaId={null}
+          downloadingMediaId={null}
+        />
+      </LocaleProvider>,
+    )
+
+    const adminView = renderDetailsFor('Nour El Din')
+    expect(screen.getByRole('button', { name: /social copy/i })).toBeInTheDocument()
+    adminView.unmount()
+
+    const subAdminView = renderDetailsFor('Laila Mansour')
+    expect(screen.getByRole('button', { name: /social copy/i })).toBeInTheDocument()
+    subAdminView.unmount()
+
+    const managerView = renderDetailsFor('Mona Hafez')
+    expect(screen.queryByRole('button', { name: /social copy/i })).not.toBeInTheDocument()
+    managerView.unmount()
+
+    renderDetailsFor('Sara Amin')
+    expect(screen.queryByRole('button', { name: /social copy/i })).not.toBeInTheDocument()
   })
 
   it('blocks create-unit image uploads over 40 MB', async () => {
@@ -1098,6 +1313,7 @@ describe('Leadra app shell', () => {
     expect(await screen.findByText(/installments table/i)).toBeInTheDocument()
     expect(screen.getByText(/^remaining$/i)).toBeInTheDocument()
     expect(screen.getAllByText(/^unpaid$/i).length).toBeGreaterThan(0)
+    expect(screen.queryByRole('button', { name: /edit installment amount/i })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /^unpaid$/i })).not.toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /^paid$/i })).not.toBeInTheDocument()
     expect(screen.getByRole('button', { name: /archive/i })).toBeInTheDocument()

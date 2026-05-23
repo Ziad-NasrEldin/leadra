@@ -9,7 +9,6 @@ import {
   deleteUnitAdminNoteWorkflow,
   saveUnitAdminNoteWorkflow,
   signInWorkflow,
-  updatePaymentScheduleAmountWorkflow,
   updatePaymentScheduleWorkflow,
   updateSettingsWorkflow,
   updateUnitStatusWorkflow,
@@ -532,11 +531,11 @@ describe('Leadra product workflows', () => {
     expect(result.errorKey).toBe('error.invalidOwnerPhoneForCountry')
   })
 
-  it('updates allowed unit fields and preserves remaining value when total value changes', () => {
+  it('updates allowed unit fields while preserving calculated installment totals', () => {
     const unit = seedUnits[0]
     const result = updateUnitWorkflow(state(), sales, unit.id, editInput(unit, {
       bua: 180,
-      totalAmount: 5_500_000,
+      totalAmount: unit.totalAmount,
       transferFees: 175_000,
       maintenancePaid: true,
       maintenanceCost: null,
@@ -553,7 +552,7 @@ describe('Leadra product workflows', () => {
     const updated = result.state.units.find((item) => item.id === unit.id)
     expect(updated).toMatchObject({
       bua: 180,
-      totalAmount: 5_500_000,
+      totalAmount: unit.totalAmount,
       remainingPayment: unit.remainingPayment,
       transferFees: 175_000,
       maintenancePaid: true,
@@ -567,11 +566,10 @@ describe('Leadra product workflows', () => {
       originalOwnerPhone: unit.originalOwnerPhone,
       salesNotes: 'Updated from edit mode.',
     })
-    expect(result.state.auditLogs.at(0)?.actionType).toBe('Total Value / pricing updated')
+    expect(result.state.auditLogs.at(0)?.actionType).toBe('Unit edited')
     expect(result.state.analyticsEvents.at(0)).toMatchObject({
-      eventType: 'price_updated',
+      eventType: 'unit_updated',
       unitId: unit.id,
-      amountValue: 5_500_000,
     })
   })
 
@@ -665,53 +663,6 @@ describe('Leadra product workflows', () => {
     expect(unpaidUnit.paymentHistory?.[0]).toMatchObject({ action: 'unpaid', previousRemainingValue: 3_900_000, newRemainingValue: 5_100_000 })
   })
 
-  it('edits one payment timetable amount and recalculates remaining value', () => {
-    const created = createUnitWorkflow(state(), sales, {
-      developerId: 'dev-palm',
-      developerName: 'Palm Hills',
-      projectId: 'project-zed',
-      projectName: 'ZED East',
-      destinationId: 'dest-new-cairo',
-      destinationName: 'New Cairo',
-      unitType: 'Apartment',
-      floor: '1st',
-      bua: 155,
-      viewId: 'view-garden',
-      viewName: 'Garden',
-      bedrooms: 3,
-      bathrooms: 2,
-      elevator: true,
-      finish: 'Fully Finished',
-      furnished: false,
-      paymentMethod: 'installment',
-      totalAmount: 6_000_000,
-      downPayment: 1_200_000,
-      maintenancePaid: false,
-      maintenanceCost: 300_000,
-      maintenanceDueDate: '2029-01-15',
-      installmentType: 'annual',
-      installmentStartMonth: '2029-01-01',
-      installmentEndMonth: '2032-01-01',
-      deliveryExpectancy: { mode: 'year', year: 2029 },
-      originalOwnerName: 'Payment Owner',
-      countryCode: '+20',
-      originalOwnerPhone: '010 4444 5555',
-      salesNotes: 'Payment timetable lead.',
-      media: [],
-    })
-    expect(created.ok).toBe(true)
-    const unit = created.state.units[0]
-
-    const updated = updatePaymentScheduleAmountWorkflow(created.state, admin, unit.id, unit.paymentSchedule![0].id, 900_000)
-
-    expect(updated.ok).toBe(true)
-    const updatedUnit = updated.state.units.find((item) => item.id === unit.id)!
-    expect(updatedUnit.paymentSchedule?.map((row) => row.amount)).toEqual([900_000, 1_200_000, 1_200_000, 1_200_000])
-    expect(updatedUnit.remainingPayment).toBe(4_800_000)
-    expect(updated.state.auditLogs.at(0)?.actionType).toBe('Installment amount updated')
-    expect(updated.state.analyticsEvents.at(0)?.metadata).toMatchObject({ action: 'amount_updated' })
-  })
-
   it('lets admins edit owner fields with validation and duplicate-phone protection', () => {
     const unit = seedUnits[0]
     const changed = updateUnitWorkflow(state(), admin, unit.id, editInput(unit, {
@@ -793,9 +744,8 @@ describe('Leadra product workflows', () => {
 
   it('can clear a unit back to available and blocks sales users from managing admin notes', () => {
     const available = updateUnitStatusWorkflow(state(), sales, 106, 'available')
-    expect(available.ok).toBe(true)
-    expect(available.state.units.find((unit) => unit.id === 106)?.status).toBe('available')
-    expect(available.state.auditLogs.at(0)?.actionType).toBe('Unit marked Available')
+    expect(available.ok).toBe(false)
+    expect(available.error).toContain('own units')
 
     const denied = saveUnitAdminNoteWorkflow(state(), sales, 105, 'Should not be allowed.')
     expect(denied.ok).toBe(false)

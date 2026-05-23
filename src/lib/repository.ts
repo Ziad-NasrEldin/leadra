@@ -198,22 +198,6 @@ export class LeadraRepository {
     return toUnitViewModel(data as unknown as SupabaseUnitRow)
   }
 
-  async updatePaymentScheduleAmount(unitId: number, scheduleId: string, amount: number): Promise<LeadraUnit> {
-    const { error } = await this.client.rpc('set_unit_payment_amount', {
-      target_unit_id: unitId,
-      target_schedule_id: scheduleId,
-      new_amount: amount,
-    })
-    if (error) throw error
-    const { data, error: loadError } = await this.client
-      .from('units')
-      .select(unitSelect)
-      .eq('id', unitId)
-      .single()
-    if (loadError) throw loadError
-    return toUnitViewModel(data as unknown as SupabaseUnitRow)
-  }
-
   async reconcileDueUnitPayments(): Promise<void> {
     const { error } = await this.client.rpc('reconcile_due_unit_payments')
     if (error) throw error

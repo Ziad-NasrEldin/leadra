@@ -53,15 +53,15 @@ export async function buildPermissionSafePdfBlob(
     rows: pdfData.rows,
   })
 
-  for (let index = 0; index < images.length; index += 4) {
+  for (let index = 0; index < images.length; index += 2) {
     const imagePage = pdf.addPage([595, 842])
     await drawImagePage(imagePage, {
       pdf,
       font,
       bold,
       unitCode: safeUnit.unitCode,
-      images: images.slice(index, index + 4),
-      pageNumber: Math.floor(index / 4) + 2,
+      images: images.slice(index, index + 2),
+      pageNumber: Math.floor(index / 2) + 2,
     })
   }
 
@@ -118,8 +118,7 @@ function buildPdfUnitDetails(user: LeadraUser, unit: LeadraUnit, locale: LocaleC
     const paymentTotals = calculateDisplayedPaymentTotals(unit)
     rows.push(
       { label: 'Total Amount', value: formatCurrency(unit.totalAmount, locale), kind: 'money' },
-      { label: translate(locale, 'create.downPayment'), value: formatNullableCurrency(unit.downPayment, locale), kind: 'money' },
-      { label: translate(locale, 'details.paidAmount'), value: formatCurrency(paymentTotals.displayedPaidAmount, locale), kind: 'money' },
+      { label: translate(locale, 'create.downPayment'), value: formatCurrency(paymentTotals.displayedPaidAmount, locale), kind: 'money' },
       { label: 'Remaining Value', value: formatCurrency(paymentTotals.displayedRemainingAmount, locale), kind: 'money' },
       { label: 'Installments', value: installmentSummary(unit, installments, locale) },
     )
@@ -218,14 +217,9 @@ function drawCoverPage(
   drawPdfText(page, unit.unitCode, { x: 48, y: height - 145, size: 30, font: bold, color: palette.white, maxWidth: 275 })
   drawPdfText(page, `${unit.destinationName} / ${unit.projectName}`, { x: 50, y: height - 166, size: 10, font, color: palette.linen, maxWidth: 285 })
 
-  drawPdfText(page, 'CONFIDENTIAL', { x: 438, y: height - 52, size: 8, font: bold, color: palette.goldSoft })
-  drawPdfText(page, 'Generated for permission-safe sharing', { x: 348, y: height - 72, size: 8, font, color: palette.linen, maxWidth: 190 })
-
   const thumbnailBox = { x: 348, y: height - 172, width: 198, height: 112 }
-  drawImageFrame(page, thumbnailBox.x, thumbnailBox.y, thumbnailBox.width, thumbnailBox.height, thumbnail, {
+  drawCoverThumbnail(page, thumbnailBox.x, thumbnailBox.y, thumbnailBox.width, thumbnailBox.height, thumbnail, {
     font,
-    bold,
-    emptyTitle: 'No PDF Thumbnail',
     emptyBody: 'Select an image marked Show in PDF',
   })
 
@@ -305,6 +299,29 @@ function drawMeasuredDetailRow(
   drawWrappedPdfText(page, measured.valueLines, { x: options.x + options.labelWidth, y: options.y - 1, size: measured.valueSize, font: measured.valueFont, color: measured.valueColor })
 }
 
+function drawCoverThumbnail(
+  page: PDFPage,
+  x: number,
+  y: number,
+  width: number,
+  height: number,
+  image: PDFImage | null,
+  fallback: { font: PDFFont; emptyBody: string },
+) {
+  if (image) {
+    const scaled = image.scaleToFit(width, height)
+    page.drawImage(image, {
+      x: x + (width - scaled.width) / 2,
+      y: y + (height - scaled.height) / 2,
+      width: scaled.width,
+      height: scaled.height,
+    })
+    return
+  }
+
+  drawPdfText(page, fallback.emptyBody, { x, y: y + height / 2 - 2, size: 7.5, font: fallback.font, color: palette.linen, maxWidth: width })
+}
+
 async function drawImagePage(
   page: PDFPage,
   options: { pdf: PDFDocument; font: PDFFont; bold: PDFFont; unitCode: string; images: LeadraUnit['media']; pageNumber: number },
@@ -318,10 +335,8 @@ async function drawImagePage(
   drawPdfText(page, `Page ${options.pageNumber}`, { x: 488, y: height - 54, size: 8, font: bold, color: palette.goldSoft })
 
   const boxes = [
-    { x: 42, y: 458, width: 248, height: 270 },
-    { x: 305, y: 458, width: 248, height: 270 },
-    { x: 42, y: 134, width: 248, height: 270 },
-    { x: 305, y: 134, width: 248, height: 270 },
+    { x: 42, y: 438, width: 511, height: 290 },
+    { x: 42, y: 118, width: 511, height: 290 },
   ]
 
   for (const [index, file] of images.entries()) {
@@ -347,8 +362,7 @@ function drawImageFrame(
   image: PDFImage | null,
   fallback: { font: PDFFont; bold: PDFFont; emptyTitle: string; emptyBody: string },
 ) {
-  page.drawRectangle({ x, y, width, height, color: palette.linen, borderColor: palette.gold, borderWidth: 0.8 })
-  page.drawRectangle({ x: x + 5, y: y + 5, width: width - 10, height: height - 10, borderColor: rgb(1, 0.98, 0.94), borderWidth: 0.7 })
+  page.drawRectangle({ x, y, width, height, color: palette.linen })
   if (image) {
     const scaled = image.scaleToFit(width - 18, height - 18)
     page.drawImage(image, {

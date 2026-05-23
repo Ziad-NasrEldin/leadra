@@ -56,6 +56,7 @@ export interface SupabaseUnitRow {
   installment_end_month?: string | null
   custom_installment_text?: string | null
   installment_amount: number | null
+  installment_due_day?: number | null
   delivery_month: number | null
   delivery_year: number
   original_owner_name: string | null
@@ -119,6 +120,7 @@ export interface SafeUnitRpcRow {
   installment_end_month?: string | null
   custom_installment_text?: string | null
   installment_amount: number | null
+  installment_due_day?: number | null
   delivery_month: number | null
   delivery_year: number
   original_owner_name: string | null
@@ -231,6 +233,7 @@ export function toUnitInsertPayload(input: CreateUnitInput, actor: LeadraUser) {
       ? normalizeInstallmentMonth(input.installmentEndMonth)
       : null,
     custom_installment_text: installmentType === 'custom' ? input.customInstallmentText?.trim() ?? null : null,
+    installment_due_day: input.paymentMethod === 'installment' ? input.installmentDueDay ?? 1 : 1,
     delivery_month: input.deliveryExpectancy.mode === 'month_year' ? input.deliveryExpectancy.month ?? null : null,
     delivery_year: input.deliveryExpectancy.year,
     original_owner_name: input.originalOwnerName,
@@ -294,6 +297,7 @@ export function toUnitUpdatePayload(
           maintenance_cost: input.maintenancePaid ? null : input.maintenanceCost ?? null,
           maintenance_due_date: input.maintenancePaid ? null : input.maintenanceDueDate ?? null,
           ...installmentPatch,
+          installment_due_day: input.paymentMethod === 'installment' ? input.installmentDueDay ?? 1 : 1,
         }
       : {}),
     ...(permissions.canEditCommission ? { commission_percentage: input.commissionPercentage } : {}),
@@ -372,6 +376,7 @@ export function toUnitViewModel(row: SupabaseUnitRow): LeadraUnit {
     installmentEndMonth: row.installment_end_month ?? null,
     customInstallmentText: row.custom_installment_text ?? null,
     installmentAmount: row.installment_amount,
+    installmentDueDay: row.installment_due_day ?? 1,
     deliveryExpectancy:
       row.delivery_month == null
         ? { mode: 'year', year: row.delivery_year }
@@ -447,6 +452,7 @@ export function toSafeUnitViewModel(row: SafeUnitRpcRow): LeadraUnit {
     installmentEndMonth: row.installment_end_month ?? null,
     customInstallmentText: row.custom_installment_text ?? null,
     installmentAmount: row.installment_amount,
+    installmentDueDay: row.installment_due_day ?? 1,
     deliveryExpectancy:
       row.delivery_month == null
         ? { mode: 'year', year: row.delivery_year }

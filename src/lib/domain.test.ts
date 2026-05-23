@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   calculatePaymentSummary,
   calculateDisplayedPaymentTotals,
+  calculateInstallmentTotalAmount,
   canArchiveUnit,
   canEditAnyUnitDetails,
   canEditNonOwnerUnitDetails,
@@ -9,6 +10,7 @@ import {
   canEditUnitCommission,
   canEditUnitPricing,
   canManageUnitSpecialStatus,
+  canUseUnitOperationalActions,
   canSearchOwnerPhone,
   canViewSalesSensitiveData,
   canViewUnit,
@@ -17,7 +19,6 @@ import {
   generateUnitCode,
   getInstallmentScheduledDueMonths,
   applyPaymentScheduleAction,
-  applyPaymentScheduleAmountAction,
   buildPaymentTimetable,
   createInitialPaymentSchedule,
   searchUnits,
@@ -40,6 +41,9 @@ import {
   validateMediaUpload,
 } from './domain'
 import { countActiveUnitFilters } from '../features/shared/formUtils'
+import { parseFormattedNumber } from './numberFormat'
+import { parseSmartUnitDetails } from './smartUnitParser'
+import { buildSpecialUnitSocialCopy } from './unitCopy'
 import type { LeadraMediaFile, LeadraUnit, LeadraUser } from './types'
 
 const admin: LeadraUser = {
@@ -156,6 +160,34 @@ describe('Leadra domain rules', () => {
 
   it('formats delivery expectancy years without thousands separators', () => {
     expect(formatDeliveryExpectancy({ ...baseUnit, deliveryExpectancy: { mode: 'year', year: 2029 } }, 'en')).toBe('2029')
+  })
+
+  it('parses comma formatted numbers', () => {
+    expect(parseFormattedNumber('5,500,000')).toBe(5_500_000)
+    expect(parseFormattedNumber('EGP 1,250,000.50')).toBe(1_250_000.5)
+  })
+
+  it('limits sales operational actions to their own units', () => {
+    expect(canUseUnitOperationalActions(salesA, baseUnit)).toBe(true)
+    expect(canUseUnitOperationalActions(salesB, baseUnit)).toBe(false)
+  })
+
+  it('calculates installment totals from down payment and schedule rows', () => {
+    const schedule = createInitialPaymentSchedule({ ...baseUnit, installmentStartMonth: '2026-01-01', installmentEndMonth: '2026-04-01', installmentAmount: 250_000 })
+    expect(calculateInstallmentTotalAmount({ ...baseUnit, downPayment: 1_000_000, paymentSchedule: schedule })).toBe(1_500_000)
+  })
+
+  it('extracts pasted unit details and builds special social copy', () => {
+    const lookups = [
+      { id: 'dest-new-cairo', kind: 'destination' as const, label: 'New Cairo', archived: false },
+      { id: 'project-new-cairo', kind: 'project' as const, label: 'New Cairo Estates', archived: false },
+      { id: 'dev-1', kind: 'developer' as const, label: 'Palm Hills', archived: false },
+      { id: 'view-garden', kind: 'view' as const, label: 'Garden', archived: false },
+      { id: 'finish-1', kind: 'finish' as const, label: 'Fully Finished', archived: false },
+    ]
+    const parsed = parseSmartUnitDetails('Palm Hills New Cairo Estates New Cairo Garden Fully Finished price 5,500,000 BUA 165 bedrooms 3 owner phone 01012345678', lookups)
+    expect(parsed.patch).toMatchObject({ projectId: 'project-new-cairo', totalAmount: 5_500_000, bua: 165, bedrooms: 3 })
+    expect(buildSpecialUnitSocialCopy({ ...baseUnit, isSpecial: true }, 'en')).toContain('New Cairo Estates Apartment')
   })
 
   it('validates and formats owner phones against the selected country', () => {
@@ -371,32 +403,6 @@ describe('Leadra domain rules', () => {
     expect(unpaid?.unit.remainingPayment).toBe(4_000_000)
     expect(unpaid?.unit.paymentHistory).toHaveLength(2)
     expect(unpaid?.history.action).toBe('unpaid')
-  })
-
-  it('edits one installment amount without redistributing other installments', () => {
-    const schedule = createInitialPaymentSchedule({
-      ...baseUnit,
-      installmentYears: null,
-      installmentStartMonth: '2026-03-01',
-      installmentEndMonth: '2026-12-01',
-      installmentAmount: 1_000_000,
-      remainingPayment: 4_000_000,
-    })
-    const unit = {
-      ...baseUnit,
-      installmentYears: null,
-      installmentStartMonth: '2026-03-01',
-      installmentEndMonth: '2026-12-01',
-      installmentAmount: 1_000_000,
-      remainingPayment: 4_000_000,
-      paymentSchedule: schedule,
-    }
-
-    const updated = applyPaymentScheduleAmountAction(unit, schedule[0].id, 750_000, '2026-05-15T12:00:00.000Z')
-
-    expect(updated?.paymentSchedule?.map((row) => row.amount)).toEqual([750_000, 1_000_000, 1_000_000, 1_000_000])
-    expect(updated?.remainingPayment).toBe(3_750_000)
-    expect(updated?.updatedAt).toBe('2026-05-15T12:00:00.000Z')
   })
 
   it('calculates displayed paid and remaining totals with maintenance allocation', () => {

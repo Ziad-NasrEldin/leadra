@@ -353,6 +353,14 @@ export function canManageUnitSpecialStatus(user: LeadraUser, unit: LeadraUnit): 
   return user.role === 'admin' || user.role === 'sub_admin'
 }
 
+export function isOtherSalesRepresentativeUnit(user: LeadraUser, unit: LeadraUnit): boolean {
+  return user.role === 'sales' && unit.createdBy !== user.id
+}
+
+export function canUseUnitOperationalActions(user: LeadraUser, unit: LeadraUnit): boolean {
+  return !isOtherSalesRepresentativeUnit(user, unit)
+}
+
 export function isSoldStatus(status: UnitStatus | string | null | undefined): boolean {
   return status === 'sold' || status === 'sold_by_us' || status === 'sold_by_others'
 }
@@ -539,6 +547,12 @@ export function calculateDisplayedPaymentTotals(unit: LeadraUnit): DisplayedPaym
   }
 }
 
+export function calculateInstallmentTotalAmount(unit: Pick<LeadraUnit, 'paymentMethod' | 'totalAmount' | 'downPayment' | 'paymentSchedule'>): number {
+  if (unit.paymentMethod !== 'installment') return unit.totalAmount
+  const scheduleTotal = (unit.paymentSchedule ?? []).reduce((total, row) => total + row.amount, 0)
+  return roundMoney((unit.downPayment ?? 0) + scheduleTotal)
+}
+
 export function calculateDisplayedRemainingPayment(unit: LeadraUnit): number | null {
   if (unit.paymentMethod === 'cash') {
     return null
@@ -593,34 +607,6 @@ export function applyPaymentScheduleAction(
       updatedAt: now,
     },
     history,
-  }
-}
-
-export function applyPaymentScheduleAmountAction(
-  unit: LeadraUnit,
-  scheduleId: string,
-  amount: number,
-  now = new Date().toISOString(),
-): LeadraUnit | null {
-  if (!Number.isFinite(amount) || amount <= 0) return null
-  const currentSchedule = unit.paymentSchedule ?? createInitialPaymentSchedule(unit)
-  const target = currentSchedule.find((row) => row.id === scheduleId)
-  if (!target) return null
-
-  const nextAmount = roundMoney(amount)
-  if (target.amount === nextAmount) return null
-
-  const nextSchedule = currentSchedule.map((row) =>
-    row.id === scheduleId ? { ...row, amount: nextAmount } : row,
-  )
-  const nextUnitForTotals = { ...unit, paymentSchedule: nextSchedule }
-  const newRemainingValue = calculateDisplayedPaymentTotals(nextUnitForTotals).displayedRemainingAmount
-
-  return {
-    ...unit,
-    paymentSchedule: nextSchedule,
-    remainingPayment: newRemainingValue,
-    updatedAt: now,
   }
 }
 

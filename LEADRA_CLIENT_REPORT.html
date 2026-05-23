@@ -1,0 +1,201 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <title>Leadra Progress Report</title>
+    <style>
+      @page {
+        size: A4;
+        margin: 0;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        margin: 0;
+        background: #efe7dd;
+        color: #2a2623;
+        font-family: Manrope, Inter, Avenir, Helvetica, Arial, sans-serif;
+      }
+
+      .page {
+        width: 210mm;
+        height: 297mm;
+        padding: 15mm 16mm 13mm;
+        background: #f6f1ea;
+        position: relative;
+        overflow: hidden;
+      }
+
+      .page::before {
+        content: none;
+      }
+
+      .content {
+        position: relative;
+        z-index: 1;
+        height: 100%;
+        display: flex;
+        flex-direction: column;
+      }
+
+      header {
+        display: grid;
+        grid-template-columns: 1fr auto;
+        gap: 16mm;
+        align-items: start;
+        padding-bottom: 6mm;
+        border-bottom: 1px solid rgba(42, 38, 35, 0.14);
+      }
+
+      .eyebrow {
+        margin: 0 0 3mm;
+        color: #a76f4d;
+        font-size: 8.5pt;
+        font-weight: 900;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+      }
+
+      h1 {
+        margin: 0;
+        max-width: 136mm;
+        font-family: Fraunces, Georgia, "Times New Roman", serif;
+        font-size: 29pt;
+        line-height: 0.97;
+        letter-spacing: 0;
+        color: #111111;
+      }
+
+      .subtitle {
+        margin: 3mm 0 0;
+        max-width: 138mm;
+        color: #695f56;
+        font-size: 10pt;
+        line-height: 1.5;
+      }
+
+      .logo-wrap {
+        width: 28mm;
+        height: 28mm;
+        display: grid;
+        place-items: center;
+      }
+
+      .logo-wrap img {
+        width: 26mm;
+        height: auto;
+        display: block;
+      }
+
+      .section-title {
+        margin: 6mm 0 3mm;
+        color: #0d0d0f;
+        font-size: 8.5pt;
+        font-weight: 900;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+      }
+
+      .completed-list {
+        margin: 0;
+        padding: 0;
+        list-style: none;
+        column-count: 2;
+        column-gap: 8mm;
+      }
+
+      .completed-list li {
+        break-inside: avoid;
+        margin: 0 0 3mm;
+        padding: 3mm 3.6mm 3mm 8.4mm;
+        border: 1px solid rgba(42, 38, 35, 0.1);
+        border-radius: 3.2mm;
+        background: #fffaf3;
+        color: #2a2623;
+        font-size: 8.7pt;
+        line-height: 1.32;
+        position: relative;
+      }
+
+      .completed-list li::before {
+        content: "Done";
+        position: absolute;
+        left: 2.8mm;
+        top: 3.1mm;
+        color: #a76f4d;
+        font-size: 5.7pt;
+        font-weight: 900;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+        writing-mode: vertical-rl;
+      }
+
+      footer {
+        margin-top: auto;
+        padding-top: 5mm;
+        display: flex;
+        justify-content: space-between;
+        align-items: center;
+        border-top: 1px solid rgba(42, 38, 35, 0.14);
+        color: #695f56;
+        font-size: 8.4pt;
+      }
+
+      .status-pill {
+        padding: 2.1mm 3.4mm;
+        border-radius: 999px;
+        background: #efe7dd;
+        color: #2a2623;
+        font-weight: 800;
+      }
+    </style>
+  </head>
+  <body>
+    <main class="page">
+      <div class="content">
+        <header>
+          <div>
+            <p class="eyebrow">Leadra Progress Report</p>
+            <h1>Completed Items</h1>
+            <p class="subtitle">The following requested updates have been completed and are ready for review.</p>
+          </div>
+          <div class="logo-wrap">
+            <img src="src/assets/brand/leadra-mark-light.png" alt="Leadra" />
+          </div>
+        </header>
+
+        <section>
+          <p class="section-title">Completed Work</p>
+          <ol class="completed-list">
+            <li>Comma formatting was added for number fields to make millions, prices, and month values easier to read.</li>
+            <li>The Special page is visible to all users. Only admin and sub-admin users can edit Special units.</li>
+            <li>Newly created units now appear faster in unit pages after creation.</li>
+            <li>A smart paste field was added to create units faster by filling unit details from pasted information.</li>
+            <li>Special units now include a button that generates ready-to-post copy for Facebook and social media.</li>
+            <li>The thumbnail image frame and “confidential” text were removed from generated PDFs.</li>
+            <li>Generated PDFs now show a maximum of two images per page in the image grid.</li>
+            <li>Total amount is no longer adjustable by users.</li>
+            <li>Installments are applied automatically on the first day of the month.</li>
+            <li>A day value was added to the installment timetable to allow easier testing and control.</li>
+            <li>The back button now moves one step back instead of jumping too far back.</li>
+            <li>The light and dark theme toggle was adjusted to reduce screen flashing.</li>
+            <li>Login behavior was improved so users can get into the app faster.</li>
+            <li>Sales representatives cannot edit restricted unit controls or management-only actions.</li>
+            <li>Paid amount was removed. Down payment is now treated as the paid amount and updates when installments are paid.</li>
+            <li>Sales users cannot mark units as sold, on hold, or change unit status. They can still generate unit PDFs.</li>
+            <li>The manual “mark as paid” feature was removed from installments.</li>
+            <li>The app no longer signs users in automatically after they log out.</li>
+          </ol>
+        </section>
+
+        <footer>
+          <span>Leadra client update report</span>
+          <span class="status-pill">Prepared for client review</span>
+        </footer>
+      </div>
+    </main>
+  </body>
+</html>

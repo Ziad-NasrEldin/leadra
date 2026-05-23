@@ -1,5 +1,6 @@
 import { getIntlLocale, type LocaleCode } from '../../lib/i18n'
 import { normalizeReactiveUnitFilters } from '../../lib/domain'
+import { parseFormattedNumber } from '../../lib/numberFormat'
 import type { InstallmentType, LeadraUnit, UnitFilters } from '../../lib/types'
 
 const automaticInstallmentFrequencyMonths: Record<Exclude<InstallmentType, 'custom'>, number> = {
@@ -19,7 +20,7 @@ const installmentTypeLabelKeys: Record<InstallmentType, string> = {
 
 export function parseOptionalNumber(value: string): number | undefined {
   if (value.trim() === '') return undefined
-  const parsed = Number(value)
+  const parsed = parseFormattedNumber(value)
   return Number.isFinite(parsed) ? parsed : undefined
 }
 
