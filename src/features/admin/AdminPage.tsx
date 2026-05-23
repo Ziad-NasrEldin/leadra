@@ -101,7 +101,9 @@ export function AdminPage({
       .sort((first, second) => compareText(locale, first, second))
       .map((teamId) => ({ value: teamId, label: teamId }))
   }, [teams, users, locale])
-  const createUserTeamOptions = [{ value: '', label: t('admin.noTeam') }, ...teamOptions]
+  const createUserTeamOptions = teamOptions.length > 0
+    ? teamOptions
+    : [{ value: '', label: t('admin.noTeam') }]
   const branchOptions = useMemo(() => {
     const activeBranches = branches
       .filter((branch) => !branch.archived)
@@ -116,7 +118,7 @@ export function AdminPage({
   const userTeamOptions = createUserTeamOptions
   const userBranchOptions = [{ value: '', label: t('admin.noBranch') }, ...branchOptions]
   const teamFilterOptions = teamOptions
-  const defaultCreateTeamId = ''
+  const defaultCreateTeamId = teamOptions[0]?.value ?? ''
   const defaultCreateBranchId = branchOptions.some((option) => option.value === defaultBranchId)
     ? defaultBranchId
     : branchOptions[0]?.value ?? ''

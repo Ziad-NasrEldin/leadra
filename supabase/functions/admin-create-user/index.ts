@@ -135,9 +135,11 @@ serve(async (request) => {
     email_confirm: true,
     user_metadata: {
       full_name: fullName,
-      role,
       job_title: jobTitle,
       phone_number: phoneNumber,
+    },
+    app_metadata: {
+      role,
       team_id: teamUuid,
       branch_id: branchUuid,
     },

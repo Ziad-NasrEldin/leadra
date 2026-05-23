@@ -122,13 +122,20 @@ serve(async (request) => {
 
   if (targetError || !targetProfile) return json({ ok: false, error: 'User not found.' }, 404)
 
-  if (targetProfile.email !== email) {
-    const { error: authUpdateError } = await adminClient.auth.admin.updateUserById(userId, {
-      email,
-      email_confirm: true,
-    })
-    if (authUpdateError) return json({ ok: false, error: authUpdateError.message }, 400)
-  }
+  const { error: authUpdateError } = await adminClient.auth.admin.updateUserById(userId, {
+    ...(targetProfile.email !== email ? { email, email_confirm: true } : {}),
+    user_metadata: {
+      full_name: fullName,
+      job_title: jobTitle,
+      phone_number: phoneNumber,
+    },
+    app_metadata: {
+      role,
+      team_id: teamUuid,
+      branch_id: branchUuid,
+    },
+  })
+  if (authUpdateError) return json({ ok: false, error: authUpdateError.message }, 400)
 
   const { data: updatedProfile, error: updateError } = await adminClient
     .from('profiles')

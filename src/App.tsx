@@ -3475,7 +3475,14 @@ function ThemeToggle({
       }}
     >
       <span className="theme-toggle-track" aria-hidden="true">
-        <span className="theme-toggle-thumb">{nextThemePreference === 'dark' ? <Moon size={14} /> : <Sun size={14} />}</span>
+        <span className="theme-toggle-thumb">
+          <span className={`theme-toggle-icon ${nextThemePreference === 'light' ? 'active' : ''}`}>
+            <Sun size={14} />
+          </span>
+          <span className={`theme-toggle-icon ${nextThemePreference === 'dark' ? 'active' : ''}`}>
+            <Moon size={14} />
+          </span>
+        </span>
       </span>
       <span className="theme-toggle-label">{themePreference === 'dark' ? t('theme.switchToLight') : t('theme.switchToDark')}</span>
     </button>

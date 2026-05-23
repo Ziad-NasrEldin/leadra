@@ -211,7 +211,7 @@ try {
   await callReconcile(page)
   await page.reload({ waitUntil: 'networkidle' })
   const paidRows = dbJson(`select count(*)::int as paid_rows from public.unit_payment_schedule where unit_id=${createdUnit.id} and paid=true;`)
-  pass('Day one of the month automatically applies installment', `Called production reconcile RPC; QA unit paid installment rows=${paidRows[0]?.paid_rows ?? 0}.`, await screenshot(page, 'auto-installment-reconciled'))
+  pass('Only the specified due date automatically applies installments', `Called production reconcile RPC; QA unit paid installment rows=${paidRows[0]?.paid_rows ?? 0}.`, await screenshot(page, 'auto-installment-reconciled'))
 
   const markSpecial = page.getByRole('button', { name: /mark special/i })
   if (await markSpecial.isVisible({ timeout: 3_000 }).catch(() => false)) await markSpecial.click()

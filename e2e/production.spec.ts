@@ -268,6 +268,32 @@ test.describe('production preview route and role sweep', () => {
     await assertPageHealth(page)
   })
 
+  test('admin can create a team member with the default real team selection', async ({ page }) => {
+    await signIn(page, 'admin')
+    await navigateRoute(page, 'admin/users', 'admin')
+    await page.getByRole('button', { name: /new user/i }).click()
+
+    const form = page.locator('form.create-user-panel')
+    await expect(form).toBeVisible()
+    await expect(form.getByRole('combobox', { name: /^team$/i })).not.toHaveText(/no team/i)
+
+    const teamValue = await form.locator('input[name="teamId"]').inputValue()
+    expect(teamValue, 'create-user form should submit a real team id by default').not.toBe('')
+
+    const email = `e2e-team-member-${Date.now()}@leadra.test`
+    await form.getByLabel(/full name/i).fill('E2E Team Member')
+    await form.getByLabel(/^email$/i).fill(email)
+    await form.locator('input[name="password"]').fill('Leadra123!')
+    await form.locator('input[name="confirmPassword"]').fill('Leadra123!')
+    await form.getByLabel(/job title/i).fill('Sales Representative')
+    await form.getByLabel(/phone number/i).fill('+201099999999')
+    await form.getByRole('button', { name: /^create user$/i }).click()
+
+    await expect(page.getByText(/user created and audit history updated/i)).toBeVisible()
+    await page.getByLabel(/search users/i).fill(email)
+    await expect(page.getByText('E2E Team Member')).toBeVisible()
+  })
+
   test('special units stay visible after the remote save settles', async ({ page }) => {
     await signIn(page, 'admin')
     await navigateRoute(page, 'units')
