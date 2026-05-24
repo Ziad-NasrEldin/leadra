@@ -5,7 +5,7 @@ security definer
 set search_path = public
 as $$
 declare
-  actor_role public.user_role := public.cur_role();
+  actor_role public.user_role := public.current_role();
 begin
   if coalesce(actor_role::text, '') not in ('admin', 'sub_admin') then
     raise exception 'Only admins can manage special units.';
