@@ -231,74 +231,56 @@ describe('LeadraRepository', () => {
     const client = {
       rpc(fn: string, args: unknown) {
         calls.push({ fn, args })
-        return Promise.resolve({ error: null, data: 105 })
+        if (fn === 'create_unit_with_media') return Promise.resolve({ error: null, data: 105 })
+        if (fn === 'list_units_safe') {
+          return Promise.resolve({
+            error: null,
+            data: [
+              safeUnitRpcRow({
+                id: 105,
+                unit_code: 'MV3BR',
+                developer_id: 'dev-1',
+                developer_label: 'Palm Hills',
+                project_id: 'project-1',
+                project_label: 'Mountain View',
+                destination_id: 'dest-1',
+                destination_label: 'New Cairo',
+                unit_type: 'Apartment',
+                floor: '3rd',
+                bua: 188,
+                view_id: 'view-1',
+                view_label: 'Garden',
+                bedrooms: 3,
+                bathrooms: 2,
+                finish: 'Fully Finished',
+                total_amount: 5_500_000,
+                commission_amount: 82_500,
+                original_owner_name: 'Owner',
+                country_code: '+20',
+                original_owner_phone: '01033334444',
+                normalized_owner_phone: '+201033334444',
+                sales_notes: 'Updated notes.',
+                created_by: 'sales-replacement',
+                creator_full_name: 'Replacement Sales',
+                team_id: 'team-b',
+                branch_id: 'branch-b',
+              }),
+            ],
+          })
+        }
+        throw new Error(`Unexpected RPC ${fn}`)
       },
       from(table: string) {
-        expect(table).toBe('units')
+        expect(['unit_payment_schedule', 'unit_payment_history']).toContain(table)
         return {
           select() {
             return {
-              eq(column: string, value: number) {
-                expect(column).toBe('id')
-                expect(value).toBe(105)
+              in(column: string, value: number[]) {
+                expect(column).toBe('unit_id')
+                expect(value).toEqual([105])
                 return {
-                  single() {
-                    return Promise.resolve({
-                      error: null,
-                      data: {
-                        id: 105,
-                        unit_code: 'MV3BR',
-                        developer_id: 'dev-1',
-                        developer: { label: 'Palm Hills' },
-                        project_id: 'project-1',
-                        project: { label: 'Mountain View' },
-                        destination_id: 'dest-1',
-                        destination: { label: 'New Cairo' },
-                        unit_type: 'Apartment',
-                        floor: '3rd',
-                        bua: 188,
-                        roof_garden_area: null,
-                        garden_area: null,
-                        terrace_area: null,
-                        view_id: 'view-1',
-                        view: { label: 'Garden' },
-                        bedrooms: 3,
-                        bathrooms: 2,
-                        elevator: true,
-                        land_area: null,
-                        furnished: false,
-                        finish: 'Fully Finished',
-                        payment_method: 'cash',
-                        total_amount: 5_500_000,
-                        down_payment: null,
-                        remaining_payment: null,
-                        commission_percentage: 1.5,
-                        commission_amount: 82_500,
-                        installment_type: null,
-                        installment_years: null,
-                        installment_amount: null,
-                        delivery_month: null,
-                        delivery_year: 2029,
-                        original_owner_name: 'Owner',
-                        country_code: '+20',
-                        original_owner_phone: '01033334444',
-                        normalized_owner_phone: '+201033334444',
-                        sales_notes: 'Updated notes.',
-                        status: 'available',
-                        archived: false,
-                        is_special: false,
-                        special_marked_at: null,
-                        special_marked_by: null,
-                        created_by: 'sales-replacement',
-                        creator: { full_name: 'Replacement Sales' },
-                        team_id: 'team-b',
-                        branch_id: 'branch-b',
-                        created_at: '2026-05-04T00:00:00.000Z',
-                        updated_at: '2026-05-04T01:00:00.000Z',
-                        unit_media: [],
-                        unit_notes: [],
-                      },
-                    })
+                  order() {
+                    return Promise.resolve({ error: null, data: [] })
                   }
                 }
               },
@@ -310,8 +292,9 @@ describe('LeadraRepository', () => {
 
     const result = await new LeadraRepository(client as never).createUnit(salesUser(), input)
 
-    expect(calls).toHaveLength(1)
+    expect(calls).toHaveLength(2)
     expect(calls[0].fn).toBe('create_unit_with_media')
+    expect(calls[1]).toEqual({ fn: 'list_units_safe', args: { limit_count: 500, offset_count: 0 } })
     expect(calls[0].args).toMatchObject({
       unit_payload: {
         developer_id: 'dev-1',
@@ -358,61 +341,14 @@ describe('LeadraRepository', () => {
   it('falls back to direct inserts when the atomic create RPC is missing from PostgREST cache', async () => {
     const calls: Array<{ table: string; payload?: unknown }> = []
     const input = createUnitInput()
-    const createdUnitRow = {
-      id: 105,
-      unit_code: 'MV3BR',
-      developer_id: 'dev-1',
-      developer: { label: 'Palm Hills' },
-      project_id: 'project-1',
-      project: { label: 'Mountain View' },
-      destination_id: 'dest-1',
-      destination: { label: 'New Cairo' },
-      unit_type: 'Apartment',
-      floor: '3rd',
-      bua: 188,
-      roof_garden_area: null,
-      garden_area: null,
-      terrace_area: null,
-      view_id: 'view-1',
-      view: { label: 'Garden' },
-      bedrooms: 3,
-      bathrooms: 2,
-      elevator: true,
-      land_area: null,
-      furnished: false,
-      finish: 'Fully Finished',
-      payment_method: 'cash',
-      total_amount: 5_500_000,
-      down_payment: null,
-      remaining_payment: null,
-      commission_percentage: 1.5,
-      commission_amount: 82_500,
-      installment_type: null,
-      installment_years: null,
-      installment_amount: null,
-      delivery_month: null,
-      delivery_year: 2029,
-      original_owner_name: 'Owner',
-      country_code: '+20',
-      original_owner_phone: '01033334444',
-      normalized_owner_phone: '+201033334444',
-      sales_notes: 'Updated notes.',
-      status: 'available',
-      archived: false,
-      is_special: false,
-      special_marked_at: null,
-      special_marked_by: null,
-      created_by: 'sales-replacement',
-      creator: { full_name: 'Replacement Sales' },
-      team_id: 'team-b',
-      branch_id: 'branch-b',
-      created_at: '2026-05-04T00:00:00.000Z',
-      updated_at: '2026-05-04T01:00:00.000Z',
-      unit_media: [],
-      unit_notes: [],
-    }
     const client = {
-      rpc() {
+      rpc(fn: string) {
+        if (fn === 'list_units_safe') {
+          return Promise.resolve({
+            error: null,
+            data: [safeUnitRpcRow({ id: 105, unit_code: 'MV3BR' })],
+          })
+        }
         return Promise.resolve({
           error: {
             code: 'PGRST202',
@@ -437,10 +373,10 @@ describe('LeadraRepository', () => {
           },
           select() {
             return {
-              eq() {
+              in() {
                 return {
-                  single() {
-                    return Promise.resolve({ error: null, data: createdUnitRow })
+                  order() {
+                    return Promise.resolve({ error: null, data: [] })
                   },
                 }
               },

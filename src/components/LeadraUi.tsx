@@ -31,6 +31,7 @@ export function BrandedSelect({
   const t = (key: string) => translate(locale, key)
   const menuId = useId()
   const rootRef = useRef<HTMLDivElement | null>(null)
+  const triggerRef = useRef<HTMLButtonElement | null>(null)
   const menuRef = useRef<HTMLDivElement | null>(null)
   const optionRefs = useRef<Record<string, HTMLButtonElement | null>>({})
   const lastTypeaheadKey = useRef('')
@@ -58,10 +59,10 @@ export function BrandedSelect({
     const rootElement = document.documentElement
 
     function syncMenuPosition() {
-      const root = rootRef.current
-      if (!root) return
+      const trigger = triggerRef.current
+      if (!trigger) return
 
-      const rect = root.getBoundingClientRect()
+      const rect = trigger.getBoundingClientRect()
       const gap = 8
       const viewportPadding = 12
       const maxMenuWidth = Math.max(120, window.innerWidth - viewportPadding * 2)
@@ -91,10 +92,10 @@ export function BrandedSelect({
     }
 
     function makeRoomForMenu() {
-      const root = rootRef.current
-      if (!root) return
+      const trigger = triggerRef.current
+      if (!trigger) return
 
-      const rect = root.getBoundingClientRect()
+      const rect = trigger.getBoundingClientRect()
       const gap = 8
       const viewportPadding = 12
       const estimatedHeight = Math.min(360, Math.max(116, filteredOptions.length * 50 + 76))
@@ -148,15 +149,6 @@ export function BrandedSelect({
       rootElement.style.removeProperty('--brand-select-page-bottom-space')
     }
   }, [open, options.length, filteredOptions.length])
-
-  useEffect(() => {
-    if (!open) return
-    window.requestAnimationFrame(() => {
-      if (typeof rootRef.current?.scrollIntoView === 'function') {
-        rootRef.current.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'smooth' })
-      }
-    })
-  }, [open])
 
   useEffect(() => {
     if (!open || !highlightedValue) return
@@ -230,6 +222,7 @@ export function BrandedSelect({
         aria-labelledby={labelId}
         className="brand-select-trigger"
         disabled={disabled}
+        ref={triggerRef}
         role="combobox"
         type="button"
         onClick={() => {

@@ -49,7 +49,7 @@ export class LeadraRepository {
       .map(toSafeUnitViewModel)
       .filter((unit) => !unit.archived)
       .sort((first, second) => new Date(second.createdAt).getTime() - new Date(first.createdAt).getTime())
-    return this.withPaymentRecords(units)
+    return this.withSignedMediaUrls(await this.withPaymentRecords(units))
   }
 
   async searchUnits(filters: UnitFilters): Promise<LeadraUnit[]> {
@@ -65,7 +65,7 @@ export class LeadraRepository {
       .filter((unit) => !unit.archived)
       .filter((unit) => matchesUnitFilters(unit, filters))
       .sort((first, second) => new Date(second.createdAt).getTime() - new Date(first.createdAt).getTime())
-    return this.withPaymentRecords(units)
+    return this.withSignedMediaUrls(await this.withPaymentRecords(units))
   }
 
   async createUnit(actor: LeadraUser, input: CreateUnitInput): Promise<LeadraUnit> {
@@ -74,9 +74,10 @@ export class LeadraRepository {
       throw new Error(mediaValidation.message ?? 'Upload failed. Invalid media upload.')
     }
     const media = input.media.filter((file) => file.type === 'image' || file.type === 'pdf')
+    const mediaPayload = await Promise.all(media.map((file) => this.toStoredMediaInsertPayload(file, actor)))
     const { data: createdUnitId, error } = await this.client.rpc('create_unit_with_media', {
       unit_payload: toUnitInsertPayload(input, actor),
-      media_payload: media.map(toMediaInsertPayload),
+      media_payload: mediaPayload,
     })
 
     if (isMissingAtomicCreateRpc(error)) {
@@ -84,7 +85,7 @@ export class LeadraRepository {
     }
     if (error) throw error
     try {
-      return await this.loadUnit(createdUnitId as number)
+      return await this.loadCreatedUnit(createdUnitId as number)
     } catch (loadError) {
       throw createUnitRemoteError('reload', loadError)
     }
@@ -119,7 +120,7 @@ export class LeadraRepository {
     }
 
     try {
-      return await this.loadUnit(createdUnitId)
+      return await this.loadCreatedUnit(createdUnitId)
     } catch (error) {
       throw createUnitRemoteError('reload', error)
     }
@@ -142,7 +143,21 @@ export class LeadraRepository {
       .single()
 
     if (reloadError) throw reloadError
-    return toUnitViewModel(unitData as unknown as SupabaseUnitRow)
+    return this.withSignedMediaUrlsForUnit(toUnitViewModel(unitData as unknown as SupabaseUnitRow))
+  }
+
+  private async loadCreatedUnit(unitId: number): Promise<LeadraUnit> {
+    const { data, error } = await this.client.rpc('list_units_safe', {
+      limit_count: unitListLimit,
+      offset_count: 0,
+    })
+
+    if (error) throw error
+    const unit = ((data ?? []) as unknown as SafeUnitRpcRow[])
+      .map(toSafeUnitViewModel)
+      .find((item) => item.id === unitId && !item.archived)
+    if (!unit) throw new Error('Created unit was not visible after save.')
+    return (await this.withSignedMediaUrls(await this.withPaymentRecords([unit])))[0]
   }
 
   async updateUnitDetails(
@@ -160,7 +175,7 @@ export class LeadraRepository {
       .single()
 
     if (error) throw error
-    return toUnitViewModel(data as unknown as SupabaseUnitRow)
+    return this.withSignedMediaUrlsForUnit(toUnitViewModel(data as unknown as SupabaseUnitRow))
   }
 
   async archiveUnit(unitId: number): Promise<void> {
@@ -328,4 +343,46 @@ export class LeadraRepository {
       paymentHistory: historyByUnit.get(unit.id) ?? unit.paymentHistory,
     }))
   }
+
+  private async toStoredMediaInsertPayload(file: CreateUnitInput['media'][number], actor: LeadraUser) {
+    const payload = toMediaInsertPayload(file)
+    if (!file.url.startsWith('data:') || !('storage' in this.client)) return payload
+
+    const extension = file.type === 'pdf' ? 'pdf' : mediaExtension(file.name, file.url)
+    const safeName = file.name.toLowerCase().replace(/[^a-z0-9._-]+/g, '-').replace(/^-+|-+$/g, '') || `media.${extension}`
+    const path = `pending/${actor.id}/${Date.now()}-${crypto.randomUUID()}-${safeName}`
+    const blob = await fetch(file.url).then((response) => response.blob())
+    const { error } = await this.client.storage.from('unit-media').upload(path, blob, {
+      contentType: blob.type || (file.type === 'pdf' ? 'application/pdf' : `image/${extension}`),
+      upsert: false,
+    })
+    if (error) throw error
+    return { ...payload, storage_path: path }
+  }
+
+  private async withSignedMediaUrls(units: LeadraUnit[]): Promise<LeadraUnit[]> {
+    return Promise.all(units.map((unit) => this.withSignedMediaUrlsForUnit(unit)))
+  }
+
+  private async withSignedMediaUrlsForUnit(unit: LeadraUnit): Promise<LeadraUnit> {
+    if (!('storage' in this.client) || unit.media.length === 0) return unit
+    const media = await Promise.all(unit.media.map(async (file) => {
+      if (isRenderableMediaUrl(file.url)) return file
+      const { data, error } = await this.client.storage.from('unit-media').createSignedUrl(file.url, 60 * 60)
+      return error || !data?.signedUrl ? file : { ...file, url: data.signedUrl }
+    }))
+    return { ...unit, media }
+  }
+}
+
+function isRenderableMediaUrl(url: string): boolean {
+  return url.startsWith('data:') || url.startsWith('http:') || url.startsWith('https:') || url.startsWith('blob:')
+}
+
+function mediaExtension(fileName: string, url: string): string {
+  const extension = fileName.split('.').pop()?.toLowerCase()
+  if (extension && /^[a-z0-9]+$/.test(extension)) return extension
+  if (url.startsWith('data:image/jpeg')) return 'jpg'
+  if (url.startsWith('data:image/webp')) return 'webp'
+  return 'png'
 }
