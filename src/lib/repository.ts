@@ -135,17 +135,6 @@ export class LeadraRepository {
     }
   }
 
-  private async loadUnit(unitId: number): Promise<LeadraUnit> {
-    const { data: unitData, error: reloadError } = await this.client
-      .from('units')
-      .select(unitSelect)
-      .eq('id', unitId)
-      .single()
-
-    if (reloadError) throw reloadError
-    return this.withSignedMediaUrlsForUnit(toUnitViewModel(unitData as unknown as SupabaseUnitRow))
-  }
-
   private async loadCreatedUnit(unitId: number): Promise<LeadraUnit> {
     const { data, error } = await this.client.rpc('list_units_safe', {
       limit_count: unitListLimit,
@@ -194,7 +183,7 @@ export class LeadraRepository {
       mark_special: special,
     })
     if (error) throw error
-    return this.loadUnit(unitId)
+    return this.loadCreatedUnit(unitId)
   }
 
   async updatePaymentSchedule(unitId: number, scheduleId: string, paid: boolean): Promise<LeadraUnit> {
