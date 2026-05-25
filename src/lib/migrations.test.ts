@@ -34,4 +34,13 @@ describe('Supabase permission migrations', () => {
     expect(migration).toContain('public.list_units_safe(integer, integer)')
     expect(migration).toContain('public.search_units_safe(jsonb, integer, integer)')
   })
+
+  it('keeps the special-unit RPC on caller permissions so admin RLS controls the save', () => {
+    const migration = readMigration('20260525104743_restore_special_unit_rpc_invoker.sql')
+
+    expect(migration).toContain('create or replace function public.set_unit_special')
+    expect(migration).toContain('security invoker')
+    expect(migration).toContain("not in ('admin', 'sub_admin')")
+    expect(migration).toContain('grant execute on function public.set_unit_special(bigint, boolean) to authenticated')
+  })
 })
