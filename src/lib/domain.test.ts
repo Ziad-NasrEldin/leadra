@@ -217,9 +217,12 @@ describe('Leadra domain rules', () => {
   })
 
   it('applies owner visibility and owner-phone search permissions by role', () => {
+    const managerOwnUnit = { ...baseUnit, createdBy: manager.id }
+
     expect(canViewOwnerData(admin, baseUnit)).toBe(true)
     expect(canViewOwnerData(subAdmin, baseUnit)).toBe(true)
     expect(canViewOwnerData(manager, baseUnit)).toBe(false)
+    expect(canViewOwnerData(manager, managerOwnUnit)).toBe(true)
     expect(canViewOwnerData(salesA, baseUnit)).toBe(true)
     expect(canViewOwnerData(salesB, baseUnit)).toBe(false)
 
@@ -232,28 +235,34 @@ describe('Leadra domain rules', () => {
     expect(canViewSalesSensitiveData(admin, baseUnit)).toBe(true)
     expect(canViewSalesSensitiveData(subAdmin, baseUnit)).toBe(true)
     expect(canViewSalesSensitiveData(manager, baseUnit)).toBe(false)
+    expect(canViewSalesSensitiveData(manager, managerOwnUnit)).toBe(true)
     expect(canViewSalesSensitiveData(salesA, baseUnit)).toBe(true)
     expect(canViewSalesSensitiveData(salesB, baseUnit)).toBe(false)
   })
 
-  it('applies PRD edit permissions by role and unit scope', () => {
+  it('applies PRD edit permissions by role and own-upload scope', () => {
+    const managerOwnUnit = { ...baseUnit, createdBy: manager.id, teamId: manager.teamId }
     const sameTeamOtherSalesUnit = { ...baseUnit, createdBy: salesB.id, teamId: manager.teamId }
     const otherTeamUnit = { ...baseUnit, createdBy: salesB.id, teamId: 'team-b' }
 
     expect(canEditNonOwnerUnitDetails(admin, otherTeamUnit)).toBe(true)
     expect(canEditNonOwnerUnitDetails(subAdmin, otherTeamUnit)).toBe(true)
-    expect(canEditNonOwnerUnitDetails(manager, sameTeamOtherSalesUnit)).toBe(true)
+    expect(canEditNonOwnerUnitDetails(manager, managerOwnUnit)).toBe(true)
+    expect(canEditNonOwnerUnitDetails(manager, sameTeamOtherSalesUnit)).toBe(false)
     expect(canEditNonOwnerUnitDetails(manager, otherTeamUnit)).toBe(false)
     expect(canEditNonOwnerUnitDetails(salesA, baseUnit)).toBe(true)
     expect(canEditNonOwnerUnitDetails(salesB, baseUnit)).toBe(false)
 
     expect(canEditOwnerFields(admin, baseUnit)).toBe(true)
     expect(canEditOwnerFields(subAdmin, baseUnit)).toBe(true)
+    expect(canEditOwnerFields(manager, managerOwnUnit)).toBe(true)
     expect(canEditOwnerFields(manager, sameTeamOtherSalesUnit)).toBe(false)
-    expect(canEditOwnerFields(salesA, baseUnit)).toBe(false)
+    expect(canEditOwnerFields(salesA, baseUnit)).toBe(true)
+    expect(canEditOwnerFields(salesB, baseUnit)).toBe(false)
 
     expect(canEditUnitPricing(admin, baseUnit)).toBe(true)
     expect(canEditUnitPricing(subAdmin, baseUnit)).toBe(true)
+    expect(canEditUnitPricing(manager, managerOwnUnit)).toBe(true)
     expect(canEditUnitPricing(manager, baseUnit)).toBe(false)
     expect(canEditUnitPricing(salesA, baseUnit)).toBe(true)
     expect(canEditUnitPricing(salesB, baseUnit)).toBe(false)
@@ -263,7 +272,8 @@ describe('Leadra domain rules', () => {
     expect(canEditUnitCommission(manager, baseUnit)).toBe(false)
     expect(canEditUnitCommission(salesA, baseUnit)).toBe(false)
 
-    expect(canEditAnyUnitDetails(manager, sameTeamOtherSalesUnit)).toBe(true)
+    expect(canEditAnyUnitDetails(manager, managerOwnUnit)).toBe(true)
+    expect(canEditAnyUnitDetails(manager, sameTeamOtherSalesUnit)).toBe(false)
     expect(canEditAnyUnitDetails(salesB, baseUnit)).toBe(false)
   })
 

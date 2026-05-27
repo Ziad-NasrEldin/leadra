@@ -316,7 +316,7 @@ function UnitDetailsEditForm({
   const canEditOwner = canEditOwnerFields(user, unit)
   const canEditPricing = canEditUnitPricing(user, unit)
   const canEditCommission = canEditUnitCommission(user, unit)
-  const canEditPaymentPlan = user.role === 'admin' || user.role === 'sub_admin'
+  const canEditPaymentPlan = canEditPricing
   const [unitType, setUnitType] = useState(unit.unitType)
   const [floor, setFloor] = useState(unit.floor || 'Ground')
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>(unit.paymentMethod)
@@ -427,7 +427,7 @@ function UnitDetailsEditForm({
           />
           <label>
             <RequiredLabel label={t('create.totalAmount')} required />
-            <input name="totalAmount" role="spinbutton" readOnly defaultValue={formatCurrency(unit.totalAmount, locale)} required={canEditPricing} />
+            <input name="totalAmount" role="spinbutton" type="number" min={0} step="0.01" defaultValue={unit.totalAmount} disabled={!canEditPricing || saving} required={canEditPricing} />
           </label>
           <label className="toggle-line">
             <input

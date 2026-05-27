@@ -885,7 +885,7 @@ describe('Leadra app shell', () => {
     await user.click(screen.getByRole('button', { name: /edit unit/i }))
     await user.clear(screen.getByRole('spinbutton', { name: /bua/i }))
     await user.type(screen.getByRole('spinbutton', { name: /bua/i }), '188')
-    expect(screen.getByRole('spinbutton', { name: /total amount/i })).toHaveAttribute('readonly')
+    expect(screen.getByRole('spinbutton', { name: /total amount/i })).not.toHaveAttribute('readonly')
     await user.clear(screen.getByRole('textbox', { name: /original owner name/i }))
     await user.type(screen.getByRole('textbox', { name: /original owner name/i }), 'Updated Owner')
     await user.clear(screen.getByRole('textbox', { name: /original owner phone/i }))
@@ -898,26 +898,28 @@ describe('Leadra app shell', () => {
     expect(screen.getAllByText(/4,000,000/i).length).toBeGreaterThan(0)
   })
 
-  it('lets managers edit team unit details while keeping owner and pricing fields locked', async () => {
+  it('lets managers edit only their own uploaded units', async () => {
+    navigateTestPath('/units/details/105')
     renderApp()
     const user = userEvent.setup()
 
     await openLoginPage(user)
     await signInAs(user, /continue as mona hafez/i)
-    await user.click(screen.getByRole('button', { name: /view all units/i }))
-    await openNewCairoProject(user)
-    await user.click(await screen.findByRole('button', { name: /open nc3br/i }))
     expect(await screen.findByRole('heading', { name: /NC3BR/i })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: /edit unit/i })).not.toBeInTheDocument()
+
+    navigateTestPath('/units/details/109')
+    expect(await screen.findByRole('heading', { name: /MGR-DPX/i })).toBeInTheDocument()
     await user.click(screen.getByRole('button', { name: /edit unit/i }))
 
-    expect(screen.getByRole('spinbutton', { name: /total amount/i })).toHaveAttribute('readonly')
-    expect(screen.getByRole('textbox', { name: /original owner name/i })).toBeDisabled()
+    expect(screen.getByRole('spinbutton', { name: /total amount/i })).not.toHaveAttribute('readonly')
+    expect(screen.getByRole('textbox', { name: /original owner name/i })).not.toBeDisabled()
     await user.clear(screen.getByRole('spinbutton', { name: /bua/i }))
-    await user.type(screen.getByRole('spinbutton', { name: /bua/i }), '172')
+    await user.type(screen.getByRole('spinbutton', { name: /bua/i }), '222')
     await user.click(screen.getByRole('button', { name: /save unit changes/i }))
 
     expect(await screen.findByText(/unit details updated/i)).toBeInTheDocument()
-    expect(await screen.findByText(/172 m²/i)).toBeInTheDocument()
+    expect(await screen.findByText(/222 m²/i)).toBeInTheDocument()
   })
 
   it('hides edit mode from sales users on units they did not upload', async () => {

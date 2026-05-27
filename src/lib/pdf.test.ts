@@ -105,6 +105,68 @@ describe('pdf generation', () => {
     expect(blob.size).toBeGreaterThan(1000)
   })
 
+  it('falls back to browser-decoded PNG data when pdf-lib rejects image bytes', async () => {
+    const user = demoUsers[0]
+    const settings = initialAppState.settings
+    const onePixelPng = Uint8Array.from(atob('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAFgwJ/lZrD9wAAAABJRU5ErkJggg=='), (char) => char.charCodeAt(0))
+    const originalImage = globalThis.Image
+    const originalCreateElement = document.createElement.bind(document)
+    const embedJpg = vi.spyOn(PDFDocument.prototype, 'embedJpg').mockRejectedValueOnce(new Error('unsupported jpeg'))
+    const createElement = vi.spyOn(document, 'createElement').mockImplementation(((tagName: string, options?: ElementCreationOptions) => {
+      if (tagName !== 'canvas') return originalCreateElement(tagName, options)
+      return {
+        width: 0,
+        height: 0,
+        getContext: () => ({ drawImage: vi.fn() }),
+        toBlob: (callback: BlobCallback) => callback(new Blob([onePixelPng], { type: 'image/png' })),
+      } as unknown as HTMLCanvasElement
+    }) as typeof document.createElement)
+
+    class TestImage {
+      crossOrigin = ''
+      naturalWidth = 1
+      naturalHeight = 1
+      width = 1
+      height = 1
+      onload: (() => void) | null = null
+      onerror: (() => void) | null = null
+
+      set src(_value: string) {
+        window.setTimeout(() => this.onload?.(), 0)
+      }
+    }
+
+    Object.defineProperty(globalThis, 'Image', { configurable: true, value: TestImage })
+
+    try {
+      const unit = {
+        ...seedUnits[0],
+        media: [{
+          id: 'media-browser-decodes',
+          type: 'image' as const,
+          name: 'browser-decodes.jpg',
+          sizeBytes: 16,
+          includeInPdf: true,
+          url: 'data:image/jpeg;base64,/9j/2w==',
+        }],
+      }
+
+      const blob = await buildPermissionSafePdfBlob(user, unit, settings)
+      const pdf = await PDFDocument.load(await blob.arrayBuffer())
+
+      expect(embedJpg).toHaveBeenCalled()
+      expect(createElement).toHaveBeenCalledWith('canvas')
+      expect(pdf.getPageCount()).toBe(2)
+      expect(blob.size).toBeGreaterThan(1000)
+    } finally {
+      if (originalImage) {
+        Object.defineProperty(globalThis, 'Image', { configurable: true, value: originalImage })
+      } else {
+        Reflect.deleteProperty(globalThis, 'Image')
+      }
+    }
+  })
+
   it('exports the PRD unit facts and omits payment-method wording', () => {
     const user = demoUsers[0]
     const unit = {

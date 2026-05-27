@@ -462,11 +462,64 @@ async function embedImage(pdf: PDFDocument, url: string) {
   try {
     const bytes = await imageBytes(url)
     if (!bytes) return null
-    if (url.includes('image/png') || url.toLowerCase().endsWith('.png')) return await pdf.embedPng(bytes)
-    return await pdf.embedJpg(bytes)
+    try {
+      if (isPngImage(url, bytes)) return await pdf.embedPng(bytes)
+      if (isJpegImage(url, bytes)) return await pdf.embedJpg(bytes)
+      return await pdf.embedPng(bytes)
+    } catch {
+      const pngBytes = await rasterizeImageToPngBytes(url)
+      return pngBytes ? await pdf.embedPng(pngBytes) : null
+    }
   } catch {
     return null
   }
+}
+
+function isPngImage(url: string, bytes: Uint8Array): boolean {
+  return (
+    url.includes('image/png') ||
+    url.toLowerCase().endsWith('.png') ||
+    (bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4e && bytes[3] === 0x47)
+  )
+}
+
+function isJpegImage(url: string, bytes: Uint8Array): boolean {
+  return (
+    url.includes('image/jpeg') ||
+    url.includes('image/jpg') ||
+    /\.(jpe?g)(?:[?#].*)?$/i.test(url) ||
+    (bytes[0] === 0xff && bytes[1] === 0xd8)
+  )
+}
+
+async function rasterizeImageToPngBytes(url: string): Promise<Uint8Array | null> {
+  if (typeof Image === 'undefined' || typeof document === 'undefined') return null
+
+  const image = new Image()
+  image.crossOrigin = 'anonymous'
+  const loaded = new Promise<HTMLImageElement | null>((resolve) => {
+    const timeout = window.setTimeout(() => resolve(null), 1500)
+    image.onload = () => {
+      window.clearTimeout(timeout)
+      resolve(image)
+    }
+    image.onerror = () => {
+      window.clearTimeout(timeout)
+      resolve(null)
+    }
+  })
+  image.src = url
+  const decoded = await loaded
+  if (!decoded) return null
+  const canvas = document.createElement('canvas')
+  canvas.width = decoded.naturalWidth || decoded.width
+  canvas.height = decoded.naturalHeight || decoded.height
+  const context = canvas.getContext('2d')
+  if (!context || canvas.width <= 0 || canvas.height <= 0) return null
+  context.drawImage(decoded, 0, 0)
+
+  const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'))
+  return blob ? new Uint8Array(await blob.arrayBuffer()) : null
 }
 
 function drawPdfText(

@@ -531,7 +531,7 @@ describe('Leadra product workflows', () => {
     expect(result.errorKey).toBe('error.invalidOwnerPhoneForCountry')
   })
 
-  it('updates allowed unit fields while preserving calculated installment totals', () => {
+  it('lets a sales representative fully edit their own uploaded unit including payment and owner details', () => {
     const unit = seedUnits[0]
     const result = updateUnitWorkflow(state(), sales, unit.id, editInput(unit, {
       bua: 180,
@@ -543,8 +543,9 @@ describe('Leadra product workflows', () => {
       installmentType: 'quarterly',
       installmentStartMonth: '2027-01-01',
       installmentEndMonth: '2027-10-01',
-      originalOwnerName: 'Blocked Sales Owner Edit',
-      originalOwnerPhone: '0501234568',
+      originalOwnerName: 'Updated Sales Owner',
+      countryCode: '+20',
+      originalOwnerPhone: '01033334444',
       salesNotes: 'Updated from edit mode.',
     }))
 
@@ -562,11 +563,11 @@ describe('Leadra product workflows', () => {
       installmentStartMonth: '2027-01-01',
       installmentEndMonth: '2027-10-01',
       installmentAmount: 1_000_000,
-      originalOwnerName: unit.originalOwnerName,
-      originalOwnerPhone: unit.originalOwnerPhone,
+      originalOwnerName: 'Updated Sales Owner',
+      originalOwnerPhone: '01033334444',
       salesNotes: 'Updated from edit mode.',
     })
-    expect(result.state.auditLogs.at(0)?.actionType).toBe('Unit edited')
+    expect(result.state.auditLogs.at(0)?.actionType).toBe('Owner data updated')
     expect(result.state.analyticsEvents.at(0)).toMatchObject({
       eventType: 'unit_updated',
       unitId: unit.id,
@@ -584,27 +585,46 @@ describe('Leadra product workflows', () => {
     expect(result.state.units.find((item) => item.id === unit.id)?.transferFees).toBe(unit.transferFees ?? null)
   })
 
-  it('blocks manager edits outside team scope and pricing edits inside team scope', () => {
-    const otherTeamUnit = seedUnits[1]
-    const outsideTeam = updateUnitWorkflow(state(), manager, otherTeamUnit.id, editInput(otherTeamUnit, { bua: otherTeamUnit.bua + 10 }))
-    expect(outsideTeam.ok).toBe(false)
-    expect(outsideTeam.error).toContain('edit this unit')
+  it('lets sales and managers edit only their own uploaded units while admin and sub-admin can edit any unit', () => {
+    const ownSalesUnit = seedUnits.find((item) => item.createdBy === sales.id)!
+    const otherSalesUnit = { ...seedUnits.find((item) => item.createdBy !== sales.id)!, archived: false }
+    const ownManagerUnit = seedUnits.find((item) => item.createdBy === manager.id)!
+    const sameTeamOtherUnit = { ...ownSalesUnit, id: 901, createdBy: 'other-sales', teamId: manager.teamId, archived: false }
+    const subAdmin: LeadraUser = { ...admin, id: 'subadmin-1', role: 'sub_admin', email: 'subadmin@leadra.test' }
 
-    const teamUnit = seedUnits[0]
-    const insideTeam = updateUnitWorkflow(state(), { ...manager, teamId: teamUnit.teamId }, teamUnit.id, editInput(teamUnit, {
-      bua: teamUnit.bua + 10,
-      totalAmount: teamUnit.totalAmount + 500_000,
-      transferFees: 90_000,
-      maintenancePaid: true,
-      maintenanceCost: null,
-      maintenanceDueDate: null,
-    }))
-    expect(insideTeam.ok).toBe(true)
-    const updated = insideTeam.state.units.find((item) => item.id === teamUnit.id)
-    expect(updated?.bua).toBe(teamUnit.bua + 10)
-    expect(updated?.totalAmount).toBe(teamUnit.totalAmount)
-    expect(updated?.transferFees ?? null).toBe(teamUnit.transferFees ?? null)
-    expect(updated?.maintenancePaid ?? false).toBe(teamUnit.maintenancePaid ?? false)
+    const salesOwnEdit = updateUnitWorkflow(state(), sales, ownSalesUnit.id, editInput(ownSalesUnit, { bua: ownSalesUnit.bua + 10 }))
+    expect(salesOwnEdit.ok).toBe(true)
+    expect(salesOwnEdit.state.units.find((item) => item.id === ownSalesUnit.id)?.bua).toBe(ownSalesUnit.bua + 10)
+
+    const salesOtherEdit = updateUnitWorkflow(state(), sales, otherSalesUnit.id, editInput(otherSalesUnit, { bua: otherSalesUnit.bua + 10 }))
+    expect(salesOtherEdit.ok).toBe(false)
+    expect(salesOtherEdit.error).toContain('edit this unit')
+
+    const managerOwnEdit = updateUnitWorkflow(
+      { ...state(), users: [admin, sales, manager] },
+      manager,
+      ownManagerUnit.id,
+      editInput(ownManagerUnit, { bua: ownManagerUnit.bua + 10 }),
+    )
+    expect(managerOwnEdit.ok).toBe(true)
+    expect(managerOwnEdit.state.units.find((item) => item.id === ownManagerUnit.id)?.bua).toBe(ownManagerUnit.bua + 10)
+
+    const managerSameTeamOtherEdit = updateUnitWorkflow(
+      { ...state(), users: [admin, sales, manager], units: [sameTeamOtherUnit, ...seedUnits] },
+      manager,
+      sameTeamOtherUnit.id,
+      editInput(sameTeamOtherUnit, { bua: sameTeamOtherUnit.bua + 10 }),
+    )
+    expect(managerSameTeamOtherEdit.ok).toBe(false)
+    expect(managerSameTeamOtherEdit.error).toContain('edit this unit')
+
+    const adminAnyEdit = updateUnitWorkflow(state(), admin, otherSalesUnit.id, editInput(otherSalesUnit, { bua: otherSalesUnit.bua + 15 }))
+    expect(adminAnyEdit.ok).toBe(true)
+    expect(adminAnyEdit.state.units.find((item) => item.id === otherSalesUnit.id)?.bua).toBe(otherSalesUnit.bua + 15)
+
+    const subAdminAnyEdit = updateUnitWorkflow(state(), subAdmin, otherSalesUnit.id, editInput(otherSalesUnit, { bua: otherSalesUnit.bua + 20 }))
+    expect(subAdminAnyEdit.ok).toBe(true)
+    expect(subAdminAnyEdit.state.units.find((item) => item.id === otherSalesUnit.id)?.bua).toBe(otherSalesUnit.bua + 20)
   })
 
   it('marks payment timetable rows paid and unpaid with audit and history', () => {

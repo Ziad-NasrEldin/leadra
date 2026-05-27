@@ -72,4 +72,15 @@ describe('Supabase permission migrations', () => {
     expect(migration).toContain('or old.installment_amount is distinct from new.installment_amount')
     expect(migration).toContain("raise exception 'you do not have permission to edit total value.'")
   })
+
+  it('restricts sales and manager unit edits to their own uploaded units in the latest backend guard', () => {
+    const migration = readMigration('20260527183000_restrict_staff_unit_edits_to_own_uploads.sql')
+
+    expect(migration).toContain('create or replace function public.enforce_unit_edit_permissions()')
+    expect(migration).toContain("can_edit_non_owner := actor_role in ('admin', 'sub_admin') or (actor_role in ('manager', 'sales') and old.created_by = auth.uid() and old.archived = false)")
+    expect(migration).toContain("can_edit_pricing := actor_role in ('admin', 'sub_admin') or (actor_role in ('manager', 'sales') and old.created_by = auth.uid() and old.archived = false)")
+    expect(migration).toContain('installment_due_day integer')
+    expect(migration).toContain('u.installment_due_day')
+    expect(migration).not.toContain("actor_role = 'manager' and old.team_id = actor_team")
+  })
 })

@@ -299,7 +299,7 @@ export function canViewOwnerData(user: LeadraUser, unit: LeadraUnit): boolean {
     return true
   }
 
-  return user.role === 'sales' && unit.createdBy === user.id
+  return (user.role === 'sales' || user.role === 'manager') && unit.createdBy === user.id
 }
 
 export function canSearchOwnerPhone(user: LeadraUser, unit: LeadraUnit): boolean {
@@ -311,22 +311,23 @@ export function canViewSalesSensitiveData(user: LeadraUser, unit: LeadraUnit): b
   return canViewOwnerData(user, unit)
 }
 
+function isOwnActiveUploadedUnit(user: LeadraUser, unit: LeadraUnit): boolean {
+  return !unit.archived && unit.createdBy === user.id && (user.role === 'manager' || user.role === 'sales')
+}
+
 export function canEditOwnerFields(user: LeadraUser, unit: LeadraUnit): boolean {
-  void unit
-  return user.role === 'admin' || user.role === 'sub_admin'
+  if (user.role === 'admin' || user.role === 'sub_admin') return true
+  return isOwnActiveUploadedUnit(user, unit)
 }
 
 export function canEditNonOwnerUnitDetails(user: LeadraUser, unit: LeadraUnit): boolean {
   if (user.role === 'admin' || user.role === 'sub_admin') return true
-  if (unit.archived) return false
-  if (user.role === 'manager') return Boolean(user.teamId) && unit.teamId === user.teamId
-  return user.role === 'sales' && unit.createdBy === user.id
+  return isOwnActiveUploadedUnit(user, unit)
 }
 
 export function canEditUnitPricing(user: LeadraUser, unit: LeadraUnit): boolean {
   if (user.role === 'admin' || user.role === 'sub_admin') return true
-  if (unit.archived) return false
-  return user.role === 'sales' && unit.createdBy === user.id
+  return isOwnActiveUploadedUnit(user, unit)
 }
 
 export function canEditUnitCommission(user: LeadraUser, unit: LeadraUnit): boolean {
