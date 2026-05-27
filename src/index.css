@@ -904,7 +904,7 @@ h2 {
 }
 
 .topbar-back-button {
-  min-height: 42px;
+  min-height: 44px;
   border: 1px solid var(--line);
   border-radius: 999px;
   padding: 0.48rem 0.82rem 0.48rem 0.65rem;
@@ -4678,10 +4678,10 @@ dd,
   }
 
   .topbar-back-button {
-    width: 42px;
-    min-width: 42px;
-    height: 42px;
-    min-height: 42px;
+    width: 44px;
+    min-width: 44px;
+    height: 44px;
+    min-height: 44px;
     padding: 0;
   }
 

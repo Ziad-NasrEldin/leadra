@@ -41,7 +41,7 @@ export function applyThemePreference(theme: ThemePreference, options: ThemePrefe
   const activeWindow = document.defaultView
   const previousTheme = root.dataset.theme === 'dark' || root.dataset.theme === 'light' ? root.dataset.theme : null
   const reduceMotion = activeWindow?.matchMedia?.('(prefers-reduced-motion: reduce)').matches ?? false
-  const shouldReveal = Boolean(activeWindow) && options.animate !== false && previousTheme !== null && previousTheme !== theme && !reduceMotion
+  const shouldReveal = Boolean(activeWindow) && options.animate === true && previousTheme !== null && previousTheme !== theme && !reduceMotion
   themeTransitionId += 1
   const transitionId = themeTransitionId
   root.classList.add(THEME_TRANSITION_CLASS)
@@ -97,7 +97,7 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
   }, [themePreference])
 
   const setThemePreference = useCallback((theme: ThemePreference, options: ThemePreferenceOptions = {}) => {
-    nextThemeOptionsRef.current = { ...options, animate: options.animate ?? true }
+    nextThemeOptionsRef.current = { ...options, animate: options.animate ?? false }
     setThemePreferenceState(normalizeThemePreference(theme))
   }, [])
 

@@ -619,6 +619,66 @@ describe('LeadraRepository', () => {
     expect(updates[0]).not.toHaveProperty('commission_percentage')
   })
 
+  it('persists authorized payment method changes to cash while leaving remaining value to database triggers', async () => {
+    const updates: unknown[] = []
+    const input: UnitEditInput = {
+      ...createUnitInput({ paymentMethod: 'cash', downPayment: null, installmentType: null }),
+      deliveryExpectancy: { mode: 'year', year: 2029 },
+      commissionPercentage: 1.5,
+    }
+    const client = {
+      from(table: string) {
+        expect(table).toBe('units')
+        return {
+          update(payload: unknown) {
+            updates.push(payload)
+            return {
+              eq(column: string, value: number) {
+                expect(column).toBe('id')
+                expect(value).toBe(105)
+                return {
+                  select() {
+                    return {
+                      single() {
+                        return Promise.resolve({
+                          error: null,
+                          data: {
+                            ...safeUnitRpcRow({
+                              id: 105,
+                              payment_method: 'cash',
+                              down_payment: null,
+                              remaining_payment: null,
+                              installment_type: null,
+                              installment_amount: null,
+                            }),
+                            developer: { label: 'Ora' },
+                            project: { label: 'Zed East' },
+                            destination: { label: 'Sheikh Zayed' },
+                            view: { label: 'Garden' },
+                            creator: { full_name: 'Sales User' },
+                          },
+                        })
+                      },
+                    }
+                  },
+                }
+              },
+            }
+          },
+        }
+      },
+    }
+
+    await new LeadraRepository(client as never).updateUnitDetails(salesUser(), 105, input, {
+      canEditOwner: true,
+      canEditPricing: true,
+      canEditCommission: false,
+    })
+
+    expect(updates[0]).toMatchObject({ payment_method: 'cash', down_payment: null })
+    expect(updates[0]).not.toHaveProperty('remaining_payment')
+  })
+
   it('surfaces split sold status enum errors instead of collapsing to legacy sold', async () => {
     const updates: unknown[] = []
     const client = {
@@ -702,33 +762,28 @@ describe('LeadraRepository', () => {
     const client = {
       rpc(fn: string, args: unknown) {
         calls.push({ fn, args })
+        if (fn === 'list_units_safe') {
+          return Promise.resolve({
+            error: null,
+            data: [safeUnitRpcRow({
+              id: 105,
+              is_special: true,
+              special_marked_at: '2026-05-05T00:00:00.000Z',
+              special_marked_by: 'admin-1',
+            })],
+          })
+        }
         return Promise.resolve({ error: null })
       },
       from(table: string) {
-        expect(table).toBe('units')
+        expect(['unit_payment_schedule', 'unit_payment_history']).toContain(table)
         return {
           select() {
             return {
-              eq(column: string, value: number) {
-                expect(column).toBe('id')
+              in() {
                 return {
-                  single() {
-                    return Promise.resolve({
-                      error: null,
-                      data: {
-                        ...safeUnitRpcRow({
-                          id: value,
-                          is_special: true,
-                          special_marked_at: '2026-05-05T00:00:00.000Z',
-                          special_marked_by: 'admin-1',
-                        }),
-                        developer: { label: 'Ora' },
-                        project: { label: 'Zed East' },
-                        destination: { label: 'Sheikh Zayed' },
-                        view: { label: 'Garden' },
-                        creator: { full_name: 'Sales User' },
-                      },
-                    })
+                  order() {
+                    return Promise.resolve({ error: null, data: [] })
                   },
                 }
               },
@@ -740,7 +795,10 @@ describe('LeadraRepository', () => {
 
     const result = await new LeadraRepository(client as never).setUnitSpecial(105, true)
 
-    expect(calls).toEqual([{ fn: 'set_unit_special', args: { target_unit_id: 105, mark_special: true } }])
+    expect(calls).toEqual([
+      { fn: 'set_unit_special', args: { target_unit_id: 105, mark_special: true } },
+      { fn: 'list_units_safe', args: { limit_count: 500, offset_count: 0 } },
+    ])
     expect(result).toMatchObject({ id: 105, isSpecial: true, specialMarkedBy: 'admin-1' })
   })
 
