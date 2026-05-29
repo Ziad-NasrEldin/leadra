@@ -19,7 +19,6 @@ import {
 } from 'lucide-react'
 import type { User as SupabaseUser } from '@supabase/supabase-js'
 import { useCallback, useDeferredValue, useEffect, useMemo, useRef, useState, type CSSProperties, type FormEvent, type ReactNode } from 'react'
-import { flushSync } from 'react-dom'
 import { BrowserRouter, Link, useLocation, useNavigate, useNavigationType } from 'react-router-dom'
 import leadraLogoDark from './assets/brand/leadra-logo-dark.jpeg'
 import leadraLogoLight from './assets/brand/leadra-logo-light.jpeg'
@@ -87,7 +86,7 @@ import {
   updateUnitWorkflow,
 } from './lib/workflows'
 import { createAuditMessage, createFlashForStatus, createFlashMessage, createNotificationMessage } from './lib/systemMessages'
-import { buildNotificationEmailPayloads, queueSalesInactivityWarnings, sendNotificationEmailBatch } from './lib/notificationDelivery'
+import { queueSalesInactivityWarnings } from './lib/notificationDelivery'
 import {
   adminSectionPath,
   analyticsPath,
@@ -171,38 +170,8 @@ type ActiveRouteState = {
   activeMasterDataDirectory: MasterDataDirectory
 }
 
-type TransitionDocument = Document & {
-  startViewTransition?: (callback: () => void) => {
-    ready?: Promise<void>
-    updateCallbackDone?: Promise<void>
-    finished?: Promise<void>
-  }
-}
-
 function runPageTransition(update: () => void) {
-  const startViewTransition = (document as TransitionDocument).startViewTransition
-
-  if (!startViewTransition) {
-    update()
-    return
-  }
-
-  try {
-    const transition = startViewTransition.call(document, () => {
-      flushSync(update)
-    })
-    void transition.ready?.catch(() => {
-      // Rapid route changes can abort browser view transitions without affecting app state.
-    })
-    void transition.updateCallbackDone?.catch(() => {
-      // Rapid route changes can abort browser view transitions without affecting app state.
-    })
-    void transition.finished?.catch(() => {
-      // Rapid route changes can abort browser view transitions without affecting app state.
-    })
-  } catch {
-    update()
-  }
+  update()
 }
 type UiMessage = { message: string; messageKey?: string | null; messageParams?: MessageParams | null }
 
@@ -379,8 +348,6 @@ function LeadraApp() {
   const [generatedPdfs, setGeneratedPdfs] = useState<GeneratedPdfCache>({})
   const completingAuthUserRef = useRef<string | null>(null)
   const explicitSignOutRef = useRef(false)
-  const emailDeliveryReadyRef = useRef(false)
-  const emailedNotificationIdsRef = useRef<Set<string>>(new Set())
   const brandAssets = leadraBrandAssets[themePreference]
 
   useEffect(() => {
@@ -657,32 +624,6 @@ function LeadraApp() {
     }, 0)
     return () => window.clearTimeout(timeout)
   }, [currentUser, appState.units.length, appState.users.length])
-
-  useEffect(() => {
-    if (!currentUser) {
-      emailDeliveryReadyRef.current = false
-      emailedNotificationIdsRef.current = new Set(appState.notifications.map((notification) => notification.id))
-      return
-    }
-
-    const unseenNotifications = appState.notifications.filter((notification) => !emailedNotificationIdsRef.current.has(notification.id))
-    if (!emailDeliveryReadyRef.current) {
-      appState.notifications.forEach((notification) => emailedNotificationIdsRef.current.add(notification.id))
-      emailDeliveryReadyRef.current = true
-      return
-    }
-    if (unseenNotifications.length === 0) return
-
-    unseenNotifications.forEach((notification) => emailedNotificationIdsRef.current.add(notification.id))
-    if (!supabase || !isSupabaseConfigured) return
-
-    const payloads = buildNotificationEmailPayloads(appState, unseenNotifications)
-    if (payloads.length > 0) {
-      void sendNotificationEmailBatch(supabase, payloads).catch((error) => {
-        console.error('Notification email delivery failed', error)
-      })
-    }
-  }, [currentUser, appState])
 
   if (!currentUser) {
     return (

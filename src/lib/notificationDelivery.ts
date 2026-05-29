@@ -1,73 +1,8 @@
 import { createAuditMessage, createNotificationMessage } from './systemMessages'
-import type { AppDataState, LeadraUser, NotificationItem } from './types'
+import type { AppDataState, NotificationItem } from './types'
 
 export const SALES_INACTIVITY_THRESHOLD_HOURS = 72
 export const SALES_INACTIVITY_REPEAT_HOURS = 24
-
-export interface NotificationEmailPayload {
-  notificationId: string
-  recipientUserId: string
-  to: string
-  subject: string
-  body: string
-}
-
-export interface NotificationEmailClient {
-  functions: {
-    invoke: (
-      name: string,
-      options: { body: Record<string, string> },
-    ) => Promise<{ error?: { message?: string } | Error | null }>
-  }
-}
-
-export function getNotificationRecipients(state: AppDataState, notification: NotificationItem): LeadraUser[] {
-  return state.users.filter((user) => {
-    if (user.status !== 'active') return false
-    if (notification.userId) return user.id === notification.userId
-    if (notification.audienceRole) return user.role === notification.audienceRole
-    return true
-  })
-}
-
-export function buildNotificationEmailPayloads(
-  state: AppDataState,
-  notifications: NotificationItem[] = state.notifications,
-): NotificationEmailPayload[] {
-  return notifications.flatMap((notification) =>
-    getNotificationRecipients(state, notification).map((recipient) => ({
-      notificationId: notification.id,
-      recipientUserId: recipient.id,
-      to: recipient.email,
-      subject: notification.title,
-      body: notification.body,
-    })),
-  )
-}
-
-export async function sendNotificationEmailBatch(
-  client: NotificationEmailClient,
-  payloads: NotificationEmailPayload[],
-) {
-  const results = await Promise.allSettled(
-    payloads.map((payload) =>
-      client.functions.invoke('send-notification-email', {
-        body: {
-          to: payload.to,
-          subject: payload.subject,
-          body: payload.body,
-          notificationId: payload.notificationId,
-          recipientUserId: payload.recipientUserId,
-        },
-      }),
-    ),
-  )
-
-  return {
-    sent: results.filter((result) => result.status === 'fulfilled' && !result.value.error).length,
-    failed: results.filter((result) => result.status === 'rejected' || (result.status === 'fulfilled' && result.value.error)).length,
-  }
-}
 
 export function queueSalesInactivityWarnings(
   state: AppDataState,

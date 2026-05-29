@@ -766,18 +766,19 @@ export function updateUnitWorkflow(
     return { ok: false, state, error: nextInstallmentFields.error, errorKey: null, errorParams: null }
   }
   const nextCommissionPercentage = canEditCommission ? input.commissionPercentage : unit.commissionPercentage
+  const nextPaymentSummary = calculatePaymentSummary({
+    paymentMethod: nextPaymentMethod,
+    totalAmount: nextTotalAmount,
+    downPayment: nextDownPayment,
+    installmentType: nextInstallmentFields.fields.installmentType,
+    installmentYears: nextInstallmentFields.fields.installmentYears,
+    installmentStartMonth: nextInstallmentFields.fields.installmentStartMonth,
+    installmentEndMonth: nextInstallmentFields.fields.installmentEndMonth,
+    commissionPercentage: nextCommissionPercentage,
+  })
   const installmentAmount =
     nextPaymentMethod === 'installment' && nextInstallmentFields.fields.installmentType !== 'custom'
-      ? calculatePaymentSummary({
-          paymentMethod: nextPaymentMethod,
-          totalAmount: (unit.remainingPayment ?? 0) + (nextDownPayment ?? 0),
-          downPayment: nextDownPayment,
-          installmentType: nextInstallmentFields.fields.installmentType,
-          installmentYears: nextInstallmentFields.fields.installmentYears,
-          installmentStartMonth: nextInstallmentFields.fields.installmentStartMonth,
-          installmentEndMonth: nextInstallmentFields.fields.installmentEndMonth,
-          commissionPercentage: nextCommissionPercentage,
-        }).installmentAmount
+      ? nextPaymentSummary.installmentAmount
       : null
 
   const updatedUnit: LeadraUnit = {
@@ -807,7 +808,7 @@ export function updateUnitWorkflow(
     paymentMethod: nextPaymentMethod,
     totalAmount: nextTotalAmount,
     downPayment: nextDownPayment,
-    remainingPayment: unit.remainingPayment,
+    remainingPayment: nextPaymentSummary.remainingPayment,
     transferFees: canEditPricing ? input.transferFees ?? unit.transferFees ?? null : unit.transferFees ?? null,
     maintenancePaid: nextMaintenancePaid,
     maintenanceCost: nextMaintenanceCost,

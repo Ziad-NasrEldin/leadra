@@ -585,6 +585,48 @@ describe('Leadra product workflows', () => {
     expect(result.state.units.find((item) => item.id === unit.id)?.transferFees).toBe(unit.transferFees ?? null)
   })
 
+  it('recalculates remaining and installment amount when editing installment plan values', () => {
+    const unit = seedUnits[0]
+    const result = updateUnitWorkflow(state(), sales, unit.id, editInput(unit, {
+      paymentMethod: 'installment',
+      totalAmount: 6_000_000,
+      downPayment: 1_000_000,
+      installmentType: 'monthly',
+      installmentStartMonth: '2027-01-01',
+      installmentEndMonth: '2027-10-01',
+    }))
+
+    expect(result.ok).toBe(true)
+    const updated = result.state.units.find((item) => item.id === unit.id)
+    expect(updated?.remainingPayment).toBe(5_000_000)
+    expect(updated?.installmentAmount).toBe(500_000)
+  })
+
+  it('clears installment values when editing a unit from installments to cash', () => {
+    const unit = seedUnits[0]
+    const result = updateUnitWorkflow(state(), sales, unit.id, editInput(unit, {
+      paymentMethod: 'cash',
+      totalAmount: 5_500_000,
+      downPayment: null,
+    }))
+
+    expect(result.ok).toBe(true)
+    const updated = result.state.units.find((item) => item.id === unit.id)
+    expect(updated).toMatchObject({
+      paymentMethod: 'cash',
+      totalAmount: 5_500_000,
+      downPayment: null,
+      remainingPayment: null,
+      installmentType: null,
+      installmentYears: null,
+      installmentStartMonth: null,
+      installmentEndMonth: null,
+      customInstallmentText: null,
+      installmentAmount: null,
+      installmentDueDay: 1,
+    })
+  })
+
   it('lets sales and managers edit only their own uploaded units while admin and sub-admin can edit any unit', () => {
     const ownSalesUnit = seedUnits.find((item) => item.createdBy === sales.id)!
     const otherSalesUnit = { ...seedUnits.find((item) => item.createdBy !== sales.id)!, archived: false }

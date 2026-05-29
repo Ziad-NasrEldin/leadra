@@ -24,4 +24,14 @@ describe('theme preferences', () => {
     expect(document.documentElement.classList.contains('theme-reveal')).toBe(false)
     expect(document.documentElement.dataset.themeTransition).toBeUndefined()
   })
+
+  it('does not add transition guards when applying the already-active theme', () => {
+    document.documentElement.dataset.theme = 'dark'
+
+    applyThemePreference('dark')
+
+    expect(document.documentElement.dataset.theme).toBe('dark')
+    expect(document.documentElement.classList.contains('theme-transitioning')).toBe(false)
+    expect(document.documentElement.dataset.themeTransition).toBeUndefined()
+  })
 })

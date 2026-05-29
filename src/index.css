@@ -84,22 +84,6 @@
   --danger: #e07a6f;
 }
 
-:root[data-theme-transition="dark"] {
-  --theme-reveal-fill: rgba(13, 13, 15, 0.97);
-  --theme-reveal-accent: rgba(127, 74, 53, 0.9);
-  --theme-reveal-spark: rgba(216, 192, 173, 0.88);
-  --theme-reveal-line: rgba(216, 192, 173, 0.26);
-  --theme-reveal-sheen: rgba(167, 111, 77, 0.46);
-}
-
-:root[data-theme-transition="light"] {
-  --theme-reveal-fill: rgba(246, 241, 234, 0.97);
-  --theme-reveal-accent: rgba(167, 111, 77, 0.82);
-  --theme-reveal-spark: rgba(255, 250, 240, 0.88);
-  --theme-reveal-line: rgba(167, 111, 77, 0.24);
-  --theme-reveal-sheen: rgba(167, 111, 77, 0.34);
-}
-
 :root.theme-transitioning *,
 :root.theme-transitioning *::before,
 :root.theme-transitioning *::after {
@@ -108,96 +92,21 @@
 
 :root.theme-transitioning .theme-toggle-track {
   transition:
-    background-color 360ms var(--ease-soft),
-    box-shadow 360ms var(--ease-soft) !important;
+    background-color 180ms var(--ease-soft),
+    box-shadow 180ms var(--ease-soft) !important;
 }
 
 :root.theme-transitioning .theme-toggle-thumb {
   transition:
-    transform 420ms var(--ease-spring),
-    background-color 320ms var(--ease-soft),
-    box-shadow 420ms var(--ease-soft) !important;
+    transform 220ms var(--ease-spring),
+    background-color 160ms var(--ease-soft),
+    box-shadow 180ms var(--ease-soft) !important;
 }
 
 :root.theme-transitioning .theme-toggle-icon {
   transition:
-    opacity 180ms var(--ease-out),
-    transform 260ms var(--ease-spring) !important;
-}
-
-:root.theme-reveal body::before,
-:root.theme-reveal body::after {
-  content: "";
-  position: fixed;
-  top: var(--theme-reveal-y);
-  left: var(--theme-reveal-x);
-  width: 320vmax;
-  height: 320vmax;
-  border-radius: 999px;
-  pointer-events: none;
-  transform: translate3d(-50%, -50%, 0) scale(0.01);
-  z-index: 2147483000;
-}
-
-:root.theme-reveal body::before {
-  background:
-    radial-gradient(circle at center, var(--theme-reveal-spark) 0 0.26rem, transparent 0.32rem),
-    radial-gradient(circle at center, var(--theme-reveal-accent) 0 5.5vmin, var(--theme-reveal-fill) 5.75vmin 100%);
-  animation: theme-reveal-bloom 680ms var(--ease-soft) both;
-  will-change: opacity, transform;
-}
-
-:root.theme-reveal body::after {
-  background:
-    linear-gradient(115deg, transparent 0 38%, var(--theme-reveal-sheen) 46%, transparent 58%),
-    repeating-linear-gradient(90deg, transparent 0 34px, var(--theme-reveal-line) 35px 36px),
-    repeating-linear-gradient(0deg, transparent 0 42px, var(--theme-reveal-line) 43px 44px);
-  opacity: 0;
-  transform: translate3d(-50%, -50%, 0) scale(0.01) rotate(-2deg);
-  transform-origin: center;
-  animation: theme-reveal-ledger 680ms var(--ease-soft) both;
-  will-change: opacity, transform;
-}
-
-@keyframes theme-reveal-bloom {
-  0% {
-    opacity: 0.72;
-    transform: translate3d(-50%, -50%, 0) scale(0.01);
-  }
-
-  16% {
-    opacity: 0.86;
-  }
-
-  70% {
-    opacity: 0.42;
-    transform: translate3d(-50%, -50%, 0) scale(0.98);
-  }
-
-  100% {
-    opacity: 0;
-    transform: translate3d(-50%, -50%, 0) scale(1);
-  }
-}
-
-@keyframes theme-reveal-ledger {
-  0% {
-    opacity: 0;
-    transform: translate3d(-50%, -50%, 0) scale(0.01) rotate(-2deg);
-  }
-
-  18% {
-    opacity: 0.34;
-  }
-
-  70% {
-    opacity: 0.16;
-  }
-
-  100% {
-    opacity: 0;
-    transform: translate3d(-49%, -51%, 0) scale(1) rotate(-2deg);
-  }
+    opacity 120ms var(--ease-out),
+    transform 180ms var(--ease-spring) !important;
 }
 
 * {
@@ -296,27 +205,10 @@ button:active,
 .page-transition-frame {
   min-width: 0;
   contain: layout paint;
-  view-transition-name: page-content;
 }
 
 .page-transition-frame > .page-entrance {
   animation: page-enter var(--duration-layout) var(--ease-soft) both;
-}
-
-@supports (view-transition-name: page-content) {
-  ::view-transition-old(page-content),
-  ::view-transition-new(page-content) {
-    height: 100%;
-    mix-blend-mode: normal;
-  }
-
-  ::view-transition-old(page-content) {
-    animation: page-leave 210ms var(--ease-out) both;
-  }
-
-  ::view-transition-new(page-content) {
-    animation: page-enter 380ms var(--ease-soft) both;
-  }
 }
 
 h1,

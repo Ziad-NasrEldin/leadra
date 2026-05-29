@@ -1,9 +1,7 @@
-import { describe, expect, it, vi } from 'vitest'
+import { describe, expect, it } from 'vitest'
 import {
-  buildNotificationEmailPayloads,
   getSalesUsersPastInactivityThreshold,
   queueSalesInactivityWarnings,
-  sendNotificationEmailBatch,
 } from './notificationDelivery'
 import type { AppDataState, LeadraUnit, LeadraUser } from './types'
 
@@ -138,22 +136,5 @@ describe('notification delivery', () => {
     expect(queued.auditLogs[0]?.messageKey).toBe('message.audit.salesInactivity72h')
     expect(queued.analyticsEvents[0]?.eventType).toBe('inactive_user_detected')
     expect(repeated.notifications).toHaveLength(4)
-  })
-
-  it('builds active-recipient email payloads with the edge function body contract', async () => {
-    const queued = queueSalesInactivityWarnings(state(), new Date('2026-05-14T00:00:00.000Z'))
-    const payloads = buildNotificationEmailPayloads(queued, queued.notifications)
-    const invoke = vi.fn().mockResolvedValue({ error: null })
-
-    await sendNotificationEmailBatch({ functions: { invoke } }, payloads.slice(0, 1))
-
-    expect(payloads.some((payload) => payload.to === inactiveSales.email)).toBe(false)
-    expect(invoke).toHaveBeenCalledWith('send-notification-email', {
-      body: expect.objectContaining({
-        to: expect.any(String),
-        subject: expect.any(String),
-        body: expect.stringContaining('72 hours'),
-      }),
-    })
   })
 })
