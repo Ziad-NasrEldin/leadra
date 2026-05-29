@@ -1192,10 +1192,10 @@ describe('Leadra app shell', () => {
     await chooseFromSelect(user, /^role$/i, /sales representative/i)
     const managedUsers = screen.getByLabelText(/managed users/i)
     await user.click(within(managedUsers).getByRole('button', { name: /deactivate sara amin/i }))
-    await chooseFromSelect(user, /replacement sales representative/i, /omar replacement/i)
-    await user.click(screen.getByRole('button', { name: /reassign and deactivate sales rep/i }))
+    await chooseFromSelect(user, /replacement (sales representative|user)/i, /omar replacement/i)
+    await user.click(screen.getByRole('button', { name: /reassign and deactivate user/i }))
 
-    expect(await screen.findByText(/sales representative deactivated after reassignment/i)).toBeInTheDocument()
+    expect(await screen.findByText(/user deactivated after reassignment/i)).toBeInTheDocument()
     expect(screen.queryByText(/sara amin/i)).not.toBeInTheDocument()
   })
 
@@ -1216,7 +1216,7 @@ describe('Leadra app shell', () => {
     expect(screen.queryByRole('option', { name: /inactive/i })).not.toBeInTheDocument()
   })
 
-  it('removes a manager from user management without a sales reassignment step', async () => {
+  it('requires reassignment before removing a manager with active units from user management', async () => {
     renderApp()
     const user = userEvent.setup()
 
@@ -1227,14 +1227,14 @@ describe('Leadra app shell', () => {
     await chooseFromSelect(user, /^role$/i, /manager/i)
     const managedUsers = screen.getByLabelText(/managed users/i)
     await user.click(within(managedUsers).getByRole('button', { name: /deactivate mona hafez/i }))
-    expect(screen.queryByLabelText(/replacement sales representative/i)).not.toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: /^deactivate user$/i }))
+    expect(screen.getByLabelText(/replacement (sales representative|user)/i)).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: /^reassign and deactivate user$/i }))
 
-    expect(await screen.findByText(/user deactivated and audit history updated/i)).toBeInTheDocument()
+    expect(await screen.findByText(/user deactivated after reassignment/i)).toBeInTheDocument()
     expect(screen.queryByText(/mona hafez/i)).not.toBeInTheDocument()
   })
 
-  it('lets a sub admin deactivate a non-sales user', async () => {
+  it('lets a sub admin deactivate a non-sales user after reassignment', async () => {
     renderApp()
     const user = userEvent.setup()
 
@@ -1245,10 +1245,10 @@ describe('Leadra app shell', () => {
     await chooseFromSelect(user, /^role$/i, /manager/i)
     const managedUsers = screen.getByLabelText(/managed users/i)
     await user.click(within(managedUsers).getByRole('button', { name: /deactivate mona hafez/i }))
-    expect(screen.queryByLabelText(/replacement sales representative/i)).not.toBeInTheDocument()
-    await user.click(screen.getByRole('button', { name: /^deactivate user$/i }))
+    expect(screen.getByLabelText(/replacement (sales representative|user)/i)).toBeInTheDocument()
+    await user.click(screen.getByRole('button', { name: /^reassign and deactivate user$/i }))
 
-    expect(await screen.findByText(/user deactivated and audit history updated/i)).toBeInTheDocument()
+    expect(await screen.findByText(/user deactivated after reassignment/i)).toBeInTheDocument()
     expect(screen.queryByText(/mona hafez/i)).not.toBeInTheDocument()
   })
 
@@ -1273,7 +1273,7 @@ describe('Leadra app shell', () => {
     expect(await screen.findByText(/settings updated and audited/i)).toBeInTheDocument()
   })
 
-  it('hides inactive users from default user management results after persistence reloads', async () => {
+  it('keeps inactive status unavailable while a user owns active units', async () => {
     renderApp()
     const user = userEvent.setup()
 
@@ -1286,11 +1286,7 @@ describe('Leadra app shell', () => {
     const editForm = screen.getByRole('button', { name: /save user/i }).closest('form')
     expect(editForm).not.toBeNull()
     await user.click(within(editForm as HTMLFormElement).getByRole('combobox', { name: /status/i }))
-    await user.click(screen.getByRole('option', { name: /inactive/i }))
-    await user.click(screen.getByRole('button', { name: /save user/i }))
-
-    expect(await screen.findByText(/user profile updated and audit history updated/i)).toBeInTheDocument()
-    expect(screen.queryByText(/mona hafez/i)).not.toBeInTheDocument()
+    expect(screen.queryByRole('option', { name: /inactive/i })).not.toBeInTheDocument()
   })
 
   it('lets an admin toggle unit status and manage the shared unit note', async () => {

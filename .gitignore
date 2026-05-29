@@ -35,6 +35,11 @@ performance-reports/
 # Local agent/context caches
 .lean-ctx/
 .codex-tools/
+CONTEXT.md
+reports/
+scripts/tmp-*.mjs
+scripts/inspect-theme-flicker.mjs
+scripts/leadra-prod-*.mjs
 
 # Generated PRD gap and merge verification artifacts
 artifacts/leadra_prd_exact_*

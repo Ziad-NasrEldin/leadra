@@ -167,9 +167,17 @@ describe('Leadra domain rules', () => {
     expect(parseFormattedNumber('EGP 1,250,000.50')).toBe(1_250_000.5)
   })
 
-  it('limits sales operational actions to their own units', () => {
+  it('limits operational actions to admins, sub-admins, or the current Unit Uploader on active units', () => {
+    const managerOwnUnit = { ...baseUnit, createdBy: manager.id, teamId: manager.teamId }
+    const archivedOwnSalesUnit = { ...baseUnit, archived: true }
+
+    expect(canUseUnitOperationalActions(admin, baseUnit)).toBe(true)
+    expect(canUseUnitOperationalActions(subAdmin, baseUnit)).toBe(true)
     expect(canUseUnitOperationalActions(salesA, baseUnit)).toBe(true)
     expect(canUseUnitOperationalActions(salesB, baseUnit)).toBe(false)
+    expect(canUseUnitOperationalActions(manager, managerOwnUnit)).toBe(true)
+    expect(canUseUnitOperationalActions(manager, baseUnit)).toBe(false)
+    expect(canUseUnitOperationalActions(salesA, archivedOwnSalesUnit)).toBe(false)
   })
 
   it('calculates installment totals from down payment and schedule rows', () => {
@@ -288,18 +296,24 @@ describe('Leadra domain rules', () => {
     expect(canEditUnitPricing(salesB, archivedUnit)).toBe(false)
   })
 
-  it('allows every role to view all units while keeping owner data separately restricted', () => {
+  it('lets every role browse active units while archived units stay admin/sub-admin only', () => {
     const sameBranchOtherTeam = { ...baseUnit, id: 106, teamId: 'team-b', branchId: 'branch-cairo', createdBy: salesB.id }
     const sameTeamOtherBranch = { ...baseUnit, id: 107, teamId: 'team-a', branchId: 'branch-alex' }
     const archivedOtherTeam = { ...baseUnit, id: 108, teamId: 'team-b', archived: true }
 
     expect(canViewUnit(admin, sameBranchOtherTeam)).toBe(true)
+    expect(canViewUnit(admin, archivedOtherTeam)).toBe(true)
+    expect(canViewUnit(subAdmin, archivedOtherTeam)).toBe(true)
     expect(canViewUnit(manager, sameBranchOtherTeam)).toBe(true)
     expect(canViewUnit(salesA, sameBranchOtherTeam)).toBe(true)
-    expect(canViewUnit(salesA, archivedOtherTeam)).toBe(true)
+    expect(canViewUnit(manager, archivedOtherTeam)).toBe(false)
+    expect(canViewUnit(salesA, archivedOtherTeam)).toBe(false)
     expect(filterUnitsForUser(manager, [sameBranchOtherTeam, sameTeamOtherBranch, archivedOtherTeam])).toEqual([
       sameBranchOtherTeam,
       sameTeamOtherBranch,
+    ])
+    expect(filterUnitsForUser(admin, [sameBranchOtherTeam, archivedOtherTeam])).toEqual([
+      sameBranchOtherTeam,
       archivedOtherTeam,
     ])
     expect(canViewOwnerData(manager, sameBranchOtherTeam)).toBe(false)

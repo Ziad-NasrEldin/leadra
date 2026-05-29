@@ -3,7 +3,7 @@ import { useEffect, useState, type FormEvent } from 'react'
 import { buildPaymentTimetable, calculateDisplayedPaymentTotals, canAddAdminManagerNote, canArchiveUnit, canEditAnyUnitDetails, canEditNonOwnerUnitDetails, canEditOwnerFields, canEditUnitCommission, canEditUnitPricing, canManageUnitSpecialStatus, canUseUnitOperationalActions, canViewOwnerData, canViewSalesSensitiveData, formatCurrency, formatDeliveryExpectancy, getApplicableUnitAreaFields, getOwnerPhoneCountryMeta, getOwnerPhoneCountryOptions, PRD_FLOOR_OPTIONS, PRD_UNIT_TYPES } from '../../lib/domain'
 import { formatCount, formatDateTime, getPaymentMethodLabel, getRoleLabel, getStatusLabel, useLocale, type LocaleCode } from '../../lib/i18n'
 import type { InstallmentType, LeadraMediaFile, LeadraUnit, LeadraUser, LookupValue, PaymentMethod, UnitStatus } from '../../lib/types'
-import { EmptyState, InfoPanel, NativeLookupSelect, NamedSelectField, NumberField, OwnerPhoneField, ReadOnlyField, RequiredLabel } from '../../components/LeadraUi'
+import { EmptyState, InfoPanel, NativeLookupSelect, NamedSelectField, NumberField, OwnerPhoneField, ReadOnlyField, RequiredLabel, TextSkeleton } from '../../components/LeadraUi'
 import { formatMonthYear, getInstallmentTypeLabel, getUnitCustomInstallmentText, getUnitInstallmentEndMonth, getUnitInstallmentStartMonth, toMonthInputValue } from '../shared/formUtils'
 import { motionStyle } from '../shared/motion'
 
@@ -851,10 +851,10 @@ function UnitDetailsDeepSections({
 
 function DetailsLoadingSkeleton() {
   return (
-    <div className="analytics-loading" aria-hidden="true">
-      <span />
-      <span />
-      <span />
+    <div className="details-loading-skeleton" data-testid="details-loading-skeleton" aria-label="Loading unit details">
+      <TextSkeleton lines={3} />
+      <TextSkeleton lines={2} />
+      <TextSkeleton lines={3} />
     </div>
   )
 }

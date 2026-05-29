@@ -17,6 +17,12 @@ type ProfileRow = {
   email: string
 }
 
+type TargetProfileRow = {
+  id: string
+  email: string
+  status: AccountStatus
+}
+
 type UpdateRequest = {
   userId?: string
   fullName?: string
@@ -116,11 +122,24 @@ serve(async (request) => {
 
   const { data: targetProfile, error: targetError } = await adminClient
     .from('profiles')
-    .select('id, email')
+    .select('id, email, status')
     .eq('id', userId)
-    .single<{ id: string; email: string }>()
+    .single<TargetProfileRow>()
 
   if (targetError || !targetProfile) return json({ ok: false, error: 'User not found.' }, 404)
+
+  if (targetProfile.status === 'active' && status === 'inactive') {
+    const { data: activeUnits, error: activeUnitsError } = await adminClient
+      .from('units')
+      .select('id')
+      .eq('created_by', userId)
+      .eq('archived', false)
+      .limit(1)
+    if (activeUnitsError) return json({ ok: false, error: activeUnitsError.message }, 400)
+    if ((activeUnits ?? []).length > 0) {
+      return json({ ok: false, error: 'Active Units must be reassigned before deactivation.' }, 400)
+    }
+  }
 
   const { error: authUpdateError } = await adminClient.auth.admin.updateUserById(userId, {
     ...(targetProfile.email !== email ? { email, email_confirm: true } : {}),

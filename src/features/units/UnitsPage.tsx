@@ -3,7 +3,7 @@ import { memo, useState, type CSSProperties } from 'react'
 import { canViewOwnerData, getApplicableUnitAreaFields, getThumbnailMedia, PRD_FLOOR_OPTIONS, summarizeDestinations, summarizeProjects } from '../../lib/domain'
 import { compareText, formatCount, getStatusLabel, useLocale } from '../../lib/i18n'
 import type { InstallmentType, LeadraUnit, LeadraUser, LookupValue, PaymentMethod, UnitFilters, UnitStatus } from '../../lib/types'
-import { ControlledSelectField, EmptyState } from '../../components/LeadraUi'
+import { ControlledSelectField, EmptyState, UnitListSkeleton } from '../../components/LeadraUi'
 import { unitListPageSize } from '../shared/constants'
 import { motionStyle } from '../shared/motion'
 import { countActiveUnitFilters, parseOptionalNumber } from '../shared/formUtils'
@@ -28,6 +28,7 @@ type UnitsPageProps = {
   filters: UnitFilters
   selectedUnitIds: number[]
   batchAction: 'generate' | 'download' | 'share' | null
+  loading?: boolean
   onDestinationSelect: (id: string) => void
   onProjectSelect: (id: string) => void
   onBackToDestinations: () => void
@@ -58,6 +59,7 @@ export function UnitsPage({
   filters,
   selectedUnitIds,
   batchAction,
+  loading = false,
   onDestinationSelect,
   onProjectSelect,
   onBackToDestinations,
@@ -101,6 +103,7 @@ export function UnitsPage({
       onDownloadSelectedPdfs={onDownloadSelectedPdfs}
       onShareSelectedPdfs={onShareSelectedPdfs}
       onOpenUnit={onOpenUnit}
+      loading={loading}
     />
   ) : null
 
@@ -214,6 +217,7 @@ type UnitResultsSectionProps = {
   onDownloadSelectedPdfs: () => void
   onShareSelectedPdfs: () => void
   onOpenUnit: (id: number) => void
+  loading?: boolean
 }
 
 function UnitResultsSection({
@@ -234,6 +238,7 @@ function UnitResultsSection({
   onDownloadSelectedPdfs,
   onShareSelectedPdfs,
   onOpenUnit,
+  loading = false,
 }: UnitResultsSectionProps) {
   const { locale, t } = useLocale()
   const visibleScopeKey = JSON.stringify([selectedDestinationId, selectedProjectId, filters])
@@ -447,35 +452,41 @@ function UnitResultsSection({
         </div>
       </div>
 
-      <section className="unit-list motion-list" key={`${selectedDestinationId ?? 'all'}-${selectedProjectId ?? 'all'}-${JSON.stringify(filters)}`}>
-        {units.length === 0 && <EmptyState title={t('units.noMatchesTitle')} body={t('units.noMatchesBody')} />}
-        {visibleUnits.map((unit, index) => (
-          <UnitListRow
-            key={unit.id}
-            user={user}
-            unit={unit}
-            index={index}
-            selected={selectedUnitIds.includes(unit.id)}
-            onSelectionChange={() => onToggleUnitSelection(unit.id)}
-            onOpen={() => onOpenUnit(unit.id)}
-          />
-        ))}
-        {visibleUnits.length < units.length && (
-          <button
-            className="secondary-button list-load-more"
-            type="button"
-            onClick={() =>
-              setVisibleState((current) => ({
-                scopeKey: visibleScopeKey,
-                count: Math.min((current.scopeKey === visibleScopeKey ? current.count : unitListPageSize) + unitListPageSize, units.length),
-              }))
-            }
-          >
-            {t('common.showMoreOf', {
-              count: formatCount(locale, Math.min(unitListPageSize, units.length - visibleUnits.length)),
-              total: formatCount(locale, units.length),
-            })}
-          </button>
+      <section className="unit-list motion-list" key={`${selectedDestinationId ?? 'all'}-${selectedProjectId ?? 'all'}-${JSON.stringify(filters)}`} aria-busy={loading}>
+        {loading ? (
+          <UnitListSkeleton rows={unitListPageSize} selectable />
+        ) : (
+          <>
+            {units.length === 0 && <EmptyState title={t('units.noMatchesTitle')} body={t('units.noMatchesBody')} />}
+            {visibleUnits.map((unit, index) => (
+              <UnitListRow
+                key={unit.id}
+                user={user}
+                unit={unit}
+                index={index}
+                selected={selectedUnitIds.includes(unit.id)}
+                onSelectionChange={() => onToggleUnitSelection(unit.id)}
+                onOpen={() => onOpenUnit(unit.id)}
+              />
+            ))}
+            {visibleUnits.length < units.length && (
+              <button
+                className="secondary-button list-load-more"
+                type="button"
+                onClick={() =>
+                  setVisibleState((current) => ({
+                    scopeKey: visibleScopeKey,
+                    count: Math.min((current.scopeKey === visibleScopeKey ? current.count : unitListPageSize) + unitListPageSize, units.length),
+                  }))
+                }
+              >
+                {t('common.showMoreOf', {
+                  count: formatCount(locale, Math.min(unitListPageSize, units.length - visibleUnits.length)),
+                  total: formatCount(locale, units.length),
+                })}
+              </button>
+            )}
+          </>
         )}
       </section>
     </>

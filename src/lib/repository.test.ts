@@ -123,6 +123,85 @@ function createUnitInput(overrides: Partial<CreateUnitInput> = {}): CreateUnitIn
 }
 
 describe('LeadraRepository', () => {
+  it('preserves archived units returned by safe listing for admin/sub-admin remote views', async () => {
+    const client = {
+      rpc(fn: string) {
+        expect(fn).toBe('list_units_safe')
+        return Promise.resolve({
+          error: null,
+          data: [
+            safeUnitRpcRow({ id: 101, unit_code: 'ACTIVE', archived: false, created_at: '2026-05-04T00:00:00.000Z' }),
+            safeUnitRpcRow({ id: 102, unit_code: 'ARCHIVED', archived: true, created_at: '2026-05-05T00:00:00.000Z' }),
+          ],
+        })
+      },
+      from(table: string) {
+        expect(['unit_payment_schedule', 'unit_payment_history']).toContain(table)
+        return {
+          select() {
+            return {
+              in(column: string, values: number[]) {
+                expect(column).toBe('unit_id')
+                expect(values).toEqual([102, 101])
+                return {
+                  order() {
+                    return Promise.resolve({ data: [], error: null })
+                  },
+                }
+              },
+            }
+          },
+        }
+      },
+    }
+
+    const result = await new LeadraRepository(client as never).listUnits()
+
+    expect(result.map((unit) => ({ code: unit.unitCode, archived: unit.archived }))).toEqual([
+      { code: 'ARCHIVED', archived: true },
+      { code: 'ACTIVE', archived: false },
+    ])
+  })
+
+  it('preserves archived units returned by safe search while still applying requested filters', async () => {
+    const client = {
+      rpc(fn: string) {
+        expect(fn).toBe('search_units_safe')
+        return Promise.resolve({
+          error: null,
+          data: [
+            safeUnitRpcRow({ id: 101, unit_code: 'ARCHIVED_MATCH', archived: true, project_id: 'project-zed-east' }),
+            safeUnitRpcRow({ id: 102, unit_code: 'ARCHIVED_OTHER_PROJECT', archived: true, project_id: 'project-other' }),
+          ],
+        })
+      },
+      from(table: string) {
+        expect(['unit_payment_schedule', 'unit_payment_history']).toContain(table)
+        return {
+          select() {
+            return {
+              in(column: string, values: number[]) {
+                expect(column).toBe('unit_id')
+                expect(values).toEqual([101])
+                return {
+                  order() {
+                    return Promise.resolve({ data: [], error: null })
+                  },
+                }
+              },
+            }
+          },
+        }
+      },
+    }
+
+    const result = await new LeadraRepository(client as never).searchUnits({ projectId: 'project-zed-east', status: 'all' })
+
+    expect(result.map((unit) => ({ code: unit.unitCode, archived: unit.archived }))).toEqual([
+      { code: 'ARCHIVED_MATCH', archived: true },
+    ])
+  })
+
   it('keeps remote unit search scoped to the requested project and destination', async () => {
     const calls: Array<{ fn: string; args: unknown }> = []
     const client = {
@@ -947,8 +1026,8 @@ describe('LeadraRepository', () => {
       {
         fn: 'admin-deactivate-sales-rep',
         body: {
-          salesUserId: 'sales-old',
-          replacementSalesUserId: 'sales-new',
+          userId: 'sales-old',
+          replacementUserId: 'sales-new',
         },
       },
     ])

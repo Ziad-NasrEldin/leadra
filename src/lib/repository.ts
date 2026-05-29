@@ -47,7 +47,6 @@ export class LeadraRepository {
     if (error) throw error
     const units = ((data ?? []) as unknown as SafeUnitRpcRow[])
       .map(toSafeUnitViewModel)
-      .filter((unit) => !unit.archived)
       .sort((first, second) => new Date(second.createdAt).getTime() - new Date(first.createdAt).getTime())
     return this.withSignedMediaUrls(await this.withPaymentRecords(units))
   }
@@ -62,7 +61,6 @@ export class LeadraRepository {
     if (error) throw error
     const units = ((data ?? []) as unknown as SafeUnitRpcRow[])
       .map(toSafeUnitViewModel)
-      .filter((unit) => !unit.archived)
       .filter((unit) => matchesUnitFilters(unit, filters))
       .sort((first, second) => new Date(second.createdAt).getTime() - new Date(first.createdAt).getTime())
     return this.withSignedMediaUrls(await this.withPaymentRecords(units))
@@ -273,13 +271,13 @@ export class LeadraRepository {
     void actor
     const { data, error } = await this.client.functions.invoke<{ ok: boolean; error?: string }>('admin-deactivate-sales-rep', {
       body: {
-        salesUserId,
-        replacementSalesUserId: replacement.id,
+        userId: salesUserId,
+        replacementUserId: replacement.id,
       },
     })
 
-    if (error) await throwFunctionError(error, 'Sales representative could not be deactivated.')
-    if (!data?.ok) throw new Error(data?.error ?? 'Sales representative could not be deactivated.')
+    if (error) await throwFunctionError(error, 'User could not be deactivated.')
+    if (!data?.ok) throw new Error(data?.error ?? 'User could not be deactivated.')
   }
 
   async deleteManagedUser(userId: string): Promise<void> {

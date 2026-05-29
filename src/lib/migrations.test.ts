@@ -11,6 +11,24 @@ function readMigration(fileName: string) {
 }
 
 describe('Supabase permission migrations', () => {
+  it('keeps the latest Unit Uploader alignment migration consistent with local permissions', () => {
+    const migration = readMigration('20260529152000_align_unit_uploader_permissions.sql')
+
+    expect(migration).toContain("and (actor.role in ('admin', 'sub_admin') or u.archived = false)")
+    expect(migration).toContain("or (created_by = auth.uid() and archived = false)")
+    expect(migration).toContain("if old.status is distinct from new.status and not can_edit_non_owner then raise exception 'only admin, sub admin, or the current unit uploader can change unit status.'")
+    expect(migration).toContain('if not (actor_role in (\'admin\', \'sub_admin\')) and ( old.created_by is distinct from new.created_by')
+    expect(migration).not.toContain('old.status is distinct from new.status or old.created_by is distinct from new.created_by')
+    expect(migration).toContain("perform set_config('leadra.payment_timetable_update', 'on', true)")
+  })
+
+  it('blocks admin account targets in the generalized deactivation Edge Function', () => {
+    const source = readFileSync(join(process.cwd(), 'supabase', 'functions', 'admin-deactivate-sales-rep', 'index.ts'), 'utf8')
+
+    expect(source).toContain("targetProfile.role === 'admin'")
+    expect(source).toContain('Admin accounts cannot be deactivated from user management.')
+  })
+
   it('grants authenticated users the table privileges required to create units with media', () => {
     expect(readMigration('0030_units_authenticated_edit_grants.sql')).toContain(
       'grant select, insert, update on public.units to authenticated',

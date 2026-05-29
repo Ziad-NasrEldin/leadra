@@ -139,43 +139,48 @@ describe('Leadra product workflows', () => {
     expect(result.state.auditLogs.at(0)?.actionType).toBe('User created')
   })
 
-  it('deactivates a sales representative only after reassigning their units to another active sales rep', () => {
+  it('deactivates any user only after reassigning their active units to another active user', () => {
     const replacement: LeadraUser = {
       ...sales,
       id: 'sales-2',
       fullName: 'Replacement Sales',
       email: 'replacement@leadra.test',
     }
+    const archivedManagerUnit = { ...seedUnits.find((unit) => unit.createdBy === manager.id)!, id: 901, archived: true, unitCode: 'ARCH-MGR' }
 
     const result = deleteSalesRepresentativeWorkflow(
-      { ...state(), users: [admin, sales, replacement] },
+      { ...state(), users: [admin, sales, manager, replacement], units: [archivedManagerUnit, ...seedUnits] },
       admin,
-      sales.id,
+      manager.id,
       replacement.id,
     )
 
     expect(result.ok).toBe(true)
-    expect(result.state.users.find((item) => item.id === sales.id)).toMatchObject({
+    expect(result.state.users.find((item) => item.id === manager.id)).toMatchObject({
       status: 'inactive',
       deletedAt: expect.any(String),
     })
-    expect(result.state.units.filter((unit) => unit.createdBy === sales.id)).toHaveLength(0)
-    expect(result.state.units.filter((unit) => unit.createdBy === replacement.id).length).toBeGreaterThan(0)
-    expect(result.state.units).toHaveLength(state().units.length)
+    expect(result.state.units.filter((unit) => unit.createdBy === manager.id && !unit.archived)).toHaveLength(0)
+    expect(result.state.units.find((unit) => unit.id === archivedManagerUnit.id)?.createdBy).toBe(manager.id)
+    expect(result.state.units.filter((unit) => unit.createdBy === replacement.id && !unit.archived).length).toBeGreaterThan(0)
+    expect(result.state.units).toHaveLength(seedUnits.length + 1)
     expect(result.state.auditLogs.at(0)).toMatchObject({
-      actionType: 'Sales representative deactivated after reassignment',
-      relatedUnitCode: sales.id,
+      actionType: 'User deactivated after reassignment',
+      relatedUnitCode: manager.id,
     })
   })
 
-  it('can finish reassignment for a sales representative already marked inactive', () => {
+  it('can finish reassignment for a user already marked inactive and preserves existing team/branch when replacement has no context', () => {
     const replacement: LeadraUser = {
       ...sales,
       id: 'sales-2',
       fullName: 'Replacement Sales',
       email: 'replacement@leadra.test',
+      teamId: '',
+      branchId: '',
     }
     const inactiveSales: LeadraUser = { ...sales, status: 'inactive' }
+    const ownUnit = seedUnits.find((unit) => unit.createdBy === inactiveSales.id && !unit.archived)!
 
     const result = deleteSalesRepresentativeWorkflow(
       { ...state(), users: [admin, inactiveSales, replacement] },
@@ -189,22 +194,20 @@ describe('Leadra product workflows', () => {
       status: 'inactive',
       deletedAt: expect.any(String),
     })
-    expect(result.state.units.filter((unit) => unit.createdBy === inactiveSales.id)).toHaveLength(0)
+    expect(result.state.units.filter((unit) => unit.createdBy === inactiveSales.id && !unit.archived)).toHaveLength(0)
+    expect(result.state.units.find((unit) => unit.id === ownUnit.id)).toMatchObject({
+      createdBy: replacement.id,
+      teamId: ownUnit.teamId,
+      branchId: ownUnit.branchId,
+    })
   })
 
-  it('deactivates and hides a manager without reassigning units', () => {
+  it('blocks direct user deactivation when the user still has active units', () => {
     const result = deleteManagedUserWorkflow({ ...state(), users: [admin, sales, manager] }, admin, manager.id)
 
-    expect(result.ok).toBe(true)
-    expect(result.state.users.find((item) => item.id === manager.id)).toMatchObject({
-      status: 'inactive',
-      deletedAt: expect.any(String),
-    })
-    expect(result.state.units).toEqual(state().units)
-    expect(result.state.auditLogs.at(0)).toMatchObject({
-      actionType: 'User deactivated',
-      relatedUnitCode: manager.id,
-    })
+    expect(result.ok).toBe(false)
+    expect(result.error).toContain('reassigned before deactivation')
+    expect(result.state.users.find((item) => item.id === manager.id)?.status).toBe('active')
   })
 
   it('creates a unit with normalized owner phone, notifications, audit log, and calculated values', () => {
@@ -723,6 +726,17 @@ describe('Leadra product workflows', () => {
     const unpaidUnit = unpaid.state.units.find((item) => item.id === unit.id)!
     expect(unpaidUnit.remainingPayment).toBe(5_100_000)
     expect(unpaidUnit.paymentHistory?.[0]).toMatchObject({ action: 'unpaid', previousRemainingValue: 3_900_000, newRemainingValue: 5_100_000 })
+
+    const managerOtherPayment = updatePaymentScheduleWorkflow({ ...state(), users: [admin, sales, manager] }, manager, 105, 'payment-105-1', true)
+    expect(managerOtherPayment.ok).toBe(false)
+    expect(managerOtherPayment.error).toContain('current Unit Uploader')
+
+    const managerOwnPayment = updatePaymentScheduleWorkflow({ ...state(), users: [admin, sales, manager] }, manager, 108, 'payment-108-1', true)
+    expect(managerOwnPayment.ok).toBe(true)
+    expect(managerOwnPayment.state.units.find((item) => item.id === 108)?.paymentHistory?.[0]).toMatchObject({
+      action: 'paid',
+      actorId: manager.id,
+    })
   })
 
   it('lets admins edit owner fields with validation and duplicate-phone protection', () => {
@@ -773,10 +787,21 @@ describe('Leadra product workflows', () => {
       commissionValue: 75_000,
     })
 
+    const managerOtherStatus = updateUnitStatusWorkflow({ ...state(), users: [admin, sales, manager] }, manager, 105, 'hold')
+    expect(managerOtherStatus.ok).toBe(false)
+    expect(managerOtherStatus.error).toContain('current Unit Uploader')
+
+    const managerOwnStatus = updateUnitStatusWorkflow({ ...state(), users: [admin, sales, manager] }, manager, 108, 'sold')
+    expect(managerOwnStatus.ok).toBe(true)
+
     const archived = archiveUnitWorkflow(sold.state, admin, 105)
     expect(archived.ok).toBe(true)
     expect(archived.state.units.find((unit) => unit.id === 105)?.archived).toBe(true)
     expect(archived.state.analyticsEvents.at(0)?.eventType).toBe('unit_archived')
+
+    const archivedStatus = updateUnitStatusWorkflow(archived.state, admin, 105, 'available')
+    expect(archivedStatus.ok).toBe(false)
+    expect(archivedStatus.error).toContain('archived')
 
     const managerArchive = archiveUnitWorkflow(sold.state, manager, 105)
     expect(managerArchive.ok).toBe(false)

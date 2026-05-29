@@ -15,6 +15,7 @@ type UserManagementCardProps = {
   onPasswordUpdate: (password: string) => Promise<void>
   teamOptions: BrandedSelectOption[]
   branchOptions: BrandedSelectOption[]
+  hasActiveAssignedUnits: boolean
   salesReplacementOptions: LeadraUser[]
   onDeleteSalesRepresentative: (replacementSalesUserId: string) => Promise<void>
   onDeleteManagedUser: () => Promise<void>
@@ -30,6 +31,7 @@ export function UserManagementCard({
   onPasswordUpdate,
   teamOptions,
   branchOptions,
+  hasActiveAssignedUnits,
   salesReplacementOptions,
   onDeleteSalesRepresentative,
   onDeleteManagedUser,
@@ -44,10 +46,11 @@ export function UserManagementCard({
   const [deleteError, setDeleteError] = useState('')
   const [deletePending, setDeletePending] = useState(false)
   const [replacementSalesUserId, setReplacementSalesUserId] = useState(salesReplacementOptions[0]?.id ?? '')
+  const requiresReassignment = user.status === 'active' && user.role !== 'admin' && hasActiveAssignedUnits
   const canDeleteManagedUser = user.role === 'sales'
     ? !user.deletedAt
     : user.role !== 'admin' && user.status === 'active' && !user.deletedAt
-  const statusOptions = user.role === 'sales' && user.status === 'active'
+  const statusOptions = requiresReassignment
     ? [{ value: 'active', label: t('admin.statusActive') }]
     : [
         { value: 'active', label: t('admin.statusActive') },
@@ -187,14 +190,14 @@ export function UserManagementCard({
           onSubmit={async (event) => {
             event.preventDefault()
             setDeleteError('')
-            if (user.role === 'sales' && !replacementSalesUserId) {
+            if (requiresReassignment && !replacementSalesUserId) {
               setDeleteError(t('admin.selectReplacementSalesRep'))
               return
             }
 
             setDeletePending(true)
             try {
-              if (user.role === 'sales') {
+              if (requiresReassignment) {
                 await onDeleteSalesRepresentative(replacementSalesUserId)
               } else {
                 await onDeleteManagedUser()
@@ -209,13 +212,13 @@ export function UserManagementCard({
         >
           <div className="password-form-copy">
             <strong>
-              {user.role === 'sales'
+              {requiresReassignment
                 ? t('admin.reassignBeforeDelete', { name: user.fullName })
                 : t('admin.deleteUserConfirmTitle', { name: user.fullName })}
             </strong>
-            <small>{user.role === 'sales' ? t('admin.reassignBeforeDeleteCopy') : t('admin.deleteUserConfirmCopy')}</small>
+            <small>{requiresReassignment ? t('admin.reassignBeforeDeleteCopy') : t('admin.deleteUserConfirmCopy')}</small>
           </div>
-          {user.role === 'sales' && (
+          {requiresReassignment && (
             <ControlledSelectField
               label={t('admin.replacementSalesRep')}
               options={salesReplacementOptions.map((item) => ({ value: item.id, label: item.fullName }))}
@@ -224,14 +227,14 @@ export function UserManagementCard({
               onValueChange={setReplacementSalesUserId}
             />
           )}
-          {user.role === 'sales' && salesReplacementOptions.length === 0 && <p className="form-error">{t('admin.noReplacementSalesRep')}</p>}
+          {requiresReassignment && salesReplacementOptions.length === 0 && <p className="form-error">{t('admin.noReplacementSalesRep')}</p>}
           {deleteError && <p className="form-error">{deleteError}</p>}
           <div className="user-edit-actions">
             <button className="secondary-button" type="button" onClick={() => setDeleteEditorOpen(false)} disabled={deletePending}>
               {t('common.cancel')}
             </button>
-            <button className="danger-button" type="submit" disabled={deletePending || (user.role === 'sales' && salesReplacementOptions.length === 0)}>
-              {deletePending ? t('common.saving') : user.role === 'sales' ? t('admin.confirmDeleteSalesRep') : t('admin.confirmDeleteUser')}
+            <button className="danger-button" type="submit" disabled={deletePending || (requiresReassignment && salesReplacementOptions.length === 0)}>
+              {deletePending ? t('common.saving') : requiresReassignment ? t('admin.confirmDeleteSalesRep') : t('admin.confirmDeleteUser')}
             </button>
           </div>
         </form>

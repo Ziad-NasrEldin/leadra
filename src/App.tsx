@@ -138,7 +138,7 @@ import {
   type DashboardRollup,
 } from './features/dashboard/dashboardSummaries'
 import { UnitListRow, UnitsPage } from './features/units/UnitsPage'
-import { ControlledSelectField, EmptyState, InfoSection, Metric, MiniBar, NavButton, PasswordField } from './components/LeadraUi'
+import { ControlledSelectField, EmptyState, InfoSection, Metric, MetricSkeletonGrid, MiniBar, NavButton, PageSkeleton, PasswordField } from './components/LeadraUi'
 import { paymentMethodValues, supportsLookupThumbnail, unitStatusValues, type AdminSection, type CreateUnitStep, type MasterDataDirectory } from './features/shared/constants'
 import { fileToDataUrl, removeLookupThumbnail, uploadLookupThumbnail } from './features/shared/media'
 import {
@@ -328,6 +328,7 @@ function LeadraApp() {
   const [unitFilters, setUnitFilters] = useState<UnitFilters>({ status: 'all' })
   const [remoteSearchUnits, setRemoteSearchUnits] = useState<LeadraUnit[] | null>(null)
   const [remoteSearchView, setRemoteSearchView] = useState<'inventory' | 'special' | null>(null)
+  const [remoteSearchLoading, setRemoteSearchLoading] = useState(false)
   const [flash, setFlash] = useState<LocalizedFlashMessage | null>(null)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [authLoading, setAuthLoading] = useState(isSupabaseConfigured)
@@ -1424,6 +1425,7 @@ function LeadraApp() {
       return
     }
     try {
+      setRemoteSearchLoading(true)
       const repository = new LeadraRepository(supabase)
       const units = await repository.searchUnits({
         ...normalizedFilters,
@@ -1435,6 +1437,8 @@ function LeadraApp() {
     } catch {
       setRemoteSearchUnits(null)
       setRemoteSearchView(null)
+    } finally {
+      setRemoteSearchLoading(false)
     }
   }
 
@@ -1580,6 +1584,7 @@ function LeadraApp() {
               filters={unitFilters}
               selectedUnitIds={selectedBatchUnitIds}
               batchAction={batchPdfAction}
+              loading={remoteSearchLoading && (remoteSearchView === 'inventory' || remoteSearchView === null)}
               onDestinationSelect={(id) => {
                 const nextFilters = { ...unitFilters, destinationId: undefined, projectId: undefined }
                 setUnitFilters(nextFilters)
@@ -1640,6 +1645,7 @@ function LeadraApp() {
               filters={unitFilters}
               selectedUnitIds={selectedBatchUnitIds}
               batchAction={batchPdfAction}
+              loading={remoteSearchLoading && (remoteSearchView === 'special' || remoteSearchView === null)}
               onDestinationSelect={() => undefined}
               onProjectSelect={() => undefined}
               onBackToDestinations={() => undefined}
@@ -1992,8 +1998,12 @@ function LeadraApp() {
               }}
               onUpdateUser={async (userId, updates) => {
                 const existingUser = appState.users.find((item) => item.id === userId)
-                if (existingUser?.role === 'sales' && existingUser.status === 'active' && updates.status === 'inactive') {
-                  throw new Error('Use Reassign and deactivate sales rep so assigned units move to another active sales representative.')
+                if (
+                  existingUser?.status === 'active'
+                  && updates.status === 'inactive'
+                  && appState.units.some((unit) => unit.createdBy === existingUser.id && !unit.archived)
+                ) {
+                  throw new Error('Active Units must be reassigned before deactivation.')
                 }
 
                 const auditMessage = createAuditMessage('user_profile_updated')
@@ -2063,10 +2073,10 @@ function LeadraApp() {
                 try {
                   if (supabase && isSupabaseConfigured) {
                     const replacement = result.state.users.find((item) => item.id === replacementSalesUserId)
-                    if (!replacement) throw new Error('Replacement sales representative was not found.')
+                    if (!replacement) throw new Error('Replacement user was not found.')
                     await new LeadraRepository(supabase).deleteSalesRepresentativeAfterReassignment(salesUserId, replacement, user)
                   }
-                  setFlash(createFlashMessage('flash.salesRepDeactivated', 'Sales representative deactivated after reassignment.'))
+                  setFlash(createFlashMessage('flash.salesRepDeactivated', 'User deactivated after reassignment.'))
                 } catch (error) {
                   setAppState(previousState)
                   setFlash({
@@ -2235,6 +2245,14 @@ function LoginScreen({
     window.addEventListener('resize', sync)
     return () => window.removeEventListener('resize', sync)
   }, [])
+
+  if (authLoading && !loginError) {
+    return (
+      <main className="login-screen motion-login" aria-busy="true">
+        <PageSkeleton kind="form" />
+      </main>
+    )
+  }
 
   return (
     <main className="login-screen motion-login">
@@ -2683,11 +2701,11 @@ function ManagerDashboard({
 }) {
   const { locale, t } = useLocale()
   const [now] = useState(() => Date.now())
-  const teamUnits = units.filter((unit) => unit.teamId === user.teamId)
-  const latestTeamUnits = [...teamUnits].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).slice(0, 4)
+  const activeVisibleUnits = units.filter((unit) => !unit.archived)
+  const latestVisibleUnits = [...activeVisibleUnits].sort((a, b) => new Date(b.createdAt).getTime() - new Date(a.createdAt).getTime()).slice(0, 4)
   const teamEvents = appState.analyticsEvents.filter((event) => event.teamId === user.teamId)
   const recentStatusEvents = teamEvents.filter((event) => event.eventType === 'status_changed').slice(0, 4)
-  const installmentUpdates = teamUnits
+  const installmentUpdates = activeVisibleUnits
     .filter((unit) => unit.paymentMethod === 'installment')
     .sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime())
     .slice(0, 4)
@@ -2709,13 +2727,13 @@ function ManagerDashboard({
         </div>
       </div>
       <div className="metric-grid motion-stage" style={motionStyle(1, 40)}>
-        <Metric label={t('dashboard.visibleUnits')} value={formatCount(locale, teamUnits.length)} style={motionStyle(0, 120)} />
+        <Metric label={t('dashboard.visibleUnits')} value={formatCount(locale, activeVisibleUnits.length)} style={motionStyle(0, 120)} />
         <Metric label={t('dashboard.teamActivity')} value={formatCount(locale, teamEvents.length)} style={motionStyle(1, 150)} />
         <Metric label={t('dashboard.installmentUpdates')} value={formatCount(locale, installmentUpdates.length)} style={motionStyle(2, 180)} />
         <Metric label={t('dashboard.inactivityAlerts')} value={formatCount(locale, inactiveUsers.length)} style={motionStyle(3, 210)} />
       </div>
-      <ManagerPanel title={t('dashboard.latestTeamUploads')}>
-        {latestTeamUnits.map((unit, index) => <UnitListRow key={unit.id} user={user} unit={unit} index={index} onOpen={() => onOpenUnit(unit.id)} />)}
+      <ManagerPanel title={t('dashboard.latestActivity')}>
+        {latestVisibleUnits.map((unit, index) => <UnitListRow key={unit.id} user={user} unit={unit} index={index} onOpen={() => onOpenUnit(unit.id)} />)}
       </ManagerPanel>
       <ManagerPanel title={t('dashboard.teamStatusChanges')}>
         {recentStatusEvents.length === 0 && <EmptyState title={t('dashboard.noUnitsTitle')} body={t('dashboard.noUnitsBody')} />}
@@ -3004,14 +3022,18 @@ function AnalyticsPage({
         />
       </section>
 
-      <section className="metric-grid analytics-metrics motion-stage" style={motionStyle(1, 40)}>
-        <Metric label={t('analytics.activeUnits')} value={formatCount(locale, dashboard.overview.totalActiveUnits)} style={motionStyle(0, 140)} />
-        <Metric label={t('analytics.soldValue')} value={formatCurrency(dashboard.overview.soldValue, locale)} style={motionStyle(1, 165)} />
-        <Metric label={t('analytics.projectedCommission')} value={formatCurrency(dashboard.overview.projectedCommission, locale)} style={motionStyle(2, 190)} />
-        <Metric label={t('analytics.pdfExports')} value={formatCount(locale, dashboard.overview.pdfExports)} style={motionStyle(3, 215)} />
-        <Metric label={t('analytics.duplicateAttempts')} value={formatCount(locale, dashboard.overview.duplicateAttempts)} style={motionStyle(4, 240)} />
-        <Metric label={t('analytics.staleUnits')} value={formatCount(locale, dashboard.overview.staleUnits)} style={motionStyle(5, 265)} />
-      </section>
+      {analyticsLoading ? (
+        <MetricSkeletonGrid count={6} />
+      ) : (
+        <section className="metric-grid analytics-metrics motion-stage" style={motionStyle(1, 40)}>
+          <Metric label={t('analytics.activeUnits')} value={formatCount(locale, dashboard.overview.totalActiveUnits)} style={motionStyle(0, 140)} />
+          <Metric label={t('analytics.soldValue')} value={formatCurrency(dashboard.overview.soldValue, locale)} style={motionStyle(1, 165)} />
+          <Metric label={t('analytics.projectedCommission')} value={formatCurrency(dashboard.overview.projectedCommission, locale)} style={motionStyle(2, 190)} />
+          <Metric label={t('analytics.pdfExports')} value={formatCount(locale, dashboard.overview.pdfExports)} style={motionStyle(3, 215)} />
+          <Metric label={t('analytics.duplicateAttempts')} value={formatCount(locale, dashboard.overview.duplicateAttempts)} style={motionStyle(4, 240)} />
+          <Metric label={t('analytics.staleUnits')} value={formatCount(locale, dashboard.overview.staleUnits)} style={motionStyle(5, 265)} />
+        </section>
+      )}
 
       <div className="page-grid">
         <section className="content-card motion-stage" style={motionStyle(2, 80)}>

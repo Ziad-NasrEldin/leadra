@@ -122,10 +122,10 @@ export function AdminPage({
   const defaultCreateBranchId = branchOptions.some((option) => option.value === defaultBranchId)
     ? defaultBranchId
     : branchOptions[0]?.value ?? ''
-  const activeSalesUsers = useMemo(
+  const activeReplacementUsers = useMemo(
     () =>
       users
-        .filter((item) => item.role === 'sales' && item.status === 'active' && !item.deletedAt)
+        .filter((item) => item.status === 'active' && !item.deletedAt)
         .sort((first, second) => compareText(locale, first.fullName, second.fullName)),
     [users, locale],
   )
@@ -406,7 +406,8 @@ export function AdminPage({
                 onPasswordUpdate={(password) => onUpdateUserPassword(item.id, password)}
                 teamOptions={userTeamOptions}
                 branchOptions={userBranchOptions}
-                salesReplacementOptions={activeSalesUsers.filter((salesUser) => salesUser.id !== item.id)}
+                hasActiveAssignedUnits={units.some((unit) => unit.createdBy === item.id && !unit.archived)}
+                salesReplacementOptions={activeReplacementUsers.filter((replacementUser) => replacementUser.id !== item.id)}
                 onDeleteSalesRepresentative={(replacementSalesUserId) => onDeleteSalesRepresentative(item.id, replacementSalesUserId)}
                 onDeleteManagedUser={() => onDeleteManagedUser(item.id)}
               />

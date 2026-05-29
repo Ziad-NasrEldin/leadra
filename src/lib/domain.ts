@@ -285,9 +285,8 @@ export function unitHasSameProjectPhoneDuplicate(candidate: LeadraUnit, existing
 }
 
 export function canViewUnit(user: LeadraUser, unit: LeadraUnit): boolean {
-  void user
-  void unit
-  return true
+  if (user.role === 'admin' || user.role === 'sub_admin') return true
+  return !unit.archived
 }
 
 export function filterUnitsForUser(user: LeadraUser, units: LeadraUnit[]): LeadraUnit[] {
@@ -311,23 +310,23 @@ export function canViewSalesSensitiveData(user: LeadraUser, unit: LeadraUnit): b
   return canViewOwnerData(user, unit)
 }
 
-function isOwnActiveUploadedUnit(user: LeadraUser, unit: LeadraUnit): boolean {
-  return !unit.archived && unit.createdBy === user.id && (user.role === 'manager' || user.role === 'sales')
+function isCurrentActiveUnitUploader(user: LeadraUser, unit: LeadraUnit): boolean {
+  return user.status === 'active' && !unit.archived && unit.createdBy === user.id
 }
 
 export function canEditOwnerFields(user: LeadraUser, unit: LeadraUnit): boolean {
   if (user.role === 'admin' || user.role === 'sub_admin') return true
-  return isOwnActiveUploadedUnit(user, unit)
+  return isCurrentActiveUnitUploader(user, unit)
 }
 
 export function canEditNonOwnerUnitDetails(user: LeadraUser, unit: LeadraUnit): boolean {
   if (user.role === 'admin' || user.role === 'sub_admin') return true
-  return isOwnActiveUploadedUnit(user, unit)
+  return isCurrentActiveUnitUploader(user, unit)
 }
 
 export function canEditUnitPricing(user: LeadraUser, unit: LeadraUnit): boolean {
   if (user.role === 'admin' || user.role === 'sub_admin') return true
-  return isOwnActiveUploadedUnit(user, unit)
+  return isCurrentActiveUnitUploader(user, unit)
 }
 
 export function canEditUnitCommission(user: LeadraUser, unit: LeadraUnit): boolean {
@@ -359,7 +358,9 @@ export function isOtherSalesRepresentativeUnit(user: LeadraUser, unit: LeadraUni
 }
 
 export function canUseUnitOperationalActions(user: LeadraUser, unit: LeadraUnit): boolean {
-  return !isOtherSalesRepresentativeUnit(user, unit)
+  if (unit.archived) return false
+  if (user.role === 'admin' || user.role === 'sub_admin') return true
+  return isCurrentActiveUnitUploader(user, unit)
 }
 
 export function isSoldStatus(status: UnitStatus | string | null | undefined): boolean {

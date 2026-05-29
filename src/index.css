@@ -7962,3 +7962,84 @@ input[type="checkbox"] {
 .details-page .details-actions .danger-button {
   height: auto;
 }
+
+
+/* Global skeleton loading states */
+.skeleton-block {
+  display: block;
+  min-height: 0.75rem;
+  border-radius: 999px;
+  background: linear-gradient(90deg, color-mix(in oklch, var(--surface-soft), transparent 12%) 0%, color-mix(in oklch, var(--brand-copper-soft), transparent 45%) 42%, color-mix(in oklch, var(--surface-soft), transparent 12%) 78%);
+  background-size: 220% 100%;
+  animation: skeleton-shimmer 1.15s var(--ease-soft) infinite;
+  box-shadow: inset 0 0 0 1px color-mix(in oklch, var(--line), transparent 45%);
+}
+
+@keyframes skeleton-shimmer {
+  0% { background-position: 140% 0; }
+  100% { background-position: -80% 0; }
+}
+
+.text-skeleton { display: grid; gap: 0.65rem; width: min(100%, 34rem); }
+.text-skeleton .line { height: 0.8rem; }
+.text-skeleton .line-1 { width: 88%; }
+.text-skeleton .line-2 { width: 72%; }
+.text-skeleton .line-3 { width: 54%; }
+
+.page-skeleton { width: 100%; }
+.page-skeleton .skeleton-hero { min-height: 13rem; pointer-events: none; }
+.page-skeleton .eyebrow { width: 8rem; height: 0.8rem; margin-bottom: 1rem; }
+.page-skeleton .heading { width: min(70%, 28rem); height: 2.1rem; margin-bottom: 1rem; border-radius: 1rem; }
+.page-skeleton .copy { width: min(86%, 38rem); height: 1rem; margin-bottom: 1.2rem; }
+.page-skeleton .button { width: 8.5rem; height: 2.7rem; border-radius: 999px; }
+.page-skeleton .button.secondary { width: 7rem; opacity: 0.72; }
+.page-skeleton .content-card { display: grid; gap: 1rem; }
+.page-skeleton .section-title { width: 12rem; height: 1.25rem; border-radius: 0.75rem; }
+.page-skeleton .stepper { width: 100%; height: 3.2rem; border-radius: 1.2rem; }
+.skeleton-field-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 1rem; }
+.skeleton-field-grid .field { height: 4.35rem; border-radius: 1rem; }
+.login-screen .page-skeleton { max-width: 1040px; margin: auto; }
+
+.skeleton-metric-grid { list-style: none; }
+.skeleton-card { gap: 0.8rem; pointer-events: none; }
+.skeleton-card .label { width: 54%; height: 0.75rem; }
+.skeleton-card .value { width: 38%; height: 1.8rem; border-radius: 0.8rem; }
+
+.unit-list-skeleton { display: grid; gap: 0.9rem; }
+.skeleton-unit-row { pointer-events: none; }
+.skeleton-row-content { cursor: default; }
+.skeleton-unit-row .checkbox { width: 1.2rem; height: 1.2rem; border-radius: 0.35rem; align-self: center; }
+.skeleton-unit-row .thumb { width: 4rem; height: 4rem; border-radius: 1rem; flex: 0 0 auto; }
+.skeleton-unit-row .title { width: min(12rem, 52%); height: 1.05rem; border-radius: 0.65rem; }
+.skeleton-unit-row .line { width: min(24rem, 82%); height: 0.78rem; }
+.skeleton-unit-row .line.short { width: min(14rem, 48%); }
+.skeleton-unit-row .status { width: 5.5rem; height: 2rem; border-radius: 999px; margin-inline-start: auto; }
+
+.units-filter-shell[aria-busy='true'], .unit-list[aria-busy='true'], .analytics-page[aria-busy='true'] { cursor: progress; }
+.analytics-chip .skeleton-block { width: 4rem; height: 0.85rem; display: inline-block; }
+.scope-card-visual img, .unit-row .thumb img, .upload-preview-card img { background: var(--surface-soft); }
+.scope-card-visual:has(img), .unit-row .thumb:has(img), .upload-preview-card:has(img) { position: relative; overflow: hidden; }
+.scope-card-visual:has(img)::before, .unit-row .thumb:has(img)::before, .upload-preview-card:has(img)::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: linear-gradient(90deg, transparent, color-mix(in oklch, var(--brand-copper-soft), transparent 55%), transparent);
+  background-size: 220% 100%;
+  animation: skeleton-shimmer 1.15s var(--ease-soft) infinite;
+  z-index: 0;
+}
+.scope-card-visual img, .unit-row .thumb img, .upload-preview-card img { position: relative; z-index: 1; }
+
+@media (prefers-reduced-motion: reduce) {
+  .skeleton-block,
+  .scope-card-visual:has(img)::before,
+  .unit-row .thumb:has(img)::before,
+  .upload-preview-card:has(img)::before {
+    animation: none;
+    background-position: 0 0;
+  }
+}
+
+.details-loading-skeleton { display: grid; gap: 1.4rem; padding: 0.35rem 0; }
+.details-loading-skeleton .text-skeleton { width: 100%; }

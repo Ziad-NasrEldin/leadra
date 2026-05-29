@@ -122,62 +122,57 @@ export function deleteSalesRepresentativeWorkflow(
     return { ok: false, state, ...createErrorMessage('error.onlyAdminsCanCreateUsers', 'Only Admin and Sub Admin can create users.') }
   }
 
-  const salesUser = state.users.find((item) => item.id === salesUserId)
+  const targetUser = state.users.find((item) => item.id === salesUserId)
   const replacement = state.users.find((item) => item.id === replacementSalesUserId)
 
-  if (!salesUser || salesUser.role !== 'sales') {
-    return { ok: false, state, error: 'Select a sales representative to deactivate.', errorKey: null, errorParams: null }
+  if (!targetUser) {
+    return { ok: false, state, error: 'Select a user to deactivate.', errorKey: null, errorParams: null }
   }
 
-  if (!replacement || replacement.role !== 'sales' || replacement.status !== 'active' || replacement.deletedAt) {
-    return { ok: false, state, error: 'Select an active replacement sales representative.', errorKey: null, errorParams: null }
+  if (!replacement || replacement.status !== 'active' || replacement.deletedAt) {
+    return { ok: false, state, error: 'Select an active replacement user.', errorKey: null, errorParams: null }
   }
 
-  if (salesUser.id === replacement.id) {
-    return { ok: false, state, error: 'Replacement sales representative must be different from the deleted sales representative.', errorKey: null, errorParams: null }
+  if (targetUser.id === replacement.id) {
+    return { ok: false, state, error: 'Replacement user must be different from the deactivated user.', errorKey: null, errorParams: null }
   }
 
   const now = new Date().toISOString()
-  const reassignedUnits = state.units.filter((unit) => unit.createdBy === salesUser.id)
-  const auditMessage = createAuditMessage('sales_rep_deactivated_after_reassignment', {
-    deletedName: salesUser.fullName,
-    replacementName: replacement.fullName,
-    count: reassignedUnits.length,
-  })
+  const reassignedUnits = state.units.filter((unit) => unit.createdBy === targetUser.id && !unit.archived)
+  const auditActionType = 'User deactivated after reassignment'
   const nextState = withAnalyticsEvent(
     withAudit(
       {
         ...state,
         users: state.users.map((item) =>
-          item.id === salesUser.id ? { ...item, status: 'inactive', deletedAt: now } : item,
+          item.id === targetUser.id ? { ...item, status: 'inactive', deletedAt: now } : item,
         ),
         units: state.units.map((unit) =>
-          unit.createdBy === salesUser.id
+          unit.createdBy === targetUser.id && !unit.archived
             ? {
                 ...unit,
                 createdBy: replacement.id,
                 createdByName: replacement.fullName,
-                teamId: replacement.teamId,
-                branchId: replacement.branchId,
+                teamId: replacement.teamId || unit.teamId,
+                branchId: replacement.branchId || unit.branchId,
                 updatedAt: now,
               }
             : unit,
         ),
       },
       actor,
-      auditMessage.text,
-      salesUser.id,
-      { salesUserId: salesUser.id, assignedUnits: reassignedUnits.length },
-      { replacementSalesUserId: replacement.id, assignedUnits: reassignedUnits.length },
-      auditMessage,
+      auditActionType,
+      targetUser.id,
+      { userId: targetUser.id, assignedUnits: reassignedUnits.length },
+      { replacementUserId: replacement.id, assignedUnits: reassignedUnits.length },
     ),
     actor,
     'settings_updated',
     {
       metadata: {
-        operation: 'sales_rep_deactivated_after_reassignment',
-        deactivatedSalesUserId: salesUser.id,
-        replacementSalesUserId: replacement.id,
+        operation: 'user_deactivated_after_reassignment',
+        deactivatedUserId: targetUser.id,
+        replacementUserId: replacement.id,
         reassignedUnitCount: reassignedUnits.length,
       },
     },
@@ -204,8 +199,15 @@ export function deleteManagedUserWorkflow(
     return { ok: false, state, error: 'Admin accounts cannot be deleted from user management.', errorKey: null, errorParams: null }
   }
 
-  if (managedUser.role === 'sales') {
-    return { ok: false, state, error: 'Sales representatives require reassignment before deletion.', errorKey: null, errorParams: null }
+  const activeAssignedUnits = state.units.filter((unit) => unit.createdBy === managedUser.id && !unit.archived)
+  if (activeAssignedUnits.length > 0) {
+    return {
+      ok: false,
+      state,
+      error: 'Active Units must be reassigned before deactivation.',
+      errorKey: null,
+      errorParams: null,
+    }
   }
 
   const now = new Date().toISOString()
@@ -591,7 +593,7 @@ export function updateUnitStatusWorkflow(
   const unit = state.units.find((item) => item.id === unitId)
   if (!unit) return { ok: false, state, ...createErrorMessage('error.unitNotFound', 'Unit not found.') }
   if (!canViewUnit(actor, unit)) return { ok: false, state, ...createErrorMessage('error.unitOutsideVisibility', 'Unit is outside your visibility scope.') }
-  if (!canUseUnitOperationalActions(actor, unit)) return { ok: false, state, error: 'Sales representatives can only change status on their own units.', errorKey: null, errorParams: null }
+  if (!canUseUnitOperationalActions(actor, unit)) return { ok: false, state, error: 'Only Admin, Sub Admin, or the current Unit Uploader can change status on their own units that are active and not archived.', errorKey: null, errorParams: null }
 
   const nextState = {
     ...state,
@@ -640,7 +642,7 @@ export function updatePaymentScheduleWorkflow(
   const unit = state.units.find((item) => item.id === unitId)
   if (!unit) return { ok: false, state, ...createErrorMessage('error.unitNotFound', 'Unit not found.') }
   if (!canViewUnit(actor, unit)) return { ok: false, state, ...createErrorMessage('error.unitOutsideVisibility', 'Unit is outside your visibility scope.') }
-  if (!canUseUnitOperationalActions(actor, unit)) return { ok: false, state, error: 'Payment timetable is read-only for this unit.', errorKey: null, errorParams: null }
+  if (!canUseUnitOperationalActions(actor, unit)) return { ok: false, state, error: 'Only Admin, Sub Admin, or the current Unit Uploader can edit the payment timetable for active units.', errorKey: null, errorParams: null }
   if (unit.paymentMethod !== 'installment' || unit.installmentType === 'custom') {
     return { ok: false, state, error: 'Payment timetable is only available for automatic installment units.', errorKey: null, errorParams: null }
   }
