@@ -4,7 +4,7 @@ import { buildPaymentTimetable, calculateDisplayedPaymentTotals, canAddAdminMana
 import { formatCount, formatDateTime, getPaymentMethodLabel, getRoleLabel, getStatusLabel, useLocale, type LocaleCode } from '../../lib/i18n'
 import type { InstallmentType, LeadraMediaFile, LeadraUnit, LeadraUser, LookupValue, PaymentMethod, UnitStatus } from '../../lib/types'
 import { EmptyState, InfoPanel, NativeLookupSelect, NamedSelectField, NumberField, OwnerPhoneField, ReadOnlyField, RequiredLabel, TextSkeleton } from '../../components/LeadraUi'
-import { formatMonthYear, getInstallmentTypeLabel, getUnitCustomInstallmentText, getUnitInstallmentEndMonth, getUnitInstallmentStartMonth, toMonthInputValue } from '../shared/formUtils'
+import { countInstallmentsBetweenMonths, formatMonthYear, getInstallmentTypeLabel, getUnitCustomInstallmentText, getUnitInstallmentEndMonth, getUnitInstallmentStartMonth, toMonthInputValue } from '../shared/formUtils'
 import { motionStyle } from '../shared/motion'
 
 type UnitDetailsPageProps = {
@@ -321,6 +321,10 @@ function UnitDetailsEditForm({
   const [floor, setFloor] = useState(unit.floor || 'Ground')
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>(unit.paymentMethod)
   const [installmentType, setInstallmentType] = useState<InstallmentType>(unit.installmentType ?? 'quarterly')
+  const [totalAmount, setTotalAmount] = useState(unit.totalAmount)
+  const [downPayment, setDownPayment] = useState(unit.downPayment ?? 0)
+  const [installmentStartMonthValue, setInstallmentStartMonthValue] = useState(toMonthInputValue(getUnitInstallmentStartMonth(unit)))
+  const [installmentEndMonthValue, setInstallmentEndMonthValue] = useState(toMonthInputValue(getUnitInstallmentEndMonth(unit)))
   const [ownerCountryCode, setOwnerCountryCode] = useState(unit.countryCode ?? '+20')
   const [ownerPhone, setOwnerPhone] = useState(unit.originalOwnerPhone ?? '')
   const [maintenancePaid, setMaintenancePaid] = useState(unit.maintenancePaid ?? false)
@@ -338,6 +342,11 @@ function UnitDetailsEditForm({
   const installmentEndMonth = getUnitInstallmentEndMonth(unit)
   const customInstallmentText = getUnitCustomInstallmentText(unit)
   const hasStoredInstallmentPeriod = Boolean(installmentStartMonth && installmentEndMonth)
+  const editRemainingPayment = paymentMethod === 'installment' ? Math.max(0, totalAmount - downPayment) : null
+  const editInstallmentCount = countInstallmentsBetweenMonths(installmentType, installmentStartMonthValue, installmentEndMonthValue)
+  const editInstallmentAmount = paymentMethod === 'installment' && installmentType !== 'custom' && editRemainingPayment != null && editInstallmentCount
+    ? Math.round((editRemainingPayment / editInstallmentCount) * 100) / 100
+    : null
 
   return (
     <section className="content-card motion-stage details-edit-card" style={motionStyle(2, 70)} aria-labelledby="unit-edit-heading">
@@ -427,7 +436,17 @@ function UnitDetailsEditForm({
           />
           <label>
             <RequiredLabel label={t('create.totalAmount')} required />
-            <input name="totalAmount" role="spinbutton" type="number" min={0} step="0.01" defaultValue={unit.totalAmount} disabled={!canEditPricing || saving} required={canEditPricing} />
+            <input
+              name="totalAmount"
+              role="spinbutton"
+              type="number"
+              min={0}
+              step="0.01"
+              value={totalAmount}
+              disabled={!canEditPricing || saving}
+              required={canEditPricing}
+              onChange={(event) => setTotalAmount(Number(event.target.value) || 0)}
+            />
           </label>
           <label className="toggle-line">
             <input
@@ -454,10 +473,19 @@ function UnitDetailsEditForm({
           {paymentMethod === 'installment' && (
             <label>
               <RequiredLabel label={t('create.downPayment')} required={canEditPaymentPlan} />
-               <input name="downPayment" type="number" min={0} max={unit.totalAmount} defaultValue={unit.downPayment ?? 0} disabled={!canEditPaymentPlan || saving} required={canEditPaymentPlan} />
+               <input
+                 name="downPayment"
+                 type="number"
+                 min={0}
+                 max={totalAmount}
+                 value={downPayment}
+                 disabled={!canEditPaymentPlan || saving}
+                 required={canEditPaymentPlan}
+                 onChange={(event) => setDownPayment(Number(event.target.value) || 0)}
+               />
             </label>
           )}
-          <ReadOnlyField label={t('details.remainingPayment')} value={formatCurrency(unit.remainingPayment, locale)} />
+          <ReadOnlyField label={t('details.remainingPayment')} value={editRemainingPayment == null ? t('common.notSet') : formatCurrency(editRemainingPayment, locale)} />
           {paymentMethod === 'installment' && (
             <>
               <NamedSelectField
@@ -484,16 +512,30 @@ function UnitDetailsEditForm({
                 <>
                   <label>
                     <RequiredLabel label={t('create.installmentStartMonth')} required={canEditPricing && hasStoredInstallmentPeriod} />
-                    <input name="installmentStartMonth" type="month" defaultValue={toMonthInputValue(installmentStartMonth)} disabled={!canEditPricing || saving} required={canEditPricing && hasStoredInstallmentPeriod} />
+                    <input
+                      name="installmentStartMonth"
+                      type="month"
+                      value={installmentStartMonthValue}
+                      disabled={!canEditPricing || saving}
+                      required={canEditPricing && hasStoredInstallmentPeriod}
+                      onChange={(event) => setInstallmentStartMonthValue(event.target.value)}
+                    />
                   </label>
                   <label>
                     <RequiredLabel label={t('create.installmentEndMonth')} required={canEditPricing && hasStoredInstallmentPeriod} />
-                    <input name="installmentEndMonth" type="month" defaultValue={toMonthInputValue(installmentEndMonth)} disabled={!canEditPricing || saving} required={canEditPricing && hasStoredInstallmentPeriod} />
+                    <input
+                      name="installmentEndMonth"
+                      type="month"
+                      value={installmentEndMonthValue}
+                      disabled={!canEditPricing || saving}
+                      required={canEditPricing && hasStoredInstallmentPeriod}
+                      onChange={(event) => setInstallmentEndMonthValue(event.target.value)}
+                    />
                   </label>
                   {!hasStoredInstallmentPeriod && (
                     <ReadOnlyField label={t('details.installmentYears')} value={unit.installmentYears ? formatCount(locale, unit.installmentYears) : t('common.notSet')} />
                   )}
-                  <ReadOnlyField label={t('details.installmentAmount')} value={formatCurrency(unit.installmentAmount, locale)} />
+                  <ReadOnlyField label={t('details.installmentAmount')} value={editInstallmentAmount == null ? t('common.notSet') : formatCurrency(editInstallmentAmount, locale)} />
                   <label>
                     Installment due day
                     <input name="installmentDueDay" type="number" min={1} max={31} defaultValue={unit.installmentDueDay ?? 1} disabled={!canEditPaymentPlan || saving} required={canEditPaymentPlan} />

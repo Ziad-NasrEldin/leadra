@@ -291,7 +291,16 @@ export function toUnitUpdatePayload(
           ...(input.paymentMethod ? { payment_method: input.paymentMethod } : {}),
           total_amount: input.totalAmount,
           ...(input.paymentMethod === 'installment' ? { down_payment: input.downPayment ?? null } : {}),
-          ...(input.paymentMethod === 'cash' ? { down_payment: null } : {}),
+          ...(input.paymentMethod === 'cash'
+            ? {
+                down_payment: null,
+                installment_type: null,
+                installment_years: null,
+                installment_start_month: null,
+                installment_end_month: null,
+                custom_installment_text: null,
+              }
+            : {}),
           ...(input.transferFees !== undefined ? { transfer_fees: input.transferFees } : {}),
           maintenance_paid: input.maintenancePaid ?? false,
           maintenance_cost: input.maintenancePaid ? null : input.maintenanceCost ?? null,

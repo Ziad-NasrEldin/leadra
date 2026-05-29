@@ -177,6 +177,31 @@ describe('Supabase mappers', () => {
     expect(payload).not.toHaveProperty('unit_code')
   })
 
+  it('clears stored installment columns when changing a unit to cash', () => {
+    const payload = toUnitUpdatePayload({
+      ...editInput,
+      paymentMethod: 'cash',
+      downPayment: null,
+      installmentType: undefined,
+      customInstallmentText: undefined,
+    }, {
+      canEditOwner: true,
+      canEditPricing: true,
+      canEditCommission: true,
+    })
+
+    expect(payload).toMatchObject({
+      payment_method: 'cash',
+      down_payment: null,
+      installment_type: null,
+      installment_years: null,
+      installment_start_month: null,
+      installment_end_month: null,
+      custom_installment_text: null,
+      installment_due_day: 1,
+    })
+  })
+
   it('omits owner and pricing fields from update payloads when permissions do not allow them', () => {
     const payload = toUnitUpdatePayload(editInput, {
       canEditOwner: false,
