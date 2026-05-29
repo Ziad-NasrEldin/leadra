@@ -771,7 +771,7 @@ describe('LeadraRepository', () => {
     await expect(new LeadraRepository(client as never).updateUnitStatus(5, 'hold')).rejects.toThrow('permission denied')
   })
 
-  it('persists unit archive and verifies the updated row is visible', async () => {
+  it('persists unit archive with a write-only update under the safe units permission model', async () => {
     const updates: unknown[] = []
     const filters: Array<{ column: string; value: number }> = []
     const client = {
@@ -783,16 +783,7 @@ describe('LeadraRepository', () => {
             return {
               eq(column: string, value: number) {
                 filters.push({ column, value })
-                return {
-                  select(columns: string) {
-                    expect(columns).toBe('id')
-                    return {
-                      single() {
-                        return Promise.resolve({ error: null, data: { id: value } })
-                      },
-                    }
-                  },
-                }
+                return Promise.resolve({ error: null, data: null })
               },
             }
           },
