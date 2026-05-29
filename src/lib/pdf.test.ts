@@ -134,7 +134,7 @@ describe('pdf generation', () => {
   it('falls back to browser-decoded PNG data when pdf-lib rejects image bytes', async () => {
     const user = demoUsers[0]
     const settings = initialAppState.settings
-    const onePixelPng = Uint8Array.from(atob('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAFgwJ/lZrD9wAAAABJRU5ErkJggg=='), (char) => char.charCodeAt(0))
+    const onePixelJpeg = Uint8Array.from(atob('/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAP//////////////////////////////////////////////////////////////////////////////////////2wBDAf//////////////////////////////////////////////////////////////////////////////////////wAARCAABAAEDASIAAhEBAxEB/8QAFQABAQAAAAAAAAAAAAAAAAAAAAX/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/9oADAMBAAIQAxAAAAH/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/9oACAEBAAEFAqf/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oACAEDAQE/ASP/xAAUEQEAAAAAAAAAAAAAAAAAAAAA/9oACAECAQE/ASP/xAAUEAEAAAAAAAAAAAAAAAAAAAAA/9oACAEBAAY/Al//xAAUEAEAAAAAAAAAAAAAAAAAAAAA/9oACAEBAAE/IV//2gAMAwEAAgADAAAAEP/EFBQRAQAAAAAAAAAAAAAAAAAAABD/2gAIAQMBAT8QH//EFBQRAQAAAAAAAAAAAAAAAAAAABD/2gAIAQIBAT8QH//EFBABAQAAAAAAAAAAAAAAAAAAABD/2gAIAQEAAT8QH//Z'), (char) => char.charCodeAt(0))
     const originalImage = globalThis.Image
     const originalCreateElement = document.createElement.bind(document)
     const embedJpg = vi.spyOn(PDFDocument.prototype, 'embedJpg').mockRejectedValueOnce(new Error('unsupported jpeg'))
@@ -143,8 +143,8 @@ describe('pdf generation', () => {
       return {
         width: 0,
         height: 0,
-        getContext: () => ({ drawImage: vi.fn() }),
-        toBlob: (callback: BlobCallback) => callback(new Blob([onePixelPng], { type: 'image/png' })),
+        getContext: () => ({ drawImage: vi.fn(), fillRect: vi.fn(), fillStyle: '' }),
+        toBlob: (callback: BlobCallback) => callback(new Blob([onePixelJpeg], { type: 'image/jpeg' })),
       } as unknown as HTMLCanvasElement
     }) as typeof document.createElement)
 

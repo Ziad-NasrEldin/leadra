@@ -40,7 +40,7 @@ export async function buildPermissionSafePdfBlob(
   const font = await pdf.embedFont(StandardFonts.Helvetica)
   const bold = await pdf.embedFont(StandardFonts.HelveticaBold)
   const page = pdf.addPage([595, 842])
-  const logo = settings.logoPath ? await embedImage(pdf, settings.logoPath) : null
+  const logo = settings.logoPath ? await embedImage(pdf, settings.logoPath, { allowPngFallback: true }) : null
   const thumbnail = images[0] ? await embedImage(pdf, images[0].url) : null
 
   drawCoverPage(page, {
@@ -458,20 +458,42 @@ export async function shareGeneratedPdfs(pdfs: GeneratedPdf[]): Promise<boolean>
   return false
 }
 
-async function embedImage(pdf: PDFDocument, url: string) {
+async function embedImage(pdf: PDFDocument, url: string, options: { allowPngFallback?: boolean } = {}) {
   try {
     const bytes = await imageBytes(url)
     if (!bytes) return null
-    try {
-      if (isPngImage(url, bytes)) return await pdf.embedPng(bytes)
-      if (isJpegImage(url, bytes)) return await pdf.embedJpg(bytes)
-      return await pdf.embedPng(bytes)
-    } catch {
-      const pngBytes = await rasterizeImageToPngBytes(url)
-      return pngBytes ? await pdf.embedPng(pngBytes) : null
+
+    if (isJpegImage(url, bytes)) {
+      const directJpeg = await embedImageWithTimeout(() => pdf.embedJpg(bytes))
+      if (directJpeg) return directJpeg
     }
+
+    const jpegBytes = await rasterizeImageToJpegBytes(url)
+    if (jpegBytes) {
+      const rasterizedJpeg = await embedImageWithTimeout(() => pdf.embedJpg(jpegBytes))
+      if (rasterizedJpeg) return rasterizedJpeg
+    }
+
+    if (options.allowPngFallback && isPngImage(url, bytes)) return await embedImageWithTimeout(() => pdf.embedPng(bytes))
+    return null
   } catch {
     return null
+  }
+}
+
+async function embedImageWithTimeout(factory: () => Promise<PDFImage>, timeoutMs = 1200): Promise<PDFImage | null> {
+  let timeoutId: number | undefined
+  try {
+    return await Promise.race([
+      factory(),
+      new Promise<null>((resolve) => {
+        timeoutId = window.setTimeout(() => resolve(null), timeoutMs)
+      }),
+    ])
+  } catch {
+    return null
+  } finally {
+    if (timeoutId) window.clearTimeout(timeoutId)
   }
 }
 
@@ -492,7 +514,8 @@ function isJpegImage(url: string, bytes: Uint8Array): boolean {
   )
 }
 
-async function rasterizeImageToPngBytes(url: string): Promise<Uint8Array | null> {
+async function rasterizeImageToJpegBytes(url: string): Promise<Uint8Array | null> {
+  if (url.startsWith('data:image/png')) return null
   if (typeof Image === 'undefined' || typeof document === 'undefined') return null
 
   const image = new Image()
@@ -516,9 +539,11 @@ async function rasterizeImageToPngBytes(url: string): Promise<Uint8Array | null>
   canvas.height = decoded.naturalHeight || decoded.height
   const context = canvas.getContext('2d')
   if (!context || canvas.width <= 0 || canvas.height <= 0) return null
+  context.fillStyle = '#ffffff'
+  context.fillRect(0, 0, canvas.width, canvas.height)
   context.drawImage(decoded, 0, 0)
 
-  const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/png'))
+  const blob = await new Promise<Blob | null>((resolve) => canvas.toBlob(resolve, 'image/jpeg', 0.88))
   return blob ? new Uint8Array(await blob.arrayBuffer()) : null
 }
 
