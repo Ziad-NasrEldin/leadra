@@ -877,6 +877,41 @@ describe('Leadra app shell', () => {
     expect(createButton).toBeEnabled()
   })
 
+  it('allows create-unit uploaded images to be hidden from PDF and removed', async () => {
+    const user = userEvent.setup()
+
+    render(
+      <LocaleProvider>
+        <CreateUnitPage
+          activeStep="Review"
+          lookupValues={lookupValues}
+          settings={initialAppState.settings}
+          onStepChange={vi.fn()}
+          onSubmit={vi.fn()}
+        />
+      </LocaleProvider>,
+    )
+
+    const image = new File(
+      [Uint8Array.from(atob('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAFgwJ/lZrD9wAAAABJRU5ErkJggg=='), (char) => char.charCodeAt(0))],
+      'living-room.png',
+      { type: 'image/png' },
+    )
+    await user.upload(screen.getByLabelText(/unit images/i), image)
+
+    expect(await screen.findByText(/living-room.png/i)).toBeInTheDocument()
+    const pdfToggle = screen.getByRole('checkbox', { name: /show in pdf/i })
+    expect(pdfToggle).toBeChecked()
+
+    await user.click(pdfToggle)
+    expect(pdfToggle).not.toBeChecked()
+    expect(screen.getByRole('checkbox', { name: /hide from pdf/i })).toBeInTheDocument()
+
+    await user.click(screen.getByRole('button', { name: /^remove$/i }))
+    expect(screen.queryByText(/living-room.png/i)).not.toBeInTheDocument()
+    expect(screen.getByText(/upload at least one unit image before creating the unit/i)).toBeInTheDocument()
+  })
+
   it('lets admins edit property, owner, and PRD pricing fields inline from unit details', async () => {
     renderApp()
     const user = userEvent.setup()
