@@ -89,7 +89,7 @@ Production E2E evidence:
   - Manager created unit with image: `NC3BR-76`; Mark Special unavailable as expected; marked hold; marked sold.
   - Sales created unit with image: `NC3BR-77`; Mark Special unavailable as expected; marked hold; marked sold.
   - Note: this matrix script intentionally skips PDF rows, so PDF/share were verified separately below.
-- `node scripts/tmp-targeted-prod-e2e2.mjs`: PASS for PDF/download/share, edit payment fields, theme probe; archive UI assertion failed but DB readback confirmed archive persisted.
+- `node scripts/tmp-targeted-prod-e2e2.mjs`: PASS for PDF/download/share, edit payment fields, and theme probe; the original archive visible-label assertion was too strict because successful archive redirects back to `/units` instead of showing an `Archived` label on the details page.
   - Report dir: `/Users/ziadnasreldin/Documents/GitHub/leadra/reports/prod-e2e-targeted2-20260529144049`
   - Unit used: `NC3BR-58`
   - Generate PDF: PASS, downloaded `NC3BR-58-May29.pdf`
@@ -97,9 +97,14 @@ Production E2E evidence:
   - Edit installment type regenerates amount: PASS
   - Payment type installments to cash: PASS
   - Theme toggle no UA flicker on details page: PASS; no `-ua-view-transition-*` animations
-  - Archive unit: UI label assertion failed, but DB verification below confirmed `archived = true`.
-- Supabase linked DB verification after targeted script:
+- Corrected production archive verification after critique R1:
+  - One-off Playwright archive verification report dir: `/Users/ziadnasreldin/Documents/GitHub/leadra/reports/prod-archive-verify-20260529145035`
+  - Unit used: `NC3BR-74`
+  - User-visible result: PASS; after clicking Archive and confirming, production redirected to `https://www.leadra.app/units` and the details-page Archive button was no longer visible.
+  - Screenshot/body artifact: `after-archive.png` and `after-archive-body.txt` in the report dir.
+- Supabase linked DB verification after targeted archive/payment checks:
   - `NC3BR-58`: `archived = true`, `payment_method = cash`, `installment_type = NULL`, `installment_amount = NULL`
+  - `NC3BR-74`: `archived = true`, `status = sold_by_others`
   - `NC3BR-73`: still unarchived reference unit, `payment_method = installment`, `installment_type = quarterly`, `installment_amount = 225000.00`
 - Extra production theme probe across representative pages:
   - Routes: `/dashboard`, `/units`, `/special`, `/admin/users`
@@ -108,6 +113,7 @@ Production E2E evidence:
 ## Git info
 
 - Branch: `main`
+- Final repo/review commit after critique R2: `c12fd1b test: clarify write-only archive persistence`
 - Commit deployed for final repository permission fix: `1f2bab1 fix: reload units after permission-safe updates`
 - Earlier deployed commits in this release included:
   - `545f735 fix: update unit payment edit recalculations`
@@ -128,10 +134,13 @@ Production E2E evidence:
 
 - Confirm the final repository fix correctly avoids direct SELECT on `public.units` while preserving update/archive behavior.
 - Confirm production E2E evidence satisfies the original checklist and does not count skipped PDF rows from the matrix script as PDF verification.
-- Confirm DB readback is acceptable evidence for the archive flow where the targeted script's visible-label assertion was too strict.
+- Confirm corrected archive verification resolves critique R1: production redirects back to `/units`, removes the details Archive button from view, and DB readback shows `archived = true` for `NC3BR-74`.
+- Confirm the archive unit test rename/mock simplification resolves critique R2 by accurately asserting write-only behavior under the safe units permission model.
 - Confirm theme verification is adequate for no native view-transition full-screen flicker across representative app pages.
 
 ## Fix cycle notes
 
 - Previous critique R1 requested deployed commit/status and production PDF Generate/Download/Share evidence. This handoff now includes deployed commit `1f2bab1`, READY Vercel deployment `dpl_9cFknVgnu4CD1AHVDfqGPZWkHVV2`, canonical URL evidence, and production PDF/download/share evidence.
 - Additional production blocker found during final verification (`permission denied for table units`) was root-caused to direct `update().select()` against a table without SELECT grant, fixed, tested locally, committed, pushed, and deployed.
+- Critique R1 from the production-verification re-review was addressed with a corrected production archive verification artifact: `/Users/ziadnasreldin/Documents/GitHub/leadra/reports/prod-archive-verify-20260529145035/report.json` plus DB readback for `NC3BR-74`.
+- Critique R2 was addressed by renaming/simplifying the archive repository unit test so it accurately asserts write-only archive persistence rather than claiming direct row visibility verification.
