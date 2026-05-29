@@ -5,7 +5,9 @@ import { buildPermissionSafePdfBlob, buildPermissionSafePdfText, generateUnitPdf
 
 describe('pdf generation', () => {
   afterEach(() => {
+    vi.useRealTimers()
     vi.restoreAllMocks()
+    vi.unstubAllGlobals()
   })
 
   it('builds a privacy-safe printable brief blob with branding and generator name only', async () => {
@@ -100,6 +102,30 @@ describe('pdf generation', () => {
     const blob = await buildPermissionSafePdfBlob(user, unit, settings, 'ar')
     const header = await blob.slice(0, 5).text()
 
+    expect(blob.type).toBe('application/pdf')
+    expect(header).toBe('%PDF-')
+    expect(blob.size).toBeGreaterThan(1000)
+  })
+
+  it('aborts a hanging remote logo fetch and still generates a valid pdf', async () => {
+    vi.useFakeTimers()
+    const fetchMock = vi.fn((_url: string | URL | Request, init?: RequestInit) => new Promise<Response>((_resolve, reject) => {
+      init?.signal?.addEventListener('abort', () => reject(new DOMException('Aborted', 'AbortError')))
+    }))
+    vi.stubGlobal('fetch', fetchMock)
+
+    const promise = buildPermissionSafePdfBlob(
+      demoUsers[0],
+      { ...seedUnits[0], media: [] },
+      { ...initialAppState.settings, logoPath: 'https://assets.leadra.test/logo.png' },
+    )
+
+    await vi.advanceTimersByTimeAsync(4000)
+    const blob = await promise
+    const header = await blob.slice(0, 5).text()
+
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(fetchMock.mock.calls[0]?.[1]?.signal?.aborted).toBe(true)
     expect(blob.type).toBe('application/pdf')
     expect(header).toBe('%PDF-')
     expect(blob.size).toBeGreaterThan(1000)

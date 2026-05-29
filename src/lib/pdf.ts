@@ -578,9 +578,18 @@ async function imageBytes(url: string): Promise<Uint8Array | null> {
     if (!encoded) return null
     return Uint8Array.from(atob(encoded), (char) => char.charCodeAt(0))
   }
-  const response = await fetch(url)
-  if (!response.ok) return null
-  return new Uint8Array(await response.arrayBuffer())
+
+  const controller = new AbortController()
+  const timeout = window.setTimeout(() => controller.abort(), 4000)
+  try {
+    const response = await fetch(url, { signal: controller.signal })
+    if (!response.ok) return null
+    return new Uint8Array(await response.arrayBuffer())
+  } catch {
+    return null
+  } finally {
+    window.clearTimeout(timeout)
+  }
 }
 
 function canIncludeSalesExportData(user: LeadraUser, unit: LeadraUnit) {
