@@ -154,19 +154,17 @@ export class LeadraRepository {
     permissions: { canEditOwner: boolean; canEditPricing: boolean; canEditCommission: boolean },
   ): Promise<LeadraUnit> {
     void actor
-    const { data, error } = await this.client
+    const { error } = await this.client
       .from('units')
       .update(toUnitUpdatePayload(input, permissions))
       .eq('id', unitId)
-      .select(unitSelect)
-      .single()
 
     if (error) throw error
-    return this.withSignedMediaUrlsForUnit(toUnitViewModel(data as unknown as SupabaseUnitRow))
+    return this.loadCreatedUnit(unitId)
   }
 
   async archiveUnit(unitId: number): Promise<void> {
-    const { error } = await this.client.from('units').update({ archived: true }).eq('id', unitId).select('id').single()
+    const { error } = await this.client.from('units').update({ archived: true }).eq('id', unitId)
     if (error) throw error
   }
 

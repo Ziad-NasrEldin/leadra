@@ -85,6 +85,22 @@ function safeUnitRpcRow(overrides: Partial<SafeUnitRpcRow> = {}): SafeUnitRpcRow
   }
 }
 
+function emptyPaymentRecordQuery() {
+  return {
+    select() {
+      return {
+        in() {
+          return {
+            order() {
+              return Promise.resolve({ data: [], error: null })
+            },
+          }
+        },
+      }
+    },
+  }
+}
+
 function createUnitInput(overrides: Partial<CreateUnitInput> = {}): CreateUnitInput {
   return {
     developerId: 'dev-1',
@@ -605,7 +621,31 @@ describe('LeadraRepository', () => {
       commissionPercentage: 1.5,
     }
     const client = {
+      rpc(fn: string, args: unknown) {
+        expect(fn).toBe('list_units_safe')
+        expect(args).toEqual({ limit_count: 500, offset_count: 0 })
+        return Promise.resolve({
+          error: null,
+          data: [
+            safeUnitRpcRow({
+              id: 105,
+              unit_code: 'NC3BR',
+              developer_id: 'dev-1',
+              developer_label: 'Palm Hills',
+              project_id: 'project-1',
+              project_label: 'New Cairo Estates',
+              destination_id: 'dest-1',
+              destination_label: 'New Cairo',
+              bua: 188,
+              total_amount: 5_500_000,
+              original_owner_name: 'Updated Owner',
+              original_owner_phone: '01033334444',
+            }),
+          ],
+        })
+      },
       from(table: string) {
+        if (table === 'unit_payment_schedule' || table === 'unit_payment_history') return emptyPaymentRecordQuery()
         expect(table).toBe('units')
         return {
           update(payload: unknown) {
@@ -614,70 +654,7 @@ describe('LeadraRepository', () => {
               eq(column: string, value: number) {
                 expect(column).toBe('id')
                 expect(value).toBe(105)
-                return {
-                  select() {
-                    return {
-                      single() {
-                        return Promise.resolve({
-                          error: null,
-                          data: {
-                            id: 105,
-                            unit_code: 'NC3BR',
-                            developer_id: 'dev-1',
-                            developer: { label: 'Palm Hills' },
-                            project_id: 'project-1',
-                            project: { label: 'New Cairo Estates' },
-                            destination_id: 'dest-1',
-                            destination: { label: 'New Cairo' },
-                            unit_type: 'Apartment',
-                            floor: '3rd',
-                            bua: 188,
-                            roof_garden_area: null,
-                            garden_area: null,
-                            terrace_area: null,
-                            view_id: 'view-1',
-                            view: { label: 'Garden' },
-                            bedrooms: 3,
-                            bathrooms: 2,
-                            elevator: true,
-                            land_area: null,
-                            furnished: false,
-                            finish: 'Fully Finished',
-                            payment_method: 'installment',
-                            total_amount: 5_500_000,
-                            down_payment: 1_000_000,
-                            remaining_payment: 4_000_000,
-                            commission_percentage: 1.5,
-                            commission_amount: 82_500,
-                            installment_type: 'quarterly',
-                            installment_years: 5,
-                            installment_amount: 200_000,
-                            delivery_month: null,
-                            delivery_year: 2029,
-                            original_owner_name: 'Updated Owner',
-                            country_code: '+20',
-                            original_owner_phone: '01033334444',
-                            normalized_owner_phone: '+201033334444',
-                            sales_notes: 'Updated notes.',
-                            status: 'available',
-                            archived: false,
-                            is_special: false,
-                            special_marked_at: null,
-                            special_marked_by: null,
-                            created_by: 'sales-1',
-                            creator: { full_name: 'Sales User' },
-                            team_id: 'team-1',
-                            branch_id: 'branch-1',
-                            created_at: '2026-05-04T00:00:00.000Z',
-                            updated_at: '2026-05-04T01:00:00.000Z',
-                            unit_media: [],
-                            unit_notes: [],
-                          },
-                        })
-                      },
-                    }
-                  },
-                }
+                return Promise.resolve({ error: null, data: null })
               },
             }
           },
@@ -706,7 +683,25 @@ describe('LeadraRepository', () => {
       commissionPercentage: 1.5,
     }
     const client = {
+      rpc(fn: string, args: unknown) {
+        expect(fn).toBe('list_units_safe')
+        expect(args).toEqual({ limit_count: 500, offset_count: 0 })
+        return Promise.resolve({
+          error: null,
+          data: [
+            safeUnitRpcRow({
+              id: 105,
+              payment_method: 'cash',
+              down_payment: null,
+              remaining_payment: null,
+              installment_type: null,
+              installment_amount: null,
+            }),
+          ],
+        })
+      },
       from(table: string) {
+        if (table === 'unit_payment_schedule' || table === 'unit_payment_history') return emptyPaymentRecordQuery()
         expect(table).toBe('units')
         return {
           update(payload: unknown) {
@@ -715,32 +710,7 @@ describe('LeadraRepository', () => {
               eq(column: string, value: number) {
                 expect(column).toBe('id')
                 expect(value).toBe(105)
-                return {
-                  select() {
-                    return {
-                      single() {
-                        return Promise.resolve({
-                          error: null,
-                          data: {
-                            ...safeUnitRpcRow({
-                              id: 105,
-                              payment_method: 'cash',
-                              down_payment: null,
-                              remaining_payment: null,
-                              installment_type: null,
-                              installment_amount: null,
-                            }),
-                            developer: { label: 'Ora' },
-                            project: { label: 'Zed East' },
-                            destination: { label: 'Sheikh Zayed' },
-                            view: { label: 'Garden' },
-                            creator: { full_name: 'Sales User' },
-                          },
-                        })
-                      },
-                    }
-                  },
-                }
+                return Promise.resolve({ error: null, data: null })
               },
             }
           },
