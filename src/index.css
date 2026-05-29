@@ -8028,8 +8028,10 @@ input[type="checkbox"] {
   background-size: 220% 100%;
   animation: skeleton-shimmer 1.15s var(--ease-soft) infinite;
   z-index: 0;
+  pointer-events: none;
 }
 .scope-card-visual img, .unit-row .thumb img, .upload-preview-card img { position: relative; z-index: 1; }
+.upload-preview-card > :not(img) { position: relative; z-index: 2; }
 
 @media (prefers-reduced-motion: reduce) {
   .skeleton-block,
