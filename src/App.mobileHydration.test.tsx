@@ -1,8 +1,9 @@
+import { readFileSync } from 'node:fs'
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { demoUsers } from './data/seed'
+import { demoUsers, initialAppState, lookupValues, seedUnits } from './data/seed'
 
 function deferred<T>() {
   let resolve!: (value: T) => void
@@ -17,6 +18,7 @@ function deferred<T>() {
 async function renderSupabaseApp(options: {
   workspacePromise: Promise<unknown>
   profile?: typeof demoUsers[number]
+  repositorySearchUnits?: ReturnType<typeof vi.fn>
 }) {
   const profile = options.profile ?? demoUsers[0]
   const signInWithPassword = vi.fn(async () => ({ data: { user: { id: profile.id, email: profile.email } }, error: null }))
@@ -56,6 +58,14 @@ async function renderSupabaseApp(options: {
       setSupabaseThemePreference: vi.fn(),
     }
   })
+  if (options.repositorySearchUnits) {
+    const repositorySearchUnits = options.repositorySearchUnits
+    vi.doMock('./lib/repository', () => ({
+      LeadraRepository: class {
+        searchUnits = repositorySearchUnits
+      },
+    }))
+  }
 
   const { default: App } = await import('./App')
   const { LocaleProvider } = await import('./lib/i18n')
@@ -79,6 +89,7 @@ describe('mobile Supabase hydration guards', () => {
   afterEach(() => {
     window.history.replaceState(null, '', '/')
     window.localStorage.clear()
+    vi.useRealTimers()
     vi.restoreAllMocks()
     vi.unstubAllGlobals()
     vi.resetModules()
@@ -100,5 +111,38 @@ describe('mobile Supabase hydration guards', () => {
     expect(await screen.findByText(/workspace could not load/i)).toBeInTheDocument()
     expect(screen.queryByRole('button', { name: /^create unit$/i })).not.toBeInTheDocument()
     expect(screen.queryByText(/owner information/i)).not.toBeInTheDocument()
+  })
+
+  it('runs project remote search after project route navigation settles', async () => {
+    const searchUnits = vi.fn(async () => seedUnits.filter((unit) => unit.projectId === 'project-new-cairo'))
+    const user = userEvent.setup()
+    await renderSupabaseApp({
+      workspacePromise: Promise.resolve({ state: initialAppState, lookupValues }),
+      repositorySearchUnits: searchUnits,
+    })
+
+    await user.type(screen.getByLabelText(/email/i), 'admin@leadra.test')
+    await user.type(screen.getByLabelText(/^password/i), 'Leadra8!')
+    await user.click(screen.getByRole('button', { name: /sign in/i }))
+
+    await user.click(await screen.findByRole('link', { name: /view all units/i }))
+    await user.click(await screen.findByRole('button', { name: /^new cairo/i }))
+    await user.click(await screen.findByRole('button', { name: /new cairo estates/i }))
+
+    await waitFor(() => expect(window.location.pathname).toBe('/units/destinations/dest-new-cairo/projects/project-new-cairo'))
+    await waitFor(() => expect(searchUnits).toHaveBeenCalledTimes(1))
+    expect(searchUnits).toHaveBeenCalledWith(expect.objectContaining({
+      destinationId: 'dest-new-cairo',
+      projectId: 'project-new-cairo',
+    }))
+  })
+
+  it('keeps project click handlers free of direct remote-search scheduling', () => {
+    const source = readFileSync(`${process.cwd()}/src/App.tsx`, 'utf8')
+    const projectSelectHandler = source.match(/onProjectSelect=\{\(id\) => \{[\s\S]*?onBackToDestinations=/)?.[0] ?? ''
+
+    expect(projectSelectHandler).toContain('navigateToPath(projectPath(activeSelectedDestinationId, id))')
+    expect(projectSelectHandler).not.toContain('loadRemoteUnitSearch')
+    expect(projectSelectHandler).not.toContain('remoteSearchDebounceRef.current = window.setTimeout')
   })
 })

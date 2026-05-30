@@ -187,7 +187,7 @@ describe('Leadra app shell', () => {
       </ThemeProvider>,
     )
 
-    act(() => vi.advanceTimersByTime(1800))
+    act(() => vi.advanceTimersByTime(320))
 
     const downPaymentRow = screen.getByText('Down Payment').closest('div')
     expect(downPaymentRow).toHaveTextContent(/EGP\s*1,123,456/)

@@ -689,6 +689,48 @@ function LeadraApp() {
     return () => window.clearTimeout(timeout)
   }, [currentUser, appState.units.length, appState.users.length])
 
+  const loadRemoteUnitSearch = useCallback(async (
+    nextFilters: UnitFilters,
+    destinationId = activeRouteRef.current.destinationId,
+    projectId = activeRouteRef.current.projectId,
+    routeView = activeRouteRef.current.view,
+  ) => {
+    const normalizedFilters = normalizeReactiveUnitFilters(nextFilters)
+    const requestId = remoteSearchRequestRef.current + 1
+    remoteSearchRequestRef.current = requestId
+    const requestRoute = { view: routeView, destinationId, projectId }
+    if (!supabase || !isSupabaseConfigured) {
+      if (remoteSearchRequestRef.current !== requestId) return
+      setRemoteSearchUnits(null)
+      setRemoteSearchView(null)
+      return
+    }
+    try {
+      setRemoteSearchLoading(true)
+      const repository = new LeadraRepository(supabase)
+      const units = await repository.searchUnits({
+        ...normalizedFilters,
+        destinationId: normalizedFilters.destinationId || destinationId || undefined,
+        projectId: normalizedFilters.projectId || projectId || undefined,
+      })
+      const currentRoute = activeRouteRef.current
+      if (
+        remoteSearchRequestRef.current !== requestId
+        || currentRoute.view !== requestRoute.view
+        || currentRoute.destinationId !== requestRoute.destinationId
+        || currentRoute.projectId !== requestRoute.projectId
+      ) return
+      setRemoteSearchUnits(units)
+      setRemoteSearchView(requestRoute.view === 'special' ? 'special' : 'inventory')
+    } catch {
+      if (remoteSearchRequestRef.current !== requestId) return
+      setRemoteSearchUnits(null)
+      setRemoteSearchView(null)
+    } finally {
+      if (remoteSearchRequestRef.current === requestId) setRemoteSearchLoading(false)
+    }
+  }, [])
+
   useEffect(() => {
     if (!currentUser) return
     const nextActiveRoute = deriveActiveRouteState(route, currentUser)
@@ -712,9 +754,64 @@ function LeadraApp() {
       destinationId: nextActiveRoute.routeDestinationId,
       projectId: nextActiveRoute.routeProjectId,
     }
-  }, [currentUser, route])
+    if (nextActiveRoute.activeView === 'units' && nextActiveRoute.routeDestinationId && nextActiveRoute.routeProjectId) {
+      remoteSearchDebounceRef.current = window.setTimeout(() => {
+        remoteSearchDebounceRef.current = null
+        void loadRemoteUnitSearch(unitFilters, nextActiveRoute.routeDestinationId, nextActiveRoute.routeProjectId, nextActiveRoute.activeView)
+      }, 0)
+    }
+  }, [currentUser, loadRemoteUnitSearch, route, unitFilters])
 
-  if (!currentUser) {
+  const memoizedRouteState = useMemo(() => currentUser ? deriveActiveRouteState(route, currentUser) : null, [currentUser, route])
+  const memoizedVisibleUnits = useMemo(() => currentUser ? filterUnitsForUser(currentUser, appState.units) : [], [currentUser, appState.units])
+  const memoizedActiveView = memoizedRouteState?.activeView ?? 'dashboard'
+  const memoizedRouteDestinationId = memoizedRouteState?.routeDestinationId ?? null
+  const memoizedRouteProjectId = memoizedRouteState?.routeProjectId ?? null
+  const memoizedRouteUnitId = memoizedRouteState?.routeUnitId ?? null
+  const memoizedDestinationSummaries = useMemo(
+    () => memoizedActiveView === 'units' ? summarizeDestinationsWithLookups(memoizedVisibleUnits, activeLookupValues, locale) : [],
+    [activeLookupValues, locale, memoizedActiveView, memoizedVisibleUnits],
+  )
+  const memoizedProjectSummaries = useMemo(
+    () => memoizedActiveView === 'units' && memoizedRouteDestinationId
+      ? summarizeProjectsWithLookups(memoizedVisibleUnits, activeLookupValues, locale, memoizedRouteDestinationId)
+      : [],
+    [activeLookupValues, locale, memoizedActiveView, memoizedRouteDestinationId, memoizedVisibleUnits],
+  )
+  const memoizedSelectedUnit = useMemo(
+    () => memoizedActiveView === 'details'
+      ? memoizedVisibleUnits.find((unit) => unit.id === memoizedRouteUnitId) ?? null
+      : memoizedVisibleUnits[0] ?? null,
+    [memoizedActiveView, memoizedRouteUnitId, memoizedVisibleUnits],
+  )
+  const effectiveInventoryFilters = useMemo(() => ({
+    ...unitFilters,
+    destinationId: memoizedRouteDestinationId ?? unitFilters.destinationId,
+    projectId: memoizedRouteProjectId ?? unitFilters.projectId,
+  }), [memoizedRouteDestinationId, memoizedRouteProjectId, unitFilters])
+  const memoizedFilteredUnits = useMemo(
+    () => currentUser && memoizedActiveView === 'units' ? searchUnits(currentUser, appState.units, effectiveInventoryFilters) : [],
+    [appState.units, currentUser, effectiveInventoryFilters, memoizedActiveView],
+  )
+  const memoizedDisplayedUnits = remoteSearchView === 'inventory' && remoteSearchUnits ? remoteSearchUnits : memoizedFilteredUnits
+  const memoizedSpecialFilteredUnits = useMemo(
+    () => currentUser && memoizedActiveView === 'special'
+      ? searchUnits(currentUser, appState.units.filter((unit) => unit.isSpecial && !unit.archived), unitFilters)
+      : [],
+    [appState.units, currentUser, memoizedActiveView, unitFilters],
+  )
+  const memoizedDisplayedSpecialUnits = useMemo(
+    () => (remoteSearchView === 'special' && remoteSearchUnits ? remoteSearchUnits : memoizedSpecialFilteredUnits).filter((unit) => unit.isSpecial && !unit.archived),
+    [remoteSearchUnits, remoteSearchView, memoizedSpecialFilteredUnits],
+  )
+  const memoizedActiveBatchUnits = memoizedActiveView === 'special' ? memoizedDisplayedSpecialUnits : memoizedDisplayedUnits
+  const memoizedSelectedBatchUnits = useMemo(() => {
+    if (selectedBatchUnitIds.length === 0) return []
+    const selectedIds = new Set(selectedBatchUnitIds)
+    return memoizedActiveBatchUnits.filter((unit) => selectedIds.has(unit.id))
+  }, [memoizedActiveBatchUnits, selectedBatchUnitIds])
+
+  if (!currentUser || !memoizedRouteState) {
     return (
       <LoginScreen
         authLoading={authLoading}
@@ -739,30 +836,20 @@ function LeadraApp() {
     activeView,
     routeDestinationId,
     routeProjectId,
-    routeUnitId,
     unitsBrowserStage,
     activeCreateStep,
     activeAdminSection,
     activeMasterDataDirectory,
-  } = deriveActiveRouteState(route, user)
-  const visibleUnits = filterUnitsForUser(user, appState.units)
-  const destinationSummaries = summarizeDestinationsWithLookups(visibleUnits, activeLookupValues, locale)
+  } = memoizedRouteState
+  const visibleUnits = memoizedVisibleUnits
+  const destinationSummaries = memoizedDestinationSummaries
   const activeSelectedDestinationId = routeDestinationId
-  const projectSummaries = summarizeProjectsWithLookups(visibleUnits, activeLookupValues, locale, activeSelectedDestinationId)
+  const projectSummaries = memoizedProjectSummaries
   const activeSelectedProjectId = routeProjectId
-  const selectedUnit = activeView === 'details'
-    ? visibleUnits.find((unit) => unit.id === routeUnitId) ?? null
-    : visibleUnits[0] ?? null
-  const filteredUnits = searchUnits(user, appState.units, {
-    ...unitFilters,
-    destinationId: routeDestinationId ?? unitFilters.destinationId,
-    projectId: routeProjectId ?? unitFilters.projectId,
-  })
-  const displayedUnits = remoteSearchView === 'inventory' && remoteSearchUnits ? remoteSearchUnits : filteredUnits
-  const specialFilteredUnits = searchUnits(user, appState.units.filter((unit) => unit.isSpecial && !unit.archived), unitFilters)
-  const displayedSpecialUnits = (remoteSearchView === 'special' && remoteSearchUnits ? remoteSearchUnits : specialFilteredUnits).filter((unit) => unit.isSpecial && !unit.archived)
-  const activeBatchUnits = activeView === 'special' ? displayedSpecialUnits : displayedUnits
-  const selectedBatchUnits = activeBatchUnits.filter((unit) => selectedBatchUnitIds.includes(unit.id))
+  const selectedUnit = memoizedSelectedUnit
+  const displayedUnits = memoizedDisplayedUnits
+  const displayedSpecialUnits = memoizedDisplayedSpecialUnits
+  const selectedBatchUnits = memoizedSelectedBatchUnits
   const unreadCount = appState.notifications.filter(
     (notification) =>
       !notification.read &&
@@ -1526,44 +1613,6 @@ function LeadraApp() {
     setRemoteSearchLoading(false)
     setSelectedBatchUnitIds([])
   }
-
-  async function loadRemoteUnitSearch(nextFilters: UnitFilters, destinationId = routeDestinationId, projectId = routeProjectId) {
-    const normalizedFilters = normalizeReactiveUnitFilters(nextFilters)
-    const requestId = remoteSearchRequestRef.current + 1
-    remoteSearchRequestRef.current = requestId
-    const requestRoute = { view: activeView, destinationId, projectId }
-    if (!supabase || !isSupabaseConfigured) {
-      if (remoteSearchRequestRef.current !== requestId) return
-      setRemoteSearchUnits(null)
-      setRemoteSearchView(null)
-      return
-    }
-    try {
-      setRemoteSearchLoading(true)
-      const repository = new LeadraRepository(supabase)
-      const units = await repository.searchUnits({
-        ...normalizedFilters,
-        destinationId: normalizedFilters.destinationId || destinationId || undefined,
-        projectId: normalizedFilters.projectId || projectId || undefined,
-      })
-      const currentRoute = activeRouteRef.current
-      if (
-        remoteSearchRequestRef.current !== requestId
-        || currentRoute.view !== requestRoute.view
-        || currentRoute.destinationId !== requestRoute.destinationId
-        || currentRoute.projectId !== requestRoute.projectId
-      ) return
-      setRemoteSearchUnits(units)
-      setRemoteSearchView(requestRoute.view === 'special' ? 'special' : 'inventory')
-    } catch {
-      if (remoteSearchRequestRef.current !== requestId) return
-      setRemoteSearchUnits(null)
-      setRemoteSearchView(null)
-    } finally {
-      if (remoteSearchRequestRef.current === requestId) setRemoteSearchLoading(false)
-    }
-  }
-
   async function handleThemePreferenceChange(nextThemePreference: ThemePreference, options?: ThemePreferenceOptions) {
     const previousThemePreference = themePreference
     const previousUser = currentUser
@@ -1743,7 +1792,6 @@ function LeadraApp() {
                 const nextFilters = { ...unitFilters, projectId: undefined }
                 setUnitFilters(nextFilters)
                 setSelectedBatchUnitIds([])
-                void loadRemoteUnitSearch(nextFilters, activeSelectedDestinationId, id)
                 if (activeSelectedDestinationId) navigateToPath(projectPath(activeSelectedDestinationId, id))
               }}
               onBackToDestinations={() => {

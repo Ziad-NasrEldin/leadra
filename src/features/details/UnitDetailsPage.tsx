@@ -72,10 +72,11 @@ export function UnitDetailsPage({
   const setSharedNote = (value: string) => setSharedNoteState({ unitId: unit.id, value })
   const [editMode, setEditMode] = useState(false)
   const [editSaving, setEditSaving] = useState(false)
-  const [showDetailDepth, setShowDetailDepth] = useState(false)
+  const [detailDepthState, setDetailDepthState] = useState({ unitId: unit.id, visible: false })
+  const showDetailDepth = detailDepthState.unitId === unit.id && detailDepthState.visible
 
   useEffect(() => {
-    const timeout = window.setTimeout(() => setShowDetailDepth(true), 1800)
+    const timeout = window.setTimeout(() => setDetailDepthState({ unitId: unit.id, visible: true }), 320)
     return () => window.clearTimeout(timeout)
   }, [unit.id])
 
