@@ -1,9 +1,9 @@
 import { Archive, Download, FileText, Share2, Star, Trash2 } from 'lucide-react'
-import { useEffect, useState, type FormEvent } from 'react'
+import { useState, type FormEvent } from 'react'
 import { buildPaymentTimetable, calculateDisplayedPaymentTotals, canAddAdminManagerNote, canArchiveUnit, canEditAnyUnitDetails, canEditNonOwnerUnitDetails, canEditOwnerFields, canEditUnitCommission, canEditUnitPricing, canManageUnitSpecialStatus, canUseUnitOperationalActions, canViewOwnerData, canViewSalesSensitiveData, formatCurrency, formatDeliveryExpectancy, getApplicableUnitAreaFields, getOwnerPhoneCountryMeta, getOwnerPhoneCountryOptions, PRD_FLOOR_OPTIONS, PRD_UNIT_TYPES } from '../../lib/domain'
 import { formatCount, formatDateTime, getPaymentMethodLabel, getRoleLabel, getStatusLabel, useLocale, type LocaleCode } from '../../lib/i18n'
 import type { InstallmentType, LeadraMediaFile, LeadraUnit, LeadraUser, LookupValue, PaymentMethod, UnitStatus } from '../../lib/types'
-import { EmptyState, InfoPanel, NativeLookupSelect, NamedSelectField, NumberField, OwnerPhoneField, ReadOnlyField, RequiredLabel, TextSkeleton } from '../../components/LeadraUi'
+import { EmptyState, InfoPanel, NativeLookupSelect, NamedSelectField, NumberField, OwnerPhoneField, ReadOnlyField, RequiredLabel } from '../../components/LeadraUi'
 import { countInstallmentsBetweenMonths, formatMonthYear, getInstallmentTypeLabel, getUnitCustomInstallmentText, getUnitInstallmentEndMonth, getUnitInstallmentStartMonth, toMonthInputValue } from '../shared/formUtils'
 import { motionStyle } from '../shared/motion'
 
@@ -72,13 +72,6 @@ export function UnitDetailsPage({
   const setSharedNote = (value: string) => setSharedNoteState({ unitId: unit.id, value })
   const [editMode, setEditMode] = useState(false)
   const [editSaving, setEditSaving] = useState(false)
-  const [detailDepthState, setDetailDepthState] = useState({ unitId: unit.id, visible: false })
-  const showDetailDepth = detailDepthState.unitId === unit.id && detailDepthState.visible
-
-  useEffect(() => {
-    const timeout = window.setTimeout(() => setDetailDepthState({ unitId: unit.id, visible: true }), 320)
-    return () => window.clearTimeout(timeout)
-  }, [unit.id])
 
   async function submitEdit(event: FormEvent<HTMLFormElement>) {
     setEditSaving(true)
@@ -123,31 +116,23 @@ export function UnitDetailsPage({
           onSubmit={submitEdit}
         />
       )}
-      {showDetailDepth ? (
-        <UnitDetailsDeepSections
-          locale={locale}
-          t={t}
-          user={user}
-          unit={unit}
-          ownerAllowed={ownerAllowed}
-          sharedNote={sharedNote}
-          setSharedNote={setSharedNote}
-          onSaveNote={onSaveNote}
-          onDeleteNote={onDeleteNote}
-          onRemoveMedia={onRemoveMedia}
-          onMediaPdfVisibilityChange={onMediaPdfVisibilityChange}
-          onMediaDownload={onMediaDownload}
-          removingMediaId={removingMediaId}
-          downloadingMediaId={downloadingMediaId}
-          canUseOperations={canUseOperations}
-        />
-      ) : (
-        <section className="content-card motion-stage details-deferred-card" style={motionStyle(2, 70)}>
-          <p className="eyebrow">{t('details.preparingDetails')}</p>
-          <h2>{t('details.mainInfo')}</h2>
-          <DetailsLoadingSkeleton />
-        </section>
-      )}
+      <UnitDetailsDeepSections
+        locale={locale}
+        t={t}
+        user={user}
+        unit={unit}
+        ownerAllowed={ownerAllowed}
+        sharedNote={sharedNote}
+        setSharedNote={setSharedNote}
+        onSaveNote={onSaveNote}
+        onDeleteNote={onDeleteNote}
+        onRemoveMedia={onRemoveMedia}
+        onMediaPdfVisibilityChange={onMediaPdfVisibilityChange}
+        onMediaDownload={onMediaDownload}
+        removingMediaId={removingMediaId}
+        downloadingMediaId={downloadingMediaId}
+        canUseOperations={canUseOperations}
+      />
     </section>
   )
 }
@@ -888,16 +873,5 @@ function UnitDetailsDeepSections({
         </section>
       )}
     </>
-  )
-}
-
-
-function DetailsLoadingSkeleton() {
-  return (
-    <div className="details-loading-skeleton" data-testid="details-loading-skeleton" aria-label="Loading unit details">
-      <TextSkeleton lines={3} />
-      <TextSkeleton lines={2} />
-      <TextSkeleton lines={3} />
-    </div>
   )
 }

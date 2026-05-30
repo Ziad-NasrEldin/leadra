@@ -187,7 +187,7 @@ describe('Leadra app shell', () => {
       </ThemeProvider>,
     )
 
-    act(() => vi.advanceTimersByTime(320))
+    expect(screen.queryByTestId('details-loading-skeleton')).not.toBeInTheDocument()
 
     const downPaymentRow = screen.getByText('Down Payment').closest('div')
     expect(downPaymentRow).toHaveTextContent(/EGP\s*1,123,456/)
@@ -954,7 +954,7 @@ describe('Leadra app shell', () => {
     await user.click(screen.getByRole('button', { name: /save unit changes/i }))
 
     expect(await screen.findByText(/unit details updated/i)).toBeInTheDocument()
-    expect(await screen.findByText(/222 m²/i)).toBeInTheDocument()
+    expect((await screen.findAllByText(/222 m²/i)).length).toBeGreaterThan(0)
   })
 
   it('hides edit mode from sales users on units they did not upload', async () => {

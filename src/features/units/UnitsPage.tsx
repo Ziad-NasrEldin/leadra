@@ -453,7 +453,7 @@ function UnitResultsSection({
       </div>
 
       <section className="unit-list motion-list" key={`${selectedDestinationId ?? 'all'}-${selectedProjectId ?? 'all'}-${JSON.stringify(filters)}`} aria-busy={loading}>
-        {loading ? (
+        {loading && units.length === 0 ? (
           <UnitListSkeleton rows={unitListPageSize} selectable />
         ) : (
           <>
