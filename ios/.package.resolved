@@ -1,0 +1,31 @@
+{
+  "originHash" : "9a3cb25f9749505e629e5062821e0e88b51991d7f6de169e8b69d46751eed8b8",
+  "pins" : [
+    {
+      "identity" : "median.go-native-core",
+      "kind" : "registry",
+      "location" : "",
+      "state" : {
+        "version" : "3.0.7"
+      }
+    },
+    {
+      "identity" : "median.median-icons",
+      "kind" : "registry",
+      "location" : "",
+      "state" : {
+        "version" : "1.1.4"
+      }
+    },
+    {
+      "identity" : "ziparchive",
+      "kind" : "remoteSourceControl",
+      "location" : "https://github.com/ZipArchive/ZipArchive",
+      "state" : {
+        "revision" : "df35718ea19a94e015b91dc4881dee028ce4cdba",
+        "version" : "2.6.0"
+      }
+    }
+  ],
+  "version" : 3
+}

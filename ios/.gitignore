@@ -1,0 +1,16 @@
+build/
+*~
+xcuserdata
+*.xccheckout
+.DS_Store
+Pods/
+.idea
+
+# Tuist
+# Keep generated Xcode project/workspace in git because Xcode Cloud is configured
+# to archive ios/Leadra.xcworkspace directly from the repository checkout.
+Derived/
+.tuist-cache/
+.tuist-state/
+graph.json
+Extensions/

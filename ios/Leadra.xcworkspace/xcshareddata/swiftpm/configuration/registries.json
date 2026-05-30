@@ -1,0 +1,10 @@
+{
+  "authentication": {},
+  "registries": {
+    "[default]": {
+      "supportsAvailability": false,
+      "url": "https://packages.median.co"
+    }
+  },
+  "version": 1
+}
