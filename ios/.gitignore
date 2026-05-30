@@ -7,9 +7,13 @@ Pods/
 .idea
 
 # Tuist
-# Keep generated Xcode project/workspace in git because Xcode Cloud is configured
-# to archive ios/Leadra.xcworkspace directly from the repository checkout.
-Derived/
+# Keep generated Xcode project/workspace and Tuist resource accessor sources in git
+# because Xcode Cloud archives ios/Leadra.xcworkspace directly from a clean
+# repository checkout and does not have Tuist's local Derived/ directory.
+Derived/*
+!Derived/
+!Derived/Sources/
+!Derived/Sources/Tuist*.swift
 .tuist-cache/
 .tuist-state/
 graph.json
