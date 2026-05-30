@@ -296,7 +296,7 @@
     [tableView deselectRowAtIndexPath:indexPath animated:YES];
     
     NSString *url = nil;
-    BOOL isLogout;
+    BOOL isLogout = NO;
     
     // if is first row, then check if it is grouped.
     if (indexPath.row == 0) {

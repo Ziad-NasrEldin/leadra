@@ -6,7 +6,7 @@
 //  Copyright (c) 2014 Weiyin He. All rights reserved.
 //
 
-#import <MobileCoreServices/MobileCoreServices.h>
+#import <UniformTypeIdentifiers/UniformTypeIdentifiers.h>
 #import "GonativeIO-Swift.h"
 #import "LEANUtilities.h"
 #import "LEANAppDelegate.h"
@@ -115,10 +115,7 @@
 +(NSString*)utiFromMimetype:(NSString *)mimeType
 {
     if (!mimeType) return nil;
-    CFStringRef MIMEType = (__bridge CFStringRef)mimeType;
-    CFStringRef UTI = UTTypeCreatePreferredIdentifierForTag(kUTTagClassMIMEType, MIMEType, NULL);
-    NSString *utiString = (__bridge_transfer NSString *)UTI;
-    return utiString;
+    return [UTType typeWithMIMEType:mimeType].identifier;
 }
 
 +(BOOL)isValidEmail:(NSString*)email
@@ -633,20 +630,6 @@
                 [view removeGestureRecognizer:gestureRecognizer];
             }
         }
-    }
-}
-
-+ (WKProcessPool *)wkProcessPool
-{
-    static WKProcessPool *processPool;
-    
-    @synchronized(self)
-    {
-        if (!processPool){
-            processPool = [[NSClassFromString(@"WKProcessPool") alloc] init];
-        }
-        
-        return processPool;
     }
 }
 

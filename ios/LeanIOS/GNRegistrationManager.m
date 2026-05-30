@@ -44,7 +44,6 @@
         
         if ([GoNativeAppConfig sharedAppConfig].useWKWebView) {
             WKWebViewConfiguration *config = [[NSClassFromString(@"WKWebViewConfiguration") alloc] init];
-            config.processPool = [LEANUtilities wkProcessPool];
             self.wkWebView = [[NSClassFromString(@"WKWebView") alloc] initWithFrame:CGRectZero configuration:config];
             
             // load url to get around same-origin policy

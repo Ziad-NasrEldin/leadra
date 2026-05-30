@@ -16,7 +16,7 @@ import GoNativeCore
             return
         }
         
-        if let rootViewController = UIApplication.shared.windows.first?.rootViewController as? LEANRootViewController,
+        if let rootViewController = UIApplication.shared.currentKeyWindow?.rootViewController as? LEANRootViewController,
            let navigationController = rootViewController.contentViewController as? UINavigationController {
             var viewControllers = navigationController.viewControllers
             let removeTillIndex = LEANWebViewController.currentWindows - appConfig.maxWindows

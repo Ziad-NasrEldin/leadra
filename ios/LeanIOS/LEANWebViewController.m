@@ -346,7 +346,6 @@ static NSInteger _currentWindows = 0;
 {
     GoNativeAppConfig *appConfig = [GoNativeAppConfig sharedAppConfig];
     WKWebViewConfiguration *config = [[NSClassFromString(@"WKWebViewConfiguration") alloc] init];
-    config.processPool = [LEANUtilities wkProcessPool];
     config.allowsInlineMediaPlayback = YES;
     
     WKWebView *wv = [[NSClassFromString(@"WKWebView") alloc] initWithFrame:self.wkWebview.frame configuration:config];
@@ -2565,7 +2564,7 @@ static NSInteger _currentWindows = 0;
 
 -(void)checkLocationPermissionWithBlock:(void (^)(void))block
 {
-    CLAuthorizationStatus status = [CLLocationManager authorizationStatus];
+    CLAuthorizationStatus status = self.locationManager.authorizationStatus;
     if (status == kCLAuthorizationStatusDenied || status == kCLAuthorizationStatusRestricted) {
         NSError *error = [NSError errorWithDomain:kCLErrorDomain code:kCLErrorDenied userInfo:nil];
         [self locationManager:self.locationManager didFailWithError:error];
@@ -2599,8 +2598,9 @@ static NSInteger _currentWindows = 0;
     [self.locationManager stopUpdatingLocation];
 }
 
--(void)locationManager:(CLLocationManager *)manager didChangeAuthorizationStatus:(CLAuthorizationStatus)status
+-(void)locationManagerDidChangeAuthorization:(CLLocationManager *)manager
 {
+    CLAuthorizationStatus status = manager.authorizationStatus;
     if (status != kCLAuthorizationStatusNotDetermined) {
         [self.locationManager requestLocation];
     }

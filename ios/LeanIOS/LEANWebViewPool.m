@@ -183,7 +183,6 @@
         [self.urlsToLoad removeObject:urlString];
         
         WKWebViewConfiguration *config = [[NSClassFromString(@"WKWebViewConfiguration") alloc] init];
-        config.processPool = [LEANUtilities wkProcessPool];
         WKWebView *webview = [[NSClassFromString(@"WKWebView") alloc] initWithFrame:CGRectZero configuration:config];
         [LEANUtilities configureWebView:webview];
         webview.navigationDelegate = self;

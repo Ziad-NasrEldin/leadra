@@ -29,7 +29,6 @@
 +(void)configureWebView:(UIView*)webview;
 +(void)getBodyBackgroundColor:(WKWebView *)webview completion:(void (^)(UIColor *color))completion;
 +(void)applyFontScalingForContentSize:(NSString *)contentSizeCategory toWebView:(WKWebView *)webView asUserScript:(BOOL)asUserScript;
-+ (WKProcessPool *)wkProcessPool;
 +(NSArray<NSPredicate*>*)createRegexArrayFromStrings:(id)input;
 +(BOOL)string:(NSString*)string matchesAnyRegex:(NSArray<NSPredicate*>*)regexes;
 +(NSString*)createJsForPostTo:(NSString*)url data:(NSDictionary*)data;

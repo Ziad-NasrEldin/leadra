@@ -85,7 +85,6 @@
     if ([GoNativeAppConfig sharedAppConfig].useWKWebView) {
         if (!self.wkWebview) {
             WKWebViewConfiguration *config = [[NSClassFromString(@"WKWebViewConfiguration") alloc] init];
-            config.processPool = [LEANUtilities wkProcessPool];
             self.wkWebview = [[NSClassFromString(@"WKWebView") alloc] initWithFrame:CGRectZero configuration:config];
             self.wkWebview.navigationDelegate = self;
         }

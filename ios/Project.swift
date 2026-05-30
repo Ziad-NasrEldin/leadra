@@ -89,7 +89,7 @@ let project = Project(
                     "GCC_PRECOMPILE_PREFIX_HEADER": "YES",
                     "ENABLE_BITCODE": "NO",
                     "CLANG_ENABLE_MODULES": "YES",
-                    "OTHER_LDFLAGS": "-ObjC $(inherited)",
+                    "OTHER_LDFLAGS": "-ObjC $(inherited) -weak_framework AppIntents",
                     "MARKETING_VERSION": .string(marketingVersion),
                     "CURRENT_PROJECT_VERSION": .string(projectVersion),
                     "BUILD_SETTINGS_APP_NAME": .string(appName),
@@ -98,6 +98,7 @@ let project = Project(
                     "TARGETED_DEVICE_FAMILY": "1,2",
                     "ENABLE_USER_SCRIPT_SANDBOXING": "NO",
                     "DEVELOPMENT_LANGUAGE": "en",
+                    "CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER": "NO",
                     "HEADER_SEARCH_PATHS": "$(inherited) $(SRCROOT)/LeanIOS $(SRCROOT)/LeanIOS/REFrostedViewController"
                 ],
                 configurations: [

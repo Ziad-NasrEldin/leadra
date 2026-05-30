@@ -8,7 +8,10 @@
 
 extension UIApplication {
     @objc public var currentKeyWindow: UIWindow? {
-        return UIApplication.shared.windows.last { $0.isKeyWindow }
+        return connectedScenes
+            .compactMap { $0 as? UIWindowScene }
+            .flatMap { $0.windows }
+            .last { $0.isKeyWindow }
     }
     
     @objc public var currentStatusBarFrame: CGRect {
