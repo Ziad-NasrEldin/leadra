@@ -176,6 +176,32 @@ button:active,
   will-change: transform, opacity;
 }
 
+@media (pointer: coarse), (max-width: 768px) {
+  :root {
+    --duration-layout: 180ms;
+    --duration-entrance: 180ms;
+    --duration-hero: 220ms;
+    --stagger-step: 0ms;
+  }
+
+  .motion-stage,
+  .page-transition-frame > .page-entrance,
+  .motion-status-pill,
+  .motion-feedback,
+  .motion-flash {
+    animation-delay: 0ms !important;
+    will-change: auto;
+  }
+}
+
+.inventory-scope-card::before,
+.login-brand-panel::after,
+.palette-sample-hero::after,
+.analytics-hero::after,
+.status-action-feedback::before {
+  pointer-events: none;
+}
+
 .motion-hero {
   animation-name: hero-rise;
   animation-duration: var(--duration-hero);

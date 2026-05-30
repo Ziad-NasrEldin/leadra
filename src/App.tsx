@@ -68,7 +68,7 @@ import { buildPdfActionRecords, getOrGenerateUnitPdf, getOrGenerateUnitPdfs, pdf
 import { LeadraRepository } from './lib/repository'
 import { buildSpecialUnitSocialCopy } from './lib/unitCopy'
 import { canUseDemoMode, isPerformanceDemoMode, isProductionMissingSupabaseConfig, isSupabaseConfigured, supabase } from './lib/supabase'
-import { loadSupabaseAnalyticsDashboard, loadSupabaseAppState, loadSupabaseProfile, markSupabaseLogin, setSupabaseThemePreference } from './lib/supabaseState'
+import { loadSupabaseAnalyticsDashboard, loadSupabaseAppState, loadSupabaseProfile, markSupabaseLogin, setSupabaseThemePreference, createSupabaseShellState } from './lib/supabaseState'
 import { useTheme, type ThemePreferenceOptions } from './lib/theme'
 import {
   addAnalyticsEventWorkflow,
@@ -329,6 +329,14 @@ function LeadraApp() {
   const [remoteSearchUnits, setRemoteSearchUnits] = useState<LeadraUnit[] | null>(null)
   const [remoteSearchView, setRemoteSearchView] = useState<'inventory' | 'special' | null>(null)
   const [remoteSearchLoading, setRemoteSearchLoading] = useState(false)
+  const remoteSearchDebounceRef = useRef<number | null>(null)
+  const remoteSearchRequestRef = useRef(0)
+  const activeRouteRef = useRef({ view: route.view, destinationId: route.destinationId, projectId: route.projectId })
+  const [workspaceHydrating, setWorkspaceHydrating] = useState(false)
+  const [workspaceLoadFailed, setWorkspaceLoadFailed] = useState(false)
+  const workspaceHydrationGenerationRef = useRef(0)
+  const activeAuthUserIdRef = useRef<string | null>(null)
+  const hydratingAuthUserRef = useRef<string | null>(null)
   const [flash, setFlash] = useState<LocalizedFlashMessage | null>(null)
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false)
   const [authLoading, setAuthLoading] = useState(isSupabaseConfigured)
@@ -424,7 +432,7 @@ function LeadraApp() {
   const completeSupabaseLogin = useCallback(async (authUser: SupabaseUser) => {
     if (!supabase) return
     if (explicitSignOutRef.current) return
-    if (completingAuthUserRef.current === authUser.id) return
+    if (completingAuthUserRef.current === authUser.id || hydratingAuthUserRef.current === authUser.id) return
     completingAuthUserRef.current = authUser.id
     try {
       setAuthLoading(true)
@@ -440,16 +448,53 @@ function LeadraApp() {
         return
       }
 
-      await markSupabaseLogin(supabase)
-      const remote = await loadSupabaseAppState(supabase)
-      setAppState(remote.state)
-      setActiveLookupValues(remote.lookupValues.length > 0 ? remote.lookupValues : lookupValues)
-      setCurrentUser(profile)
       const requestedView = parseAppRoute(window.location.pathname, window.location.search, window.location.hash).view
       const nextView = isViewAllowedForUser(requestedView, profile) ? requestedView : 'dashboard'
+      setAppState(createSupabaseShellState(profile))
+      setActiveLookupValues([])
+      setRemoteSearchUnits(null)
+      setRemoteSearchView(null)
+      setRemoteSearchLoading(false)
+      setCurrentUser(profile)
       setView(nextView)
       if (nextView !== requestedView) routerNavigate(pathForView(nextView), { replace: true })
       setLoginError(null)
+      setWorkspaceLoadFailed(false)
+      setAuthLoading(false)
+      setWorkspaceHydrating(true)
+      activeAuthUserIdRef.current = authUser.id
+      hydratingAuthUserRef.current = authUser.id
+      const hydrationGeneration = workspaceHydrationGenerationRef.current + 1
+      workspaceHydrationGenerationRef.current = hydrationGeneration
+
+      void markSupabaseLogin(supabase)
+      void loadSupabaseAppState(supabase)
+        .then((remote) => {
+          if (workspaceHydrationGenerationRef.current !== hydrationGeneration || activeAuthUserIdRef.current !== authUser.id || explicitSignOutRef.current) return
+          setAppState(remote.state)
+          setActiveLookupValues(remote.lookupValues.length > 0 ? remote.lookupValues : lookupValues)
+          remoteSearchRequestRef.current += 1
+          setRemoteSearchUnits(null)
+          setRemoteSearchView(null)
+          setRemoteSearchLoading(false)
+          setWorkspaceLoadFailed(false)
+        })
+        .catch((error) => {
+          if (workspaceHydrationGenerationRef.current !== hydrationGeneration || activeAuthUserIdRef.current !== authUser.id || explicitSignOutRef.current) return
+          console.warn('Supabase workspace load failed:', error)
+          remoteSearchRequestRef.current += 1
+          setRemoteSearchUnits(null)
+          setRemoteSearchView(null)
+          setRemoteSearchLoading(false)
+          setWorkspaceLoadFailed(true)
+          setFlash({ text: 'Workspace data is still loading or temporarily unavailable. Pull to refresh or try again shortly.', messageKey: null, messageParams: null })
+        })
+        .finally(() => {
+          if (workspaceHydrationGenerationRef.current !== hydrationGeneration || activeAuthUserIdRef.current !== authUser.id) return
+          hydratingAuthUserRef.current = null
+          completingAuthUserRef.current = null
+          setWorkspaceHydrating(false)
+        })
     } catch {
       setLoginError({
         message: 'Sign-in is temporarily unavailable. Contact your administrator.',
@@ -457,7 +502,7 @@ function LeadraApp() {
         messageParams: null,
       })
     } finally {
-      completingAuthUserRef.current = null
+      if (hydratingAuthUserRef.current !== authUser.id) completingAuthUserRef.current = null
       setAuthLoading(false)
     }
   }, [routerNavigate])
@@ -510,6 +555,12 @@ function LeadraApp() {
   }, [currentUser, location.pathname, location.hash, routerNavigate])
 
   useEffect(() => {
+    return () => {
+      if (remoteSearchDebounceRef.current !== null) window.clearTimeout(remoteSearchDebounceRef.current)
+    }
+  }, [])
+
+  useEffect(() => {
     if (!isSupabaseConfigured || !supabase) return undefined
     let cancelled = false
 
@@ -531,6 +582,16 @@ function LeadraApp() {
     const { data: listener } = supabase.auth.onAuthStateChange((event, session) => {
       if (event === 'SIGNED_OUT') {
         setCurrentUser(null)
+        activeAuthUserIdRef.current = null
+        hydratingAuthUserRef.current = null
+        completingAuthUserRef.current = null
+        workspaceHydrationGenerationRef.current += 1
+        remoteSearchRequestRef.current += 1
+        setWorkspaceHydrating(false)
+        setWorkspaceLoadFailed(false)
+        setRemoteSearchUnits(null)
+        setRemoteSearchView(null)
+        setRemoteSearchLoading(false)
         setAppState(initialWorkspaceRef.current.state)
         setActiveLookupValues(initialWorkspaceRef.current.lookupValues)
         setAuthLoading(false)
@@ -575,8 +636,10 @@ function LeadraApp() {
         if (cancelled) return
         setAppState(remote.state)
         setActiveLookupValues(remote.lookupValues.length > 0 ? remote.lookupValues : lookupValues)
+        remoteSearchRequestRef.current += 1
         setRemoteSearchUnits(null)
         setRemoteSearchView(null)
+        setRemoteSearchLoading(false)
       } catch (error) {
         console.warn('Supabase workspace refresh failed:', error)
       } finally {
@@ -625,6 +688,31 @@ function LeadraApp() {
     }, 0)
     return () => window.clearTimeout(timeout)
   }, [currentUser, appState.units.length, appState.users.length])
+
+  useEffect(() => {
+    if (!currentUser) return
+    const nextActiveRoute = deriveActiveRouteState(route, currentUser)
+    const previousActiveRoute = activeRouteRef.current
+    if (
+      previousActiveRoute.view === nextActiveRoute.activeView
+      && previousActiveRoute.destinationId === nextActiveRoute.routeDestinationId
+      && previousActiveRoute.projectId === nextActiveRoute.routeProjectId
+    ) return
+
+    if (remoteSearchDebounceRef.current !== null) {
+      window.clearTimeout(remoteSearchDebounceRef.current)
+      remoteSearchDebounceRef.current = null
+    }
+    remoteSearchRequestRef.current += 1
+    setRemoteSearchUnits(null)
+    setRemoteSearchView(null)
+    setRemoteSearchLoading(false)
+    activeRouteRef.current = {
+      view: nextActiveRoute.activeView,
+      destinationId: nextActiveRoute.routeDestinationId,
+      projectId: nextActiveRoute.routeProjectId,
+    }
+  }, [currentUser, route])
 
   if (!currentUser) {
     return (
@@ -681,6 +769,18 @@ function LeadraApp() {
       (notification.userId === user.id || notification.audienceRole === user.role || (!notification.userId && !notification.audienceRole)),
   ).length
   const canNavigateBack = routeStack.length > 1 || activeView !== 'dashboard'
+  const workspaceSkeletonKind: Parameters<typeof PageSkeleton>[0]['kind'] = activeView === 'create'
+    ? 'form'
+    : activeView === 'details'
+      ? 'details'
+      : activeView === 'admin'
+        ? 'admin'
+        : activeView === 'analytics'
+          ? 'analytics'
+          : activeView === 'units' || activeView === 'special'
+            ? 'units'
+            : 'dashboard'
+  const shouldGateWorkspaceView = (workspaceHydrating || workspaceLoadFailed) && activeView !== 'profile' && activeView !== 'palette'
 
   function navigate(nextView: View) {
     runPageTransition(() => {
@@ -1407,19 +1507,33 @@ function LeadraApp() {
     const nextFilters = normalizeReactiveUnitFilters({ ...unitFilters, [key]: value })
     setUnitFilters(nextFilters)
     setSelectedBatchUnitIds([])
-    void loadRemoteUnitSearch(nextFilters)
+    if (remoteSearchDebounceRef.current !== null) window.clearTimeout(remoteSearchDebounceRef.current)
+    remoteSearchDebounceRef.current = window.setTimeout(() => {
+      remoteSearchDebounceRef.current = null
+      void loadRemoteUnitSearch(nextFilters)
+    }, 320)
   }
 
   function resetUnitFilters() {
+    if (remoteSearchDebounceRef.current !== null) {
+      window.clearTimeout(remoteSearchDebounceRef.current)
+      remoteSearchDebounceRef.current = null
+    }
+    remoteSearchRequestRef.current += 1
     setUnitFilters({ status: 'all' })
     setRemoteSearchUnits(null)
     setRemoteSearchView(null)
+    setRemoteSearchLoading(false)
     setSelectedBatchUnitIds([])
   }
 
   async function loadRemoteUnitSearch(nextFilters: UnitFilters, destinationId = routeDestinationId, projectId = routeProjectId) {
     const normalizedFilters = normalizeReactiveUnitFilters(nextFilters)
+    const requestId = remoteSearchRequestRef.current + 1
+    remoteSearchRequestRef.current = requestId
+    const requestRoute = { view: activeView, destinationId, projectId }
     if (!supabase || !isSupabaseConfigured) {
+      if (remoteSearchRequestRef.current !== requestId) return
       setRemoteSearchUnits(null)
       setRemoteSearchView(null)
       return
@@ -1432,13 +1546,21 @@ function LeadraApp() {
         destinationId: normalizedFilters.destinationId || destinationId || undefined,
         projectId: normalizedFilters.projectId || projectId || undefined,
       })
+      const currentRoute = activeRouteRef.current
+      if (
+        remoteSearchRequestRef.current !== requestId
+        || currentRoute.view !== requestRoute.view
+        || currentRoute.destinationId !== requestRoute.destinationId
+        || currentRoute.projectId !== requestRoute.projectId
+      ) return
       setRemoteSearchUnits(units)
-      setRemoteSearchView(activeView === 'special' ? 'special' : 'inventory')
+      setRemoteSearchView(requestRoute.view === 'special' ? 'special' : 'inventory')
     } catch {
+      if (remoteSearchRequestRef.current !== requestId) return
       setRemoteSearchUnits(null)
       setRemoteSearchView(null)
     } finally {
-      setRemoteSearchLoading(false)
+      if (remoteSearchRequestRef.current === requestId) setRemoteSearchLoading(false)
     }
   }
 
@@ -1528,7 +1650,16 @@ function LeadraApp() {
               aria-label={t('topbar.signOut')}
               onClick={async () => {
                 explicitSignOutRef.current = true
+                activeAuthUserIdRef.current = null
+                hydratingAuthUserRef.current = null
                 completingAuthUserRef.current = null
+                workspaceHydrationGenerationRef.current += 1
+                remoteSearchRequestRef.current += 1
+                setWorkspaceHydrating(false)
+                setWorkspaceLoadFailed(false)
+                setRemoteSearchUnits(null)
+                setRemoteSearchView(null)
+                setRemoteSearchLoading(false)
                 if (supabase) await supabase.auth.signOut().catch(() => null)
                 for (const key of Object.keys(window.localStorage)) {
                   if (key.startsWith('sb-') && key.endsWith('-auth-token')) window.localStorage.removeItem(key)
@@ -1546,7 +1677,22 @@ function LeadraApp() {
           </div>
         </header>
 
-        {activeView === 'dashboard' && (
+        {shouldGateWorkspaceView && (
+          <div className="page-transition-frame" key={`${activeView}-hydrating`}>
+            {workspaceLoadFailed ? (
+              <section className="content-card page-entrance" role="status" aria-live="polite">
+                <EmptyState
+                  title="Workspace could not load"
+                  body="Leadra could not finish loading the reconciled workspace. Refresh the app before using units, payments, admin, or analytics."
+                />
+              </section>
+            ) : (
+              <PageSkeleton kind={workspaceSkeletonKind} />
+            )}
+          </div>
+        )}
+
+        {!shouldGateWorkspaceView && activeView === 'dashboard' && (
           <div className="page-transition-frame" key={activeView}>
             <Dashboard
               user={user}
@@ -1563,12 +1709,12 @@ function LeadraApp() {
             />
           </div>
         )}
-        {activeView === 'palette' && (
+        {!shouldGateWorkspaceView && activeView === 'palette' && (
           <div className="page-transition-frame" key={activeView}>
             <PaletteSamplePage />
           </div>
         )}
-        {activeView === 'units' && (
+        {!shouldGateWorkspaceView && activeView === 'units' && (
           <div className="page-transition-frame" key={activeView}>
             <UnitsPage
               user={user}
@@ -1584,7 +1730,7 @@ function LeadraApp() {
               filters={unitFilters}
               selectedUnitIds={selectedBatchUnitIds}
               batchAction={batchPdfAction}
-              loading={remoteSearchLoading && (remoteSearchView === 'inventory' || remoteSearchView === null)}
+              loading={(workspaceHydrating || remoteSearchLoading) && (remoteSearchView === 'inventory' || remoteSearchView === null)}
               onDestinationSelect={(id) => {
                 const nextFilters = { ...unitFilters, destinationId: undefined, projectId: undefined }
                 setUnitFilters(nextFilters)
@@ -1628,7 +1774,7 @@ function LeadraApp() {
             />
           </div>
         )}
-        {activeView === 'special' && (
+        {!shouldGateWorkspaceView && activeView === 'special' && (
           <div className="page-transition-frame" key={activeView}>
             <UnitsPage
               mode="special"
@@ -1645,7 +1791,7 @@ function LeadraApp() {
               filters={unitFilters}
               selectedUnitIds={selectedBatchUnitIds}
               batchAction={batchPdfAction}
-              loading={remoteSearchLoading && (remoteSearchView === 'special' || remoteSearchView === null)}
+              loading={(workspaceHydrating || remoteSearchLoading) && (remoteSearchView === 'special' || remoteSearchView === null)}
               onDestinationSelect={() => undefined}
               onProjectSelect={() => undefined}
               onBackToDestinations={() => undefined}
@@ -1668,7 +1814,7 @@ function LeadraApp() {
             />
           </div>
         )}
-        {activeView === 'create' && (
+        {!shouldGateWorkspaceView && activeView === 'create' && (
           <div className="page-transition-frame" key={activeView}>
             <CreateUnitPage
               lookupValues={activeLookupValues}
@@ -1679,7 +1825,7 @@ function LeadraApp() {
             />
           </div>
         )}
-        {activeView === 'details' && selectedUnit && (
+        {!shouldGateWorkspaceView && activeView === 'details' && selectedUnit && (
           <div className="page-transition-frame" key={activeView}>
             <UnitDetailsPage
               key={selectedUnit.id}
@@ -1711,24 +1857,24 @@ function LeadraApp() {
             />
           </div>
         )}
-        {activeView === 'details' && !selectedUnit && (
+        {!shouldGateWorkspaceView && activeView === 'details' && !selectedUnit && (
           <div className="page-transition-frame" key="details-denied">
             <section className="content-card page-entrance">
               <EmptyState title={t('details.unavailableTitle')} body={t('details.unavailableBody')} />
             </section>
           </div>
         )}
-        {activeView === 'notifications' && (
+        {!shouldGateWorkspaceView && activeView === 'notifications' && (
           <div className="page-transition-frame" key={activeView}>
             <NotificationsPage notifications={appState.notifications} user={user} />
           </div>
         )}
-        {activeView === 'profile' && (
+        {!shouldGateWorkspaceView && activeView === 'profile' && (
           <div className="page-transition-frame" key={activeView}>
             <ProfilePage user={user} onThemePreferenceChange={handleThemePreferenceChange} />
           </div>
         )}
-        {activeView === 'analytics' && canUseAnalytics && (
+        {!shouldGateWorkspaceView && activeView === 'analytics' && canUseAnalytics && (
           <div className="page-transition-frame" key={activeView}>
             <AnalyticsPage
               appState={appState}
@@ -1738,7 +1884,7 @@ function LeadraApp() {
             />
           </div>
         )}
-        {activeView === 'admin' && canUseAdmin && (
+        {!shouldGateWorkspaceView && activeView === 'admin' && canUseAdmin && (
           <div className="page-transition-frame" key={activeView}>
             <AdminPage
               users={appState.users}
