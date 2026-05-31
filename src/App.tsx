@@ -138,7 +138,7 @@ import {
   type DashboardRollup,
 } from './features/dashboard/dashboardSummaries'
 import { UnitListRow, UnitsPage } from './features/units/UnitsPage'
-import { ControlledSelectField, EmptyState, InfoSection, Metric, MetricSkeletonGrid, MiniBar, NavButton, PageSkeleton, PasswordField } from './components/LeadraUi'
+import { ControlledSelectField, EmptyState, InfoSection, Metric, MiniBar, NavButton, PasswordField } from './components/LeadraUi'
 import { paymentMethodValues, supportsLookupThumbnail, unitStatusValues, type AdminSection, type CreateUnitStep, type MasterDataDirectory } from './features/shared/constants'
 import { fileToDataUrl, removeLookupThumbnail, uploadLookupThumbnail } from './features/shared/media'
 import {
@@ -856,17 +856,6 @@ function LeadraApp() {
       (notification.userId === user.id || notification.audienceRole === user.role || (!notification.userId && !notification.audienceRole)),
   ).length
   const canNavigateBack = routeStack.length > 1 || activeView !== 'dashboard'
-  const workspaceSkeletonKind: Parameters<typeof PageSkeleton>[0]['kind'] = activeView === 'create'
-    ? 'form'
-    : activeView === 'details'
-      ? 'details'
-      : activeView === 'admin'
-        ? 'admin'
-        : activeView === 'analytics'
-          ? 'analytics'
-          : activeView === 'units' || activeView === 'special'
-            ? 'units'
-            : 'dashboard'
   const shouldGateWorkspaceView = (workspaceHydrating || workspaceLoadFailed) && activeView !== 'profile' && activeView !== 'palette'
 
   function navigate(nextView: View) {
@@ -1727,17 +1716,15 @@ function LeadraApp() {
         </header>
 
         {shouldGateWorkspaceView && (
-          <div className="page-transition-frame" key={`${activeView}-hydrating`}>
-            {workspaceLoadFailed ? (
-              <section className="content-card page-entrance" role="status" aria-live="polite">
-                <EmptyState
-                  title="Workspace could not load"
-                  body="Leadra could not finish loading the reconciled workspace. Refresh the app before using units, payments, admin, or analytics."
-                />
-              </section>
-            ) : (
-              <PageSkeleton kind={workspaceSkeletonKind} />
-            )}
+          <div className="page-transition-frame" key={`${activeView}-workspace-loading`}>
+            <section className="content-card page-entrance" role="status" aria-live="polite" aria-busy={workspaceHydrating} data-testid={workspaceHydrating ? 'workspace-loading-state' : 'workspace-error-state'}>
+              <EmptyState
+                title={workspaceLoadFailed ? 'Workspace could not load' : 'Loading workspace'}
+                body={workspaceLoadFailed
+                  ? 'Leadra could not finish loading the reconciled workspace. Refresh the app before using units, payments, admin, or analytics.'
+                  : 'Leadra is preparing your account data. This screen uses a static state instead of animated skeletons so the app stays responsive on mobile.'}
+              />
+            </section>
           </div>
         )}
 
@@ -2443,7 +2430,17 @@ function LoginScreen({
   if (authLoading && !loginError) {
     return (
       <main className="login-screen motion-login" aria-busy="true">
-        <PageSkeleton kind="form" />
+        <section className="login-card login-card-access" role="status" aria-live="polite">
+          <div className="login-access-panel login-access-panel-standalone">
+            <div className="login-brand-top">
+              <img className="login-mark" src={brandAssets.logo} alt="Leadra" />
+              <ThemeToggle compact />
+            </div>
+            <p className="eyebrow">{t('login.accessEyebrow')}</p>
+            <h2>{t('login.heading')}</h2>
+            <p>{t('login.description')}</p>
+          </div>
+        </section>
       </main>
     )
   }
@@ -3037,7 +3034,6 @@ function AnalyticsPage({
   const filters = filterState.routeKey === routeStateKey ? filterState.filters : routeFilters
   const deferredFilters = useDeferredValue(filters)
   const filterOpen = route.analyticsFiltersOpen
-  const [showAnalyticsDepth] = useState(true)
   const [rpcDashboard, setRpcDashboard] = useState<AnalyticsDashboard | null>(null)
   const [analyticsLoading, setAnalyticsLoading] = useState(false)
   const [analyticsError, setAnalyticsError] = useState<string | null>(null)
@@ -3216,18 +3212,14 @@ function AnalyticsPage({
         />
       </section>
 
-      {analyticsLoading ? (
-        <MetricSkeletonGrid count={6} />
-      ) : (
-        <section className="metric-grid analytics-metrics motion-stage" style={motionStyle(1, 40)}>
-          <Metric label={t('analytics.activeUnits')} value={formatCount(locale, dashboard.overview.totalActiveUnits)} style={motionStyle(0, 140)} />
-          <Metric label={t('analytics.soldValue')} value={formatCurrency(dashboard.overview.soldValue, locale)} style={motionStyle(1, 165)} />
-          <Metric label={t('analytics.projectedCommission')} value={formatCurrency(dashboard.overview.projectedCommission, locale)} style={motionStyle(2, 190)} />
-          <Metric label={t('analytics.pdfExports')} value={formatCount(locale, dashboard.overview.pdfExports)} style={motionStyle(3, 215)} />
-          <Metric label={t('analytics.duplicateAttempts')} value={formatCount(locale, dashboard.overview.duplicateAttempts)} style={motionStyle(4, 240)} />
-          <Metric label={t('analytics.staleUnits')} value={formatCount(locale, dashboard.overview.staleUnits)} style={motionStyle(5, 265)} />
-        </section>
-      )}
+      <section className="metric-grid analytics-metrics motion-stage" style={motionStyle(1, 40)} aria-busy={analyticsLoading}>
+        <Metric label={t('analytics.activeUnits')} value={formatCount(locale, dashboard.overview.totalActiveUnits)} style={motionStyle(0, 140)} />
+        <Metric label={t('analytics.soldValue')} value={formatCurrency(dashboard.overview.soldValue, locale)} style={motionStyle(1, 165)} />
+        <Metric label={t('analytics.projectedCommission')} value={formatCurrency(dashboard.overview.projectedCommission, locale)} style={motionStyle(2, 190)} />
+        <Metric label={t('analytics.pdfExports')} value={formatCount(locale, dashboard.overview.pdfExports)} style={motionStyle(3, 215)} />
+        <Metric label={t('analytics.duplicateAttempts')} value={formatCount(locale, dashboard.overview.duplicateAttempts)} style={motionStyle(4, 240)} />
+        <Metric label={t('analytics.staleUnits')} value={formatCount(locale, dashboard.overview.staleUnits)} style={motionStyle(5, 265)} />
+      </section>
 
       <div className="page-grid">
         <section className="content-card motion-stage" style={motionStyle(2, 80)}>
@@ -3261,45 +3253,23 @@ function AnalyticsPage({
             </div>
           </div>
           <StatusDonutChart dashboard={dashboard} />
-          {showAnalyticsDepth ? (
-            <div className="status-stack">
-              <MiniBar label={getStatusLabel(locale, 'available')} value={dashboard.overview.availableUnits} total={dashboard.overview.totalActiveUnits} />
-              <MiniBar label={getStatusLabel(locale, 'hold')} value={dashboard.overview.holdUnits} total={dashboard.overview.totalActiveUnits} />
-              <MiniBar label={getStatusLabel(locale, 'sold')} value={dashboard.overview.soldUnits} total={dashboard.overview.totalActiveUnits} />
-              <MiniBar label={getStatusLabel(locale, 'archived')} value={dashboard.overview.archivedUnits} total={Math.max(1, dashboard.overview.totalActiveUnits + dashboard.overview.archivedUnits)} />
-            </div>
-          ) : (
-            <AnalyticsSkeleton />
-          )}
+          <div className="status-stack">
+            <MiniBar label={getStatusLabel(locale, 'available')} value={dashboard.overview.availableUnits} total={dashboard.overview.totalActiveUnits} />
+            <MiniBar label={getStatusLabel(locale, 'hold')} value={dashboard.overview.holdUnits} total={dashboard.overview.totalActiveUnits} />
+            <MiniBar label={getStatusLabel(locale, 'sold')} value={dashboard.overview.soldUnits} total={dashboard.overview.totalActiveUnits} />
+            <MiniBar label={getStatusLabel(locale, 'archived')} value={dashboard.overview.archivedUnits} total={Math.max(1, dashboard.overview.totalActiveUnits + dashboard.overview.archivedUnits)} />
+          </div>
         </section>
       </div>
 
-      {showAnalyticsDepth ? (
-        <AnalyticsDeepSections
-          dashboard={dashboard}
-          averageTargetProgress={averageTargetProgress}
-          latestTimeline={latestTimeline}
-          locale={locale}
-          t={t}
-        />
-      ) : (
-        <section className="content-card motion-stage analytics-deferred-card" style={motionStyle(4, 140)}>
-          <p className="eyebrow">{t('analytics.preparingCharts')}</p>
-          <h2>{t('analytics.loadingDetailed')}</h2>
-          <AnalyticsSkeleton />
-        </section>
-      )}
+      <AnalyticsDeepSections
+        dashboard={dashboard}
+        averageTargetProgress={averageTargetProgress}
+        latestTimeline={latestTimeline}
+        locale={locale}
+        t={t}
+      />
     </section>
-  )
-}
-
-function AnalyticsSkeleton() {
-  return (
-    <div className="analytics-skeleton" aria-hidden="true">
-      <span />
-      <span />
-      <span />
-    </div>
   )
 }
 

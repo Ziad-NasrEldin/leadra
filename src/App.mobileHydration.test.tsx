@@ -105,7 +105,7 @@ describe('mobile Supabase hydration guards', () => {
     await user.type(screen.getByLabelText(/^password/i), 'Leadra8!')
     await user.click(screen.getByRole('button', { name: /sign in/i }))
 
-    expect(await screen.findByTestId('form-page-skeleton')).toBeInTheDocument()
+    expect(await screen.findByTestId('workspace-loading-state')).toBeInTheDocument()
     workspace.reject(new Error('workspace down'))
 
     expect(await screen.findByText(/workspace could not load/i)).toBeInTheDocument()
