@@ -95,7 +95,7 @@ describe('mobile Supabase hydration guards', () => {
     vi.resetModules()
   })
 
-  it('keeps workspace-dependent routes gated when full workspace hydration fails', async () => {
+  it('renders workspace-dependent routes immediately while full workspace hydration continues', async () => {
     window.history.replaceState(null, '', '/create')
     const workspace = deferred<unknown>()
     const user = userEvent.setup()
@@ -105,12 +105,15 @@ describe('mobile Supabase hydration guards', () => {
     await user.type(screen.getByLabelText(/^password/i), 'Leadra8!')
     await user.click(screen.getByRole('button', { name: /sign in/i }))
 
-    expect(await screen.findByTestId('workspace-loading-state')).toBeInTheDocument()
+    expect(screen.queryByTestId('workspace-loading-state')).not.toBeInTheDocument()
+    expect(screen.queryByText(/loading workspace/i)).not.toBeInTheDocument()
+    expect(await screen.findByRole('heading', { name: /new resale/i })).toBeInTheDocument()
+    expect(screen.getByLabelText(/paste unit details/i)).toBeInTheDocument()
+
     workspace.reject(new Error('workspace down'))
 
-    expect(await screen.findByText(/workspace could not load/i)).toBeInTheDocument()
-    expect(screen.queryByRole('button', { name: /^create unit$/i })).not.toBeInTheDocument()
-    expect(screen.queryByText(/owner information/i)).not.toBeInTheDocument()
+    await waitFor(() => expect(screen.queryByText(/workspace could not load/i)).not.toBeInTheDocument())
+    expect(screen.getByRole('heading', { name: /new resale/i })).toBeInTheDocument()
   })
 
   it('runs project remote search after project route navigation settles', async () => {

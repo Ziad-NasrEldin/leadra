@@ -333,7 +333,6 @@ function LeadraApp() {
   const remoteSearchRequestRef = useRef(0)
   const activeRouteRef = useRef({ view: route.view, destinationId: route.destinationId, projectId: route.projectId })
   const [workspaceHydrating, setWorkspaceHydrating] = useState(false)
-  const [workspaceLoadFailed, setWorkspaceLoadFailed] = useState(false)
   const workspaceHydrationGenerationRef = useRef(0)
   const activeAuthUserIdRef = useRef<string | null>(null)
   const hydratingAuthUserRef = useRef<string | null>(null)
@@ -459,7 +458,6 @@ function LeadraApp() {
       setView(nextView)
       if (nextView !== requestedView) routerNavigate(pathForView(nextView), { replace: true })
       setLoginError(null)
-      setWorkspaceLoadFailed(false)
       setAuthLoading(false)
       setWorkspaceHydrating(true)
       activeAuthUserIdRef.current = authUser.id
@@ -477,7 +475,6 @@ function LeadraApp() {
           setRemoteSearchUnits(null)
           setRemoteSearchView(null)
           setRemoteSearchLoading(false)
-          setWorkspaceLoadFailed(false)
         })
         .catch((error) => {
           if (workspaceHydrationGenerationRef.current !== hydrationGeneration || activeAuthUserIdRef.current !== authUser.id || explicitSignOutRef.current) return
@@ -486,7 +483,6 @@ function LeadraApp() {
           setRemoteSearchUnits(null)
           setRemoteSearchView(null)
           setRemoteSearchLoading(false)
-          setWorkspaceLoadFailed(true)
           setFlash({ text: 'Workspace data is still loading or temporarily unavailable. Pull to refresh or try again shortly.', messageKey: null, messageParams: null })
         })
         .finally(() => {
@@ -588,7 +584,6 @@ function LeadraApp() {
         workspaceHydrationGenerationRef.current += 1
         remoteSearchRequestRef.current += 1
         setWorkspaceHydrating(false)
-        setWorkspaceLoadFailed(false)
         setRemoteSearchUnits(null)
         setRemoteSearchView(null)
         setRemoteSearchLoading(false)
@@ -856,7 +851,6 @@ function LeadraApp() {
       (notification.userId === user.id || notification.audienceRole === user.role || (!notification.userId && !notification.audienceRole)),
   ).length
   const canNavigateBack = routeStack.length > 1 || activeView !== 'dashboard'
-  const shouldGateWorkspaceView = (workspaceHydrating || workspaceLoadFailed) && activeView !== 'profile' && activeView !== 'palette'
 
   function navigate(nextView: View) {
     runPageTransition(() => {
@@ -1694,7 +1688,6 @@ function LeadraApp() {
                 workspaceHydrationGenerationRef.current += 1
                 remoteSearchRequestRef.current += 1
                 setWorkspaceHydrating(false)
-                setWorkspaceLoadFailed(false)
                 setRemoteSearchUnits(null)
                 setRemoteSearchView(null)
                 setRemoteSearchLoading(false)
@@ -1715,20 +1708,8 @@ function LeadraApp() {
           </div>
         </header>
 
-        {shouldGateWorkspaceView && (
-          <div className="page-transition-frame" key={`${activeView}-workspace-loading`}>
-            <section className="content-card page-entrance" role="status" aria-live="polite" aria-busy={workspaceHydrating} data-testid={workspaceHydrating ? 'workspace-loading-state' : 'workspace-error-state'}>
-              <EmptyState
-                title={workspaceLoadFailed ? 'Workspace could not load' : 'Loading workspace'}
-                body={workspaceLoadFailed
-                  ? 'Leadra could not finish loading the reconciled workspace. Refresh the app before using units, payments, admin, or analytics.'
-                  : 'Leadra is preparing your account data. Leadra keeps this state static so the app stays responsive on mobile.'}
-              />
-            </section>
-          </div>
-        )}
 
-        {!shouldGateWorkspaceView && activeView === 'dashboard' && (
+        {activeView === 'dashboard' && (
           <div className="page-transition-frame" key={activeView}>
             <Dashboard
               user={user}
@@ -1745,12 +1726,12 @@ function LeadraApp() {
             />
           </div>
         )}
-        {!shouldGateWorkspaceView && activeView === 'palette' && (
+        {activeView === 'palette' && (
           <div className="page-transition-frame" key={activeView}>
             <PaletteSamplePage />
           </div>
         )}
-        {!shouldGateWorkspaceView && activeView === 'units' && (
+        {activeView === 'units' && (
           <div className="page-transition-frame" key={activeView}>
             <UnitsPage
               user={user}
@@ -1809,7 +1790,7 @@ function LeadraApp() {
             />
           </div>
         )}
-        {!shouldGateWorkspaceView && activeView === 'special' && (
+        {activeView === 'special' && (
           <div className="page-transition-frame" key={activeView}>
             <UnitsPage
               mode="special"
@@ -1849,7 +1830,7 @@ function LeadraApp() {
             />
           </div>
         )}
-        {!shouldGateWorkspaceView && activeView === 'create' && (
+        {activeView === 'create' && (
           <div className="page-transition-frame" key={activeView}>
             <CreateUnitPage
               lookupValues={activeLookupValues}
@@ -1860,7 +1841,7 @@ function LeadraApp() {
             />
           </div>
         )}
-        {!shouldGateWorkspaceView && activeView === 'details' && selectedUnit && (
+        {activeView === 'details' && selectedUnit && (
           <div className="page-transition-frame" key={activeView}>
             <UnitDetailsPage
               key={selectedUnit.id}
@@ -1892,24 +1873,24 @@ function LeadraApp() {
             />
           </div>
         )}
-        {!shouldGateWorkspaceView && activeView === 'details' && !selectedUnit && (
+        {activeView === 'details' && !selectedUnit && (
           <div className="page-transition-frame" key="details-denied">
             <section className="content-card page-entrance">
               <EmptyState title={t('details.unavailableTitle')} body={t('details.unavailableBody')} />
             </section>
           </div>
         )}
-        {!shouldGateWorkspaceView && activeView === 'notifications' && (
+        {activeView === 'notifications' && (
           <div className="page-transition-frame" key={activeView}>
             <NotificationsPage notifications={appState.notifications} user={user} />
           </div>
         )}
-        {!shouldGateWorkspaceView && activeView === 'profile' && (
+        {activeView === 'profile' && (
           <div className="page-transition-frame" key={activeView}>
             <ProfilePage user={user} onThemePreferenceChange={handleThemePreferenceChange} />
           </div>
         )}
-        {!shouldGateWorkspaceView && activeView === 'analytics' && canUseAnalytics && (
+        {activeView === 'analytics' && canUseAnalytics && (
           <div className="page-transition-frame" key={activeView}>
             <AnalyticsPage
               appState={appState}
@@ -1919,7 +1900,7 @@ function LeadraApp() {
             />
           </div>
         )}
-        {!shouldGateWorkspaceView && activeView === 'admin' && canUseAdmin && (
+        {activeView === 'admin' && canUseAdmin && (
           <div className="page-transition-frame" key={activeView}>
             <AdminPage
               users={appState.users}
