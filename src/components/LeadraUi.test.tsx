@@ -1,7 +1,7 @@
 import { render, screen, waitFor } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { BrandedSelect, PageSkeleton, UnitListSkeleton } from './LeadraUi'
+import { BrandedSelect } from './LeadraUi'
 
 describe('BrandedSelect', () => {
   afterEach(() => {
@@ -129,23 +129,5 @@ describe('BrandedSelect', () => {
     await waitFor(() => {
       expect(screen.getByRole('listbox', { name: /destination/i })).toHaveStyle({ top: '140px' })
     })
-  })
-})
-
-
-describe('skeleton primitives', () => {
-  it('forwards DOM props from skeleton wrappers so loading tests can observe them', () => {
-    render(<UnitListSkeleton rows={2} selectable />)
-
-    expect(screen.getByTestId('unit-list-skeleton')).toBeInTheDocument()
-    expect(screen.getAllByTestId('unit-row-skeleton')).toHaveLength(2)
-    expect(screen.getByLabelText('Loading units')).toBeInTheDocument()
-  })
-
-  it('renders a route-shaped page skeleton with a stable test id', () => {
-    render(<PageSkeleton kind="form" />)
-
-    expect(screen.getByTestId('form-page-skeleton')).toBeInTheDocument()
-    expect(screen.getByLabelText('Loading page')).toBeInTheDocument()
   })
 })

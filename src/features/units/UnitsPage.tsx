@@ -3,7 +3,7 @@ import { memo, useState, type CSSProperties } from 'react'
 import { canViewOwnerData, getApplicableUnitAreaFields, getThumbnailMedia, PRD_FLOOR_OPTIONS, summarizeDestinations, summarizeProjects } from '../../lib/domain'
 import { compareText, formatCount, getStatusLabel, useLocale } from '../../lib/i18n'
 import type { InstallmentType, LeadraUnit, LeadraUser, LookupValue, PaymentMethod, UnitFilters, UnitStatus } from '../../lib/types'
-import { ControlledSelectField, EmptyState, UnitListSkeleton } from '../../components/LeadraUi'
+import { ControlledSelectField, EmptyState } from '../../components/LeadraUi'
 import { unitListPageSize } from '../shared/constants'
 import { motionStyle } from '../shared/motion'
 import { countActiveUnitFilters, parseOptionalNumber } from '../shared/formUtils'
@@ -453,40 +453,40 @@ function UnitResultsSection({
       </div>
 
       <section className="unit-list motion-list" key={`${selectedDestinationId ?? 'all'}-${selectedProjectId ?? 'all'}-${JSON.stringify(filters)}`} aria-busy={loading}>
-        {loading && units.length === 0 ? (
-          <UnitListSkeleton rows={unitListPageSize} selectable />
-        ) : (
-          <>
-            {units.length === 0 && <EmptyState title={t('units.noMatchesTitle')} body={t('units.noMatchesBody')} />}
-            {visibleUnits.map((unit, index) => (
-              <UnitListRow
-                key={unit.id}
-                user={user}
-                unit={unit}
-                index={index}
-                selected={selectedUnitIds.includes(unit.id)}
-                onSelectionChange={() => onToggleUnitSelection(unit.id)}
-                onOpen={() => onOpenUnit(unit.id)}
-              />
-            ))}
-            {visibleUnits.length < units.length && (
-              <button
-                className="secondary-button list-load-more"
-                type="button"
-                onClick={() =>
-                  setVisibleState((current) => ({
-                    scopeKey: visibleScopeKey,
-                    count: Math.min((current.scopeKey === visibleScopeKey ? current.count : unitListPageSize) + unitListPageSize, units.length),
-                  }))
-                }
-              >
-                {t('common.showMoreOf', {
-                  count: formatCount(locale, Math.min(unitListPageSize, units.length - visibleUnits.length)),
-                  total: formatCount(locale, units.length),
-                })}
-              </button>
-            )}
-          </>
+        {loading && units.length === 0 && (
+          <div className="empty-state" role="status" aria-live="polite" data-testid="unit-list-loading-state">
+            <strong>{t('units.loadingTitle')}</strong>
+            <p>{t('units.loadingBody')}</p>
+          </div>
+        )}
+        {!loading && units.length === 0 && <EmptyState title={t('units.noMatchesTitle')} body={t('units.noMatchesBody')} />}
+        {visibleUnits.map((unit, index) => (
+          <UnitListRow
+            key={unit.id}
+            user={user}
+            unit={unit}
+            index={index}
+            selected={selectedUnitIds.includes(unit.id)}
+            onSelectionChange={() => onToggleUnitSelection(unit.id)}
+            onOpen={() => onOpenUnit(unit.id)}
+          />
+        ))}
+        {visibleUnits.length < units.length && (
+          <button
+            className="secondary-button list-load-more"
+            type="button"
+            onClick={() =>
+              setVisibleState((current) => ({
+                scopeKey: visibleScopeKey,
+                count: Math.min((current.scopeKey === visibleScopeKey ? current.count : unitListPageSize) + unitListPageSize, units.length),
+              }))
+            }
+          >
+            {t('common.showMoreOf', {
+              count: formatCount(locale, Math.min(unitListPageSize, units.length - visibleUnits.length)),
+              total: formatCount(locale, units.length),
+            })}
+          </button>
         )}
       </section>
     </>

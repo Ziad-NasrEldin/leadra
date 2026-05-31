@@ -1,5 +1,5 @@
 import { Check, ChevronDown, Eye, EyeOff } from 'lucide-react'
-import { useEffect, useId, useRef, useState, type CSSProperties, type ComponentPropsWithoutRef, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
+import { useEffect, useId, useRef, useState, type CSSProperties, type KeyboardEvent as ReactKeyboardEvent, type ReactNode } from 'react'
 import { createPortal } from 'react-dom'
 import { Link } from 'react-router-dom'
 import { formatCount, translate, useLocale, type LocaleCode } from '../lib/i18n'
@@ -497,91 +497,6 @@ export function EmptyState({ title, body }: { title: string; body: string }) {
   )
 }
 
-
-export function SkeletonBlock({
-  className = '',
-  style,
-  ...props
-}: ComponentPropsWithoutRef<'span'>) {
-  return <span className={`skeleton-block ${className}`.trim()} style={style} aria-hidden="true" {...props} />
-}
-
-export function TextSkeleton({ lines = 3 }: { lines?: number }) {
-  return (
-    <div className="text-skeleton" aria-hidden="true">
-      {Array.from({ length: lines }).map((_, index) => (
-        <SkeletonBlock key={index} className={`line line-${index + 1}`} />
-      ))}
-    </div>
-  )
-}
-
-export function MetricSkeletonGrid({ count = 4 }: { count?: number }) {
-  return (
-    <div className="metric-grid skeleton-metric-grid" data-testid="metric-skeleton-grid" aria-label="Loading metrics">
-      {Array.from({ length: count }).map((_, index) => (
-        <div className="metric-card skeleton-card" key={index}>
-          <SkeletonBlock className="label" />
-          <SkeletonBlock className="value" />
-        </div>
-      ))}
-    </div>
-  )
-}
-
-export function UnitRowSkeleton({ selectable = false }: { selectable?: boolean }) {
-  return (
-    <div className={`unit-row skeleton-unit-row ${selectable ? 'selectable' : ''}`} data-testid="unit-row-skeleton" aria-label="Loading unit">
-      {selectable && <SkeletonBlock className="checkbox" />}
-      <div className="unit-row-open skeleton-row-content">
-        <SkeletonBlock className="thumb" />
-        <span className="unit-row-copy">
-          <SkeletonBlock className="title" />
-          <SkeletonBlock className="line" />
-          <SkeletonBlock className="line short" />
-        </span>
-        <SkeletonBlock className="status" />
-      </div>
-    </div>
-  )
-}
-
-export function UnitListSkeleton({ rows = 4, selectable = false }: { rows?: number; selectable?: boolean }) {
-  return (
-    <div className="unit-list-skeleton" data-testid="unit-list-skeleton" aria-label="Loading units">
-      {Array.from({ length: rows }).map((_, index) => <UnitRowSkeleton key={index} selectable={selectable} />)}
-    </div>
-  )
-}
-
-export function PageSkeleton({ kind = 'dashboard' }: { kind?: 'dashboard' | 'units' | 'details' | 'form' | 'admin' | 'analytics' }) {
-  const metricCount = kind === 'analytics' || kind === 'admin' ? 6 : 4
-  const rowCount = kind === 'details' ? 3 : kind === 'form' ? 5 : 4
-  return (
-    <section className={`page-stack page-entrance page-skeleton page-skeleton-${kind}`} data-testid={`${kind}-page-skeleton`} aria-label="Loading page">
-      <div className="hero-panel skeleton-hero">
-        <SkeletonBlock className="eyebrow" />
-        <SkeletonBlock className="heading" />
-        <SkeletonBlock className="copy" />
-        <div className="action-row"><SkeletonBlock className="button" /><SkeletonBlock className="button secondary" /></div>
-      </div>
-      {kind !== 'form' && <MetricSkeletonGrid count={metricCount} />}
-      {kind === 'form' ? (
-        <section className="content-card skeleton-form-card">
-          <SkeletonBlock className="stepper" />
-          <div className="skeleton-field-grid">
-            {Array.from({ length: rowCount }).map((_, index) => <SkeletonBlock key={index} className="field" />)}
-          </div>
-        </section>
-      ) : (
-        <section className="content-card">
-          <SkeletonBlock className="section-title" />
-          <UnitListSkeleton rows={rowCount} selectable={kind === 'units'} />
-        </section>
-      )}
-    </section>
-  )
-}
 
 export function MiniBar({ label, value, total, suffix = '' }: { label: string; value: number; total: number; suffix?: string }) {
   const { locale } = useLocale()

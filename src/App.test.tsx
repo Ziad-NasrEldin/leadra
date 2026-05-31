@@ -187,7 +187,6 @@ describe('Leadra app shell', () => {
       </ThemeProvider>,
     )
 
-    expect(screen.queryByTestId('details-loading-skeleton')).not.toBeInTheDocument()
 
     const downPaymentRow = screen.getByText('Down Payment').closest('div')
     expect(downPaymentRow).toHaveTextContent(/EGP\s*1,123,456/)

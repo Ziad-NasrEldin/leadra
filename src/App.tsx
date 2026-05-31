@@ -1722,7 +1722,7 @@ function LeadraApp() {
                 title={workspaceLoadFailed ? 'Workspace could not load' : 'Loading workspace'}
                 body={workspaceLoadFailed
                   ? 'Leadra could not finish loading the reconciled workspace. Refresh the app before using units, payments, admin, or analytics.'
-                  : 'Leadra is preparing your account data. This screen uses a static state instead of animated skeletons so the app stays responsive on mobile.'}
+                  : 'Leadra is preparing your account data. Leadra keeps this state static so the app stays responsive on mobile.'}
               />
             </section>
           </div>
