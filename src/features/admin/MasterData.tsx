@@ -316,7 +316,7 @@ function LookupThumbnailPicker({
       <label className="lookup-thumbnail-label" htmlFor={inputId}>{label}</label>
       <div className="lookup-thumbnail-control">
         <div className="directory-thumbnail-preview large">
-          {previewSrc ? <img src={previewSrc} alt="" loading="lazy" /> : <ImageIcon size={20} />}
+          {previewSrc ? <img src={previewSrc} alt="" loading="lazy" decoding="async" /> : <ImageIcon size={20} />}
         </div>
         <div className="lookup-thumbnail-copy">
           <small>{helpText}</small>
@@ -453,7 +453,7 @@ function DirectoryCard({
       <div className="user-management-main">
         {item.supportsThumbnail && (
           <div className="directory-thumbnail-preview">
-            {item.thumbnailSrc ? <img src={item.thumbnailSrc} alt="" loading="lazy" /> : <ImageIcon size={18} />}
+            {item.thumbnailSrc ? <img src={item.thumbnailSrc} alt="" loading="lazy" decoding="async" /> : <ImageIcon size={18} />}
           </div>
         )}
         <div className="directory-card-copy">

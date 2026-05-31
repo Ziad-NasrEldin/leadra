@@ -183,7 +183,7 @@ test.describe('production preview route and role sweep', () => {
   }
 
   test('create wizard, units filters, details, admin tabs, master data, and mobile more adapt', async ({ page }, testInfo) => {
-    const isMobileProject = testInfo.project.name === 'mobile'
+    const isMobileProject = /iphone|android|mobile/i.test(testInfo.project.name)
     await signIn(page, 'admin')
 
     await navigateRoute(page, 'units')

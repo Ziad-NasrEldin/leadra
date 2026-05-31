@@ -478,7 +478,7 @@ export function AdminPage({
               {t('admin.logoPath')}
               <div className="logo-upload-control">
                 <div className="logo-upload-preview" aria-label={t('admin.logoPreview')}>
-                  {logoPathDraft ? <img src={logoPathDraft} alt={t('admin.logoPreview')} /> : <ImageIcon size={28} />}
+                  {logoPathDraft ? <img src={logoPathDraft} alt={t('admin.logoPreview')} loading="lazy" decoding="async" /> : <ImageIcon size={28} />}
                 </div>
                 <div className="logo-upload-actions">
                   <label className="secondary-button logo-upload-button">

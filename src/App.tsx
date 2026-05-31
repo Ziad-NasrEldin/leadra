@@ -1643,7 +1643,7 @@ function LeadraApp() {
     <div className="app-shell">
       <aside className="side-rail" aria-label={t('nav.desktop')}>
         <Link className="brand-mark" to={pathForView('dashboard')} aria-label="Leadra home">
-          <img src={brandAssets.sidebarLogo} alt="Leadra" />
+          <img src={brandAssets.sidebarLogo} alt="Leadra" decoding="async" />
         </Link>
         <NavButton active={activeView === 'dashboard'} label={t('nav.dashboard')} to={pathForView('dashboard')} onClick={closeNavigation} icon={<Home />} className="motion-stage" style={motionStyle(0)} />
         <NavButton active={activeView === 'units'} label={t('nav.units')} to={pathForView('units')} onClick={closeNavigation} icon={<Building2 />} className="motion-stage" style={motionStyle(1)} />
@@ -2433,7 +2433,7 @@ function LoginScreen({
         <section className="login-card login-card-access" role="status" aria-live="polite">
           <div className="login-access-panel login-access-panel-standalone">
             <div className="login-brand-top">
-              <img className="login-mark" src={brandAssets.logo} alt="Leadra" />
+              <img className="login-mark" src={brandAssets.logo} alt="Leadra" decoding="async" />
               <ThemeToggle compact />
             </div>
             <p className="eyebrow">{t('login.accessEyebrow')}</p>
@@ -2451,7 +2451,7 @@ function LoginScreen({
         <section className="login-card login-card-intro">
           <div className="login-brand-panel motion-stage motion-hero" style={motionStyle(0)}>
             <div className="login-brand-top">
-              <img className="login-mark" src={brandAssets.logo} alt="Leadra" />
+              <img className="login-mark" src={brandAssets.logo} alt="Leadra" decoding="async" />
               <ThemeToggle compact />
             </div>
             <p className="eyebrow">{t('login.brandEyebrow')}</p>
@@ -2585,7 +2585,7 @@ function PaletteSamplePage() {
           <h2>Dark luxury workspace</h2>
           <p>Sample page only. This version uses the primary dark identity from the reference: Onyx, Graphite, Charcoal, and Muted Copper.</p>
         </div>
-        <img className="palette-sample-logo" src={brandAssets.mark} alt="" aria-hidden="true" />
+        <img className="palette-sample-logo" src={brandAssets.mark} alt="" aria-hidden="true" loading="lazy" decoding="async" />
       </div>
 
       <div className="palette-swatch-grid motion-stage" style={motionStyle(1, 40)}>

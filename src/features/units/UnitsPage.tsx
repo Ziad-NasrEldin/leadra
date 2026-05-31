@@ -546,7 +546,7 @@ function InventoryScopeCard({
       onClick={onClick}
     >
       <span className="scope-card-visual" aria-hidden="true">
-        {thumbnailSrc ? <img src={thumbnailSrc} alt="" loading="lazy" /> : <span className="scope-card-mark">{initials || title[0] || 'L'}</span>}
+        {thumbnailSrc ? <img src={thumbnailSrc} alt="" loading="lazy" decoding="async" /> : <span className="scope-card-mark">{initials || title[0] || 'L'}</span>}
         <span className="scope-card-path" />
       </span>
       <span className="scope-card-copy">

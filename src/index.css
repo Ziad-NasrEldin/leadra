@@ -178,19 +178,60 @@ button:active,
 
 @media (pointer: coarse), (max-width: 768px) {
   :root {
-    --duration-layout: 180ms;
-    --duration-entrance: 180ms;
-    --duration-hero: 220ms;
+    --duration-layout: 1ms;
+    --duration-entrance: 1ms;
+    --duration-hero: 1ms;
     --stagger-step: 0ms;
   }
 
+  button,
+  a,
+  input,
+  select,
+  textarea,
+  .nav-button,
+  .inventory-scope-card,
+  .unit-row-open,
+  .branded-select-trigger {
+    touch-action: manipulation;
+    -webkit-tap-highlight-color: transparent;
+  }
+
+  .main-panel {
+    -webkit-overflow-scrolling: touch;
+  }
+
   .motion-stage,
+  .motion-hero,
   .page-transition-frame > .page-entrance,
   .motion-status-pill,
   .motion-feedback,
-  .motion-flash {
+  .motion-flash,
+  .analytics-filter-field,
+  .analytics-filter-sheet {
+    opacity: 1 !important;
+    transform: none !important;
+    filter: none !important;
+    animation: none !important;
     animation-delay: 0ms !important;
     will-change: auto;
+  }
+
+  .content-card,
+  .metric-card,
+  .unit-row,
+  .inventory-scope-card,
+  .notification-row,
+  .user-card,
+  .analytics-row {
+    contain: layout paint;
+  }
+
+  .bottom-nav,
+  .mobile-more-sheet,
+  .branded-select-menu {
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
   }
 }
 
@@ -6332,11 +6373,11 @@ dd,
   }
 
   .details-gallery-card .media-pdf-toggle {
-    min-height: 34px;
+    min-height: 44px;
     width: auto;
-    min-width: 0;
+    min-width: 44px;
     grid-template-columns: auto;
-    padding: 0.2rem;
+    padding: 0.35rem;
     border-radius: 0.7rem;
   }
 
@@ -6358,9 +6399,9 @@ dd,
 
   .details-gallery-card .media-download-button,
   .details-gallery-card .media-remove-button {
-    min-height: 34px;
-    min-width: 0;
-    padding: 0.28rem 0.5rem;
+    min-height: 44px;
+    min-width: 44px;
+    padding: 0.35rem 0.55rem;
     gap: 0.24rem;
     font-size: 0.72rem;
     line-height: 1.08;
