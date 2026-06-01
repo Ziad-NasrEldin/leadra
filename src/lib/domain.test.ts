@@ -277,8 +277,10 @@ describe('Leadra domain rules', () => {
 
     expect(canEditUnitCommission(admin, baseUnit)).toBe(true)
     expect(canEditUnitCommission(subAdmin, baseUnit)).toBe(true)
+    expect(canEditUnitCommission(manager, managerOwnUnit)).toBe(true)
     expect(canEditUnitCommission(manager, baseUnit)).toBe(false)
-    expect(canEditUnitCommission(salesA, baseUnit)).toBe(false)
+    expect(canEditUnitCommission(salesA, baseUnit)).toBe(true)
+    expect(canEditUnitCommission(salesB, baseUnit)).toBe(false)
 
     expect(canEditAnyUnitDetails(manager, managerOwnUnit)).toBe(true)
     expect(canEditAnyUnitDetails(manager, sameTeamOtherSalesUnit)).toBe(false)

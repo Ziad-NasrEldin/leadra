@@ -419,6 +419,46 @@ describe('LeadraRepository', () => {
     expect(result.unitCode).not.toContain(String(result.id))
   })
 
+  it('updates unit details through the guarded RPC instead of direct table updates', async () => {
+    const calls: Array<{ fn: string; args: unknown }> = []
+    const input: UnitEditInput = {
+      ...createUnitInput(),
+      commissionPercentage: 2,
+    }
+    const client = {
+      rpc(fn: string, args: unknown) {
+        calls.push({ fn, args })
+        if (fn === 'update_unit_details') return Promise.resolve({ error: null, data: null })
+        if (fn === 'list_units_safe') return Promise.resolve({ error: null, data: [safeUnitRpcRow({ id: 101, bedrooms: 4, commission_percentage: 2 })] })
+        throw new Error(`unexpected rpc ${fn}`)
+      },
+      from(table: string) {
+        expect(['unit_payment_schedule', 'unit_payment_history']).toContain(table)
+        return emptyPaymentRecordQuery()
+      },
+    }
+
+    const result = await new LeadraRepository(client as never).updateUnitDetails(salesUser(), 101, input, {
+      canEditOwner: true,
+      canEditPricing: true,
+      canEditCommission: true,
+    })
+
+    expect(calls[0]).toMatchObject({
+      fn: 'update_unit_details',
+      args: {
+        target_unit_id: 101,
+        unit_payload: expect.objectContaining({
+          bedrooms: 3,
+          original_owner_name: 'Owner',
+          total_amount: 5_500_000,
+          commission_percentage: 2,
+        }),
+      },
+    })
+    expect(result.commissionPercentage).toBe(2)
+  })
+
   it('does not reload a unit when atomic create RPC fails with an unrelated error', async () => {
     const createError = { code: '42501', message: 'permission denied for table units' }
     const client = {
@@ -622,6 +662,10 @@ describe('LeadraRepository', () => {
     }
     const client = {
       rpc(fn: string, args: unknown) {
+        if (fn === 'update_unit_details') {
+          updates.push(args)
+          return Promise.resolve({ error: null, data: null })
+        }
         expect(fn).toBe('list_units_safe')
         expect(args).toEqual({ limit_count: 500, offset_count: 0 })
         return Promise.resolve({
@@ -645,20 +689,8 @@ describe('LeadraRepository', () => {
         })
       },
       from(table: string) {
-        if (table === 'unit_payment_schedule' || table === 'unit_payment_history') return emptyPaymentRecordQuery()
-        expect(table).toBe('units')
-        return {
-          update(payload: unknown) {
-            updates.push(payload)
-            return {
-              eq(column: string, value: number) {
-                expect(column).toBe('id')
-                expect(value).toBe(105)
-                return Promise.resolve({ error: null, data: null })
-              },
-            }
-          },
-        }
+        expect(['unit_payment_schedule', 'unit_payment_history']).toContain(table)
+        return emptyPaymentRecordQuery()
       },
     }
 
@@ -669,10 +701,13 @@ describe('LeadraRepository', () => {
     })
 
     expect(result.bua).toBe(188)
-    expect(updates[0]).toMatchObject({ bua: 188, total_amount: 5_500_000, original_owner_phone: '01033334444' })
-    expect(updates[0]).not.toHaveProperty('remaining_payment')
-    expect(updates[0]).not.toHaveProperty('payment_method')
-    expect(updates[0]).not.toHaveProperty('commission_percentage')
+    expect(updates[0]).toMatchObject({
+      target_unit_id: 105,
+      unit_payload: { bua: 188, total_amount: 5_500_000, original_owner_phone: '01033334444' },
+    })
+    expect(updates[0]).not.toMatchObject({ unit_payload: expect.objectContaining({ remaining_payment: expect.anything() }) })
+    expect(updates[0]).not.toMatchObject({ unit_payload: expect.objectContaining({ payment_method: expect.anything() }) })
+    expect(updates[0]).not.toMatchObject({ unit_payload: expect.objectContaining({ commission_percentage: expect.anything() }) })
   })
 
   it('persists authorized payment method changes to cash while leaving remaining value to database triggers', async () => {
@@ -684,6 +719,10 @@ describe('LeadraRepository', () => {
     }
     const client = {
       rpc(fn: string, args: unknown) {
+        if (fn === 'update_unit_details') {
+          updates.push(args)
+          return Promise.resolve({ error: null, data: null })
+        }
         expect(fn).toBe('list_units_safe')
         expect(args).toEqual({ limit_count: 500, offset_count: 0 })
         return Promise.resolve({
@@ -701,20 +740,8 @@ describe('LeadraRepository', () => {
         })
       },
       from(table: string) {
-        if (table === 'unit_payment_schedule' || table === 'unit_payment_history') return emptyPaymentRecordQuery()
-        expect(table).toBe('units')
-        return {
-          update(payload: unknown) {
-            updates.push(payload)
-            return {
-              eq(column: string, value: number) {
-                expect(column).toBe('id')
-                expect(value).toBe(105)
-                return Promise.resolve({ error: null, data: null })
-              },
-            }
-          },
-        }
+        expect(['unit_payment_schedule', 'unit_payment_history']).toContain(table)
+        return emptyPaymentRecordQuery()
       },
     }
 
@@ -724,8 +751,8 @@ describe('LeadraRepository', () => {
       canEditCommission: false,
     })
 
-    expect(updates[0]).toMatchObject({ payment_method: 'cash', down_payment: null })
-    expect(updates[0]).not.toHaveProperty('remaining_payment')
+    expect(updates[0]).toMatchObject({ target_unit_id: 105, unit_payload: { payment_method: 'cash', down_payment: null } })
+    expect(updates[0]).not.toMatchObject({ unit_payload: expect.objectContaining({ remaining_payment: expect.anything() }) })
   })
 
   it('surfaces split sold status enum errors instead of collapsing to legacy sold', async () => {

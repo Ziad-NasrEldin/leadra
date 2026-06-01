@@ -154,10 +154,10 @@ export class LeadraRepository {
     permissions: { canEditOwner: boolean; canEditPricing: boolean; canEditCommission: boolean },
   ): Promise<LeadraUnit> {
     void actor
-    const { error } = await this.client
-      .from('units')
-      .update(toUnitUpdatePayload(input, permissions))
-      .eq('id', unitId)
+    const { error } = await this.client.rpc('update_unit_details', {
+      target_unit_id: unitId,
+      unit_payload: toUnitUpdatePayload(input, permissions),
+    })
 
     if (error) throw error
     return this.loadCreatedUnit(unitId)

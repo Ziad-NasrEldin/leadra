@@ -330,8 +330,8 @@ export function canEditUnitPricing(user: LeadraUser, unit: LeadraUnit): boolean 
 }
 
 export function canEditUnitCommission(user: LeadraUser, unit: LeadraUnit): boolean {
-  void unit
-  return user.role === 'admin' || user.role === 'sub_admin'
+  if (user.role === 'admin' || user.role === 'sub_admin') return true
+  return isCurrentActiveUnitUploader(user, unit)
 }
 
 export function canEditAnyUnitDetails(user: LeadraUser, unit: LeadraUnit): boolean {
